@@ -1,0 +1,140 @@
+import { useCallback, useEffect, useState } from "react";
+import { api } from "../api";
+import type { ProviderView } from "../types";
+import { Badge, Empty, ErrorText, Field, Modal } from "../ui";
+
+const APIS = [
+  "openai-completions", "openai-responses", "openai-codex-responses", "anthropic-messages",
+  "google-generative-ai", "azure-openai-responses", "amazon-bedrock", "radius",
+];
+
+export default function Providers({ toast }: { toast: (t: string, err?: boolean) => void }) {
+  const [providers, setProviders] = useState<ProviderView[]>([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [keyFor, setKeyFor] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    api.providers().then((r) => setProviders(r.providers)).catch((e: Error) => setError(e.message));
+  }, []);
+
+  useEffect(refresh, [refresh]);
+
+  return (
+    <>
+      <h2>Providers</h2>
+      <div className="sub">Read model de la config pi (models-store + models.json + auth.json) — écritures atomiques avec backup.</div>
+      <ErrorText error={error} />
+      <div className="toolbar">
+        <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Provider custom</button>
+      </div>
+      {providers.length === 0 ? <Empty>Aucun provider détecté.</Empty> : (
+        <table>
+          <thead>
+            <tr><th>Provider</th><th>Source</th><th>Auth</th><th>Prête</th><th>Modèles</th><th></th></tr>
+          </thead>
+          <tbody>
+            {providers.map((p) => (
+              <tr key={p.id}>
+                <td className="mono">{p.id}</td>
+                <td><Badge>{p.source}</Badge></td>
+                <td className="mono">{p.auth.type ?? "—"}</td>
+                <td>{p.auth.ready === true ? "✅" : p.auth.ready === false ? "❌" : "❓"}</td>
+                <td>{p.models.length}</td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  <button className="btn btn-sm" onClick={() => setKeyFor(p.id)}>Clé API</button>{" "}
+                  {p.source === "custom" ? (
+                    <button
+                      className="btn btn-sm btn-danger"
+                      onClick={() => {
+                        if (confirm(`Supprimer le provider custom "${p.id}" ?`)) {
+                          api.deleteProvider(p.id).then(refresh).catch((e: Error) => toast(e.message, true));
+                        }
+                      }}
+                    >
+                      Suppr.
+                    </button>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {showAdd ? <AddProviderModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); refresh(); }} toast={toast} /> : null}
+      {keyFor ? <KeyModal providerId={keyFor} onClose={() => setKeyFor(null)} onSaved={() => { setKeyFor(null); refresh(); }} toast={toast} /> : null}
+    </>
+  );
+}
+
+function AddProviderModal(props: { onClose: () => void; onSaved: () => void; toast: (t: string, err?: boolean) => void }) {
+  const [id, setId] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [apiProt, setApiProt] = useState("openai-completions");
+  const [apiKey, setApiKey] = useState("");
+  const [models, setModels] = useState("");
+
+  const save = async () => {
+    try {
+      await api.createProvider({
+        id: id.trim(),
+        baseUrl: baseUrl.trim(),
+        api: apiProt,
+        apiKey: apiKey.trim() || undefined,
+        models: models.split(",").map((m) => m.trim()).filter(Boolean).map((m) => ({ id: m })),
+      });
+      props.onSaved();
+    } catch (e) {
+      props.toast((e as Error).message, true);
+    }
+  };
+
+  return (
+    <Modal title="Nouveau provider custom" onClose={props.onClose}>
+      <Field label="ID (minuscules, chiffres, -)">
+        <input value={id} onChange={(e) => setId(e.target.value)} placeholder="ollama" />
+      </Field>
+      <Field label="Base URL">
+        <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="http://localhost:11434/v1" />
+      </Field>
+      <Field label="Protocole API">
+        <select value={apiProt} onChange={(e) => setApiProt(e.target.value)}>
+          {APIS.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+      </Field>
+      <Field label="Clé API (optionnel — sinon env var du provider)">
+        <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+      </Field>
+      <Field label="Modèles (ids séparés par des virgules)">
+        <input value={models} onChange={(e) => setModels(e.target.value)} placeholder="qwen3, llama3.1" />
+      </Field>
+      <div className="toolbar">
+        <button className="btn btn-primary" disabled={!id.trim() || !baseUrl.trim()} onClick={() => void save()}>Créer</button>
+      </div>
+    </Modal>
+  );
+}
+
+function KeyModal(props: { providerId: string; onClose: () => void; onSaved: () => void; toast: (t: string, err?: boolean) => void }) {
+  const [key, setKey] = useState("");
+  return (
+    <Modal title={`Clé API — ${props.providerId}`} onClose={props.onClose}>
+      <Field label="Nouvelle clé (stockée dans auth.json)" hint="Pour l'OAuth (codex, claude…), utilise le flux pi natif (/login dans un terminal).">
+        <input type="password" value={key} onChange={(e) => setKey(e.target.value)} />
+      </Field>
+      <div className="toolbar">
+        <button
+          className="btn btn-primary"
+          disabled={!key.trim()}
+          onClick={() => {
+            api.updateProvider(props.providerId, { apiKey: key.trim() })
+              .then(props.onSaved)
+              .catch((e: Error) => props.toast(e.message, true));
+          }}
+        >
+          Enregistrer
+        </button>
+      </div>
+    </Modal>
+  );
+}

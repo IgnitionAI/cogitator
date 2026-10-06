@@ -12,19 +12,25 @@ Cogitator orchestre tes processus pi comme l'Adeptus Mechanicus pilote ses cogit
 - **Cron** : tâches planifiées qui tirent un prompt contre un agent, résultat append dans une session dédiée, busy-guard anti-chevauchement.
 - **Config pi complète** : providers (codex, claude, kimi…) lus/écrits via `models.json` / `auth.json`, skills scannés depuis les emplacements natifs, MCP user-level (`~/.pi/agent/mcp.json`).
 
-## Installation (cible)
+## Installation
 
 ```sh
 pi install npm:@ignitionai/cogitator
 # puis dans pi :
-/cogitator          # démarre l'UI sur http://127.0.0.1:5320
+/cogitator          # démarre le serveur détaché et ouvre http://127.0.0.1:5320
 ```
 
 Ou standalone : `npx @ignitionai/cogitator`
 
 ## État du projet
 
-🚧 **Phase spécification** — le package d'architecture est dans [`docs/`](docs/architecture/domain-model.md). Aucun code source pour l'instant. Voir [`docs/context/plans/active/0001-mvp.md`](docs/context/plans/active/0001-mvp.md).
+✅ **MVP M0→M6 terminé** — serveur + extension + UI web. Voir [`docs/context/plans/active/0001-mvp.md`](docs/context/plans/active/0001-mvp.md) et [`docs/context/current-state.md`](docs/context/current-state.md).
+
+## UI web
+
+6 écrans : **Conversations** (chat streaming SSE, historique, stop, switch modèle), **Workspaces** (file-picker, agent par défaut), **Agents** (éditeur de presets complet + Apply herdr), **Providers** (read model pi + clés), **Cron** (tâches, runs, fire manuel), **Settings** (santé, MCP user-level).
+
+Dev UI : `npm run dev:web` (vite sur 5321, proxy API → 5320).
 
 ## Documentation
 

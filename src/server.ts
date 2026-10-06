@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdirSync } from "node:fs";
+import { existsSync, statSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, extname, join, normalize } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from "node:http";
 import type { Db } from "./db.js";
 import { packageVersion, piVersion } from "./pi.js";
@@ -24,19 +25,51 @@ import {
 } from "./conversations.js";
 import { PiPool, PoolError, type PiClientFactory } from "./pool.js";
 import { makeSpawner, type Spawner } from "./spawner.js";
+import { readHistory } from "./history.js";
 import { MCP_ENV_VAR, encodeMcpEnv } from "./mcp-env.js";
 import { buildArgs, type SpawnConfig } from "./spawn.js";
 import {
   browseDir, createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, updateWorkspace,
 } from "./workspaces.js";
 
-const INDEX_HTML = `<!doctype html>
-<html lang="fr">
-<head><meta charset="utf-8"><title>Cogitator</title>
-<style>body{font-family:system-ui;background:#0d1117;color:#e6edf3;display:grid;place-items:center;height:100vh;margin:0}
-main{text-align:center}h1{font-weight:600;letter-spacing:.02em}p{color:#8b949e}</style></head>
-<body><main><h1>Cogitator</h1><p>Panneau de contrôle pi — serveur en ligne. L'UI complète arrive en M6.</p></main></body>
-</html>`;
+/** Localise web/dist en remontant depuis le module (marche en dev src/ comme en prod dist/src/ ou en paquet npm). */
+function findWebDist(): string | null {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 6; i++) {
+    const candidate = join(dir, "web", "dist");
+    if (existsSync(join(candidate, "index.html"))) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+const WEB_DIST = findWebDist();
+
+const CONTENT_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".json": "application/json",
+  ".woff2": "font/woff2",
+};
+
+/** Sert le build statique de l'UI ; SPA fallback vers index.html. */
+function serveStatic(res: ServerResponse, pathname: string): boolean {
+  const root = WEB_DIST;
+  if (!root || !existsSync(root)) return false;
+  const rel = pathname === "/" ? "index.html" : pathname;
+  const file = normalize(join(root, rel));
+  if (!file.startsWith(root)) return false; // pas de traversal
+  const target = existsSync(file) && statSync(file).isFile() ? file : join(root, "index.html");
+  if (!existsSync(target)) return false;
+  res.writeHead(200, { "content-type": CONTENT_TYPES[extname(target)] ?? "application/octet-stream" });
+  res.end(readFileSync(target));
+  return true;
+}
 
 // ---------- Mini routeur ----------
 
@@ -324,6 +357,11 @@ export function createApp(opts: AppOptions): Server {
         subs.delete(listener);
       });
     }],
+    ["GET", "/api/conversations/:id/history", (ctx) => {
+      const conv = getConversation(db, ctx.params.id!);
+      if (!conv) return sendJson(ctx.res, 404, { error: "conversation introuvable" });
+      sendJson(ctx.res, 200, { messages: readHistory(conv.session_file ?? "") });
+    }],
     ["POST", "/api/conversations/:id/messages", async (ctx) => {
       const conv = getConversation(db, ctx.params.id!);
       if (!conv) return sendJson(ctx.res, 404, { error: "conversation introuvable" });
@@ -407,11 +445,7 @@ export function createApp(opts: AppOptions): Server {
 
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
-    if (url.pathname === "/" || url.pathname === "/index.html") {
-      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-      res.end(INDEX_HTML);
-      return;
-    }
+    if (!url.pathname.startsWith("/api/") && serveStatic(res, url.pathname)) return;
     if (!url.pathname.startsWith("/api/")) {
       res.writeHead(404, { "content-type": "text/plain" });
       res.end("not found");

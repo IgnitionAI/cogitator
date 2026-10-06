@@ -54,11 +54,11 @@ test("GET /api/health répond le contrat", async () => {
   assert.equal(body.db.path, join(home, "cogitator.db"));
 });
 
-test("GET / sert le placeholder HTML", async () => {
+test("GET / sert l'UI statique (web/dist)", async () => {
   const res = await fetch(`${base}/`);
   assert.equal(res.status, 200);
   assert.match(res.headers.get("content-type") ?? "", /text\/html/);
-  assert.match(await res.text(), /Cogitator/);
+  assert.match(await res.text(), /id="root"/);
 });
 
 test("route API inconnue → 404 JSON", async () => {

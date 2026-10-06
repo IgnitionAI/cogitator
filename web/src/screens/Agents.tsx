@@ -7,12 +7,14 @@ const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 export default function Agents({ toast }: { toast: (t: string, err?: boolean) => void }) {
   const [agents, setAgents] = useState<AgentPreset[]>([]);
+  const [providers, setProviders] = useState<ProviderView[]>([]);
   const [editing, setEditing] = useState<AgentPreset | "new" | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     api.agents().then((r) => setAgents(r.agents as AgentPreset[])).catch((e: Error) => setError(e.message));
+    api.providers().then((r) => setProviders(r.providers)).catch(() => undefined);
   }, []);
 
   useEffect(refresh, [refresh]);
@@ -34,10 +36,15 @@ export default function Agents({ toast }: { toast: (t: string, err?: boolean) =>
             <div key={a.id} className="card" style={{ cursor: "default" }}>
               <h4>{a.name} {a.is_default ? <Badge color="#9a6700">★ défaut</Badge> : null}</h4>
               <div className="meta">
-                <span className="mono">{a.provider}/{a.model}{a.thinking ? `:${a.thinking}` : ""}</span>
                 <span>{a.skills.length} skill(s) · {a.mcp_servers.length} MCP · {a.subagents?.length ?? 0} subagent(s)</span>
                 {a.description ? <span>{a.description.slice(0, 90)}</span> : null}
               </div>
+              <QuickModel
+                agent={a}
+                providers={providers}
+                onChanged={() => { refresh(); toast(`${a.name} : modèle mis à jour`); }}
+                onError={(m) => toast(m, true)}
+              />
               <div className="actions">
                 <button className="btn btn-sm" onClick={() => setEditing(a)}>Éditer</button>{" "}
                 {!a.is_default ? (
@@ -68,6 +75,60 @@ export default function Agents({ toast }: { toast: (t: string, err?: boolean) =>
       ) : null}
       {showImport ? <ImportSkillsModal onClose={() => setShowImport(false)} toast={toast} /> : null}
     </>
+  );
+}
+
+function QuickModel(props: {
+  agent: AgentPreset;
+  providers: ProviderView[];
+  onChanged: () => void;
+  onError: (message: string) => void;
+}) {
+  const { agent, providers } = props;
+  const provider = providers.find((p) => p.id === agent.provider);
+  const models = provider?.models ?? [];
+
+  const switchTo = async (providerId: string, modelId: string) => {
+    try {
+      const full = await api.agent(agent.id); // PUT exige le preset complet : on récupère puis on patch
+      await api.updateAgent(agent.id, {
+        ...full.agent,
+        provider: providerId,
+        model: modelId,
+      });
+      props.onChanged();
+    } catch (e) {
+      props.onError((e as Error).message);
+    }
+  };
+
+  return (
+    <div className="form-row" style={{ marginTop: 8 }}>
+      <select
+        value={agent.provider}
+        onChange={(e) => {
+          const nextProvider = providers.find((p) => p.id === e.target.value);
+          void switchTo(e.target.value, nextProvider?.models[0]?.id ?? "");
+        }}
+        title="Provider"
+      >
+        {providers.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.id} {p.auth.ready ? "✓" : "⚠"}
+          </option>
+        ))}
+      </select>
+      <select
+        value={agent.model}
+        onChange={(e) => void switchTo(agent.provider, e.target.value)}
+        title="Modèle"
+      >
+        {models.length === 0 ? <option value={agent.model}>{agent.model}</option> : null}
+        {models.map((m) => (
+          <option key={m.id} value={m.id}>{m.id}</option>
+        ))}
+      </select>
+    </div>
   );
 }
 

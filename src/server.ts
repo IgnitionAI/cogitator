@@ -20,6 +20,9 @@ import {
 } from "./conversations.js";
 import { PiPool, PoolError, type PiClientFactory } from "./pool.js";
 import { buildArgs, type SpawnConfig } from "./spawn.js";
+import {
+  browseDir, createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, updateWorkspace,
+} from "./workspaces.js";
 
 const INDEX_HTML = `<!doctype html>
 <html lang="fr">
@@ -210,6 +213,40 @@ export function createApp(opts: AppOptions): Server {
       sendJson(ctx.res, 200, result);
     }],
 
+    // Workspaces (M3)
+    ["GET", "/api/workspaces", (ctx) => {
+      sendJson(ctx.res, 200, { workspaces: listWorkspaces(db) });
+    }],
+    ["POST", "/api/workspaces", (ctx) => {
+      const b = (ctx.body ?? {}) as { dir?: string; name?: string; default_agent_id?: string };
+      if (!b.dir) return sendJson(ctx.res, 400, { error: "dir requis" });
+      const { workspace, error } = createWorkspace(db, {
+        dir: b.dir,
+        name: b.name,
+        default_agent_id: b.default_agent_id ?? null,
+      });
+      if (error) return sendJson(ctx.res, 400, { error });
+      sendJson(ctx.res, 201, { workspace });
+    }],
+    ["PUT", "/api/workspaces/:id", (ctx) => {
+      const b = (ctx.body ?? {}) as { name?: string; default_agent_id?: string | null };
+      const current = getWorkspace(db, ctx.params.id!);
+      if (!current) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      if (b.default_agent_id && !db.prepare("SELECT 1 FROM agent_preset WHERE id = ?").get(b.default_agent_id)) {
+        return sendJson(ctx.res, 400, { error: "agent par défaut introuvable" });
+      }
+      sendJson(ctx.res, 200, { workspace: updateWorkspace(db, ctx.params.id!, b) });
+    }],
+    ["DELETE", "/api/workspaces/:id", (ctx) => {
+      if (!deleteWorkspace(db, ctx.params.id!)) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      sendJson(ctx.res, 200, { ok: true }); // les sessions pi survivent sur disque
+    }],
+    ["GET", "/api/fs/browse", (ctx) => {
+      const result = browseDir(ctx.query.get("path"));
+      if ("error" in result) return sendJson(ctx.res, 400, { error: result.error });
+      sendJson(ctx.res, 200, result);
+    }],
+
     // Conversations (M2)
     ["GET", "/api/conversations", (ctx) => {
       const workspaceId = ctx.query.get("workspace_id");
@@ -223,8 +260,15 @@ export function createApp(opts: AppOptions): Server {
       };
       let spawn: SpawnConfig;
       let agentId: string | null = null;
-      if (b.agent_id) {
-        const preset = getAgent(db, b.agent_id);
+      if (b.workspace_id) {
+        const ws = getWorkspace(db, b.workspace_id);
+        if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+        // héritage : agent par défaut du workspace si rien de précisé
+        if (!b.agent_id && !b.provider) agentId = ws.default_agent_id;
+      }
+      if (b.agent_id) agentId = b.agent_id;
+      if (agentId) {
+        const preset = getAgent(db, agentId);
         if (!preset) return sendJson(ctx.res, 404, { error: "agent introuvable" });
         agentId = preset.id;
         spawn = {
@@ -239,10 +283,6 @@ export function createApp(opts: AppOptions): Server {
         };
       } else {
         return sendJson(ctx.res, 400, { error: "agent_id ou (provider + model) requis" });
-      }
-      if (b.workspace_id) {
-        const ws = db.prepare("SELECT id FROM workspace WHERE id = ?").get(b.workspace_id);
-        if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
       }
       let conv = createConversation(db, { workspaceId: b.workspace_id ?? null, agentId, spawn });
       if (b.prompt?.trim()) {

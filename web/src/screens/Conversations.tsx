@@ -8,6 +8,7 @@ import { Badge, Empty, ErrorText, Field, Modal, statusColor } from "../ui";
 
 type ChatItem =
   | { kind: "user"; text: string }
+  | { kind: "skill"; name: string; text: string; rest?: string }
   | { kind: "assistant"; text: string }
   | { kind: "thinking"; text: string }
   | { kind: "tool"; text: string; args?: string; result?: string; isError?: boolean; state: "running" | "done" }
@@ -75,11 +76,25 @@ function applyEvent(prev: ChatItem[], ev: SseEvent, st: StreamState): ChatItem[]
   }
 }
 
+/** Découpe un message user expandé par pi (`<skill name=…>…</skill>` + consigne restante). */
+function parseSkillMessage(text: string): { name: string; body: string; rest: string } | null {
+  const m = text.match(/^<skill\s+name="([^"]+)"[^>]*>([\s\S]*?)<\/skill>\s*([\s\S]*)$/);
+  if (!m) return null;
+  return { name: m[1]!, body: (m[2] ?? "").trim(), rest: (m[3] ?? "").trim() };
+}
+
 /** Construit la timeline depuis les entrées structurées du .jsonl (montage). */
 function entriesToItems(entries: HistoryEntry[]): ChatItem[] {
   const items: ChatItem[] = [];
   for (const e of entries) {
-    if (e.type === "user") items.push({ kind: "user", text: e.text });
+    if (e.type === "user") {
+      const skill = parseSkillMessage(e.text);
+      if (skill) {
+        items.push({ kind: "skill", name: skill.name, text: skill.body, rest: skill.rest });
+      } else {
+        items.push({ kind: "user", text: e.text });
+      }
+    }
     else if (e.type === "assistant") items.push({ kind: "assistant", text: e.text });
     else if (e.type === "thinking") items.push({ kind: "thinking", text: e.text });
     else items.push({ kind: "tool", text: e.name, args: e.args, result: e.result, isError: e.isError, state: "done" });
@@ -339,6 +354,20 @@ function ChatView(props: {
       ) : null}
         {timeline.map((m, i) => {
           if (m.kind === "status") return <div key={i} className="msg-status">{m.text}</div>;
+          if (m.kind === "skill") {
+            return (
+              <div key={i} className="skill-card">
+                <button className="skill-head" onClick={() => toggle(expanded, setExpanded, i)}>
+                  <span className="skill-pill">🧩</span>
+                  <span className="skill-name">{m.name}</span>
+                  <span className="tool-meta">{m.text.length.toLocaleString()} caractères</span>
+                  <span className={`chevron ${expanded.has(i) ? "open" : ""}`}>▸</span>
+                </button>
+                {expanded.has(i) ? <div className="skill-body">{m.text}</div> : null}
+                {m.rest ? <div className="msg msg-user skill-rest">{m.rest}</div> : null}
+              </div>
+            );
+          }
           if (m.kind === "thinking") {
             return (
               <div key={i} className="msg-thinking">

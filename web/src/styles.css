@@ -318,6 +318,39 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 }
 .tool-detail pre.error { color: var(--urgent); }
 
+/* ---------- Carte skill (message user expandé par pi) ---------- */
+.skill-card {
+  align-self: flex-end; max-width: 82%;
+  border: 1px solid var(--border-strong);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  animation: msg-in 0.2s var(--ease-out-expo);
+  overflow: hidden;
+}
+.skill-head {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 7px 12px;
+  background: none; border: none; cursor: pointer;
+  color: var(--fg); font-family: inherit; font-size: 12.5px; font-weight: 500;
+  transition: 0.1s ease; transition-property: background-color;
+}
+.skill-head:hover { background: var(--raised); }
+.skill-pill { font-size: 12px; }
+.skill-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--accent-hover); }
+.skill-body {
+  border-top: 1px solid var(--border);
+  padding: 10px 13px;
+  color: var(--muted); font-size: 12.5px; line-height: 1.6;
+  white-space: pre-wrap; max-height: 320px; overflow-y: auto;
+  animation: expand-in 0.18s var(--ease-out-quad);
+}
+.skill-rest {
+  margin: 8px 12px 10px;
+  max-width: none; align-self: stretch;
+  animation: msg-in 0.2s var(--ease-out-expo);
+}
+
 /* caret de stream SSE */
 .caret {
   display: inline-block; width: 8px; height: 15px;

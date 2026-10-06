@@ -1,0 +1,50 @@
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { spawn } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+// I4 : l'entry de l'extension ne démarre RIEN au load — uniquement la commande.
+// Le serveur est spawné détaché par le handler, pour survivre à la session pi.
+
+const HOST = "127.0.0.1";
+const PORT = Number(process.env.COGITATOR_PORT ?? 5320);
+const BASE = `http://${HOST}:${PORT}`;
+
+async function isUp(): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE}/api/health`);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function openBrowser(url: string): void {
+  const platform = process.platform;
+  const [cmd, args] =
+    platform === "darwin"
+      ? ["open", [url]]
+      : platform === "win32"
+        ? ["cmd", ["/c", "start", url]]
+        : ["xdg-open", [url]];
+  spawn(cmd, args, { detached: true, stdio: "ignore" }).unref();
+}
+
+export default function (pi: ExtensionAPI) {
+  pi.registerCommand("cogitator", {
+    description: "Ouvrir le panneau de contrôle Cogitator (démarre le serveur si besoin)",
+    handler: async (_args, ctx) => {
+      if (!(await isUp())) {
+        const here = dirname(fileURLToPath(import.meta.url)); // dist/extensions
+        const entry = join(here, "..", "src", "cli.js");
+        spawn(process.execPath, [entry], { detached: true, stdio: "ignore" }).unref();
+        for (let i = 0; i < 50; i++) {
+          if (await isUp()) break;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      }
+      openBrowser(BASE);
+      ctx.ui.notify(`Cogitator — ${BASE}`, "info");
+    },
+  });
+}

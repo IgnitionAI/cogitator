@@ -4,7 +4,7 @@ Date : 2026-10-06
 
 ## État
 
-Projet créé ce jour (repo `IgnitionAI/cogitator`, branche `dev`). **Aucun code source.** Seul contenu : le package d'architecture (domain model, blueprint, API contract, ADRs, contrat, checklist, plan MVP).
+**M0 (squelette) terminé le 2026-10-06** — branche `dev`. Le serveur HTTP natif répond sur `127.0.0.1:5320` (health + placeholder), le schéma SQLite v1 est en place (`~/.cogitator/cogitator.db`), l'extension pi charge sans warning et la commande `/cogitator` démarre le serveur détaché (survit à la session pi). Vérifié : critères de sortie M0 + checklist items 1 et 10.
 
 ## Environment cible de développement
 

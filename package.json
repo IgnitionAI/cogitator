@@ -1,0 +1,45 @@
+{
+  "name": "@ignitionai/cogitator",
+  "version": "0.1.0",
+  "description": "Cogitator — panneau de contrôle web pour pi : agents composables, workspaces, conversations libres, cron. pi package.",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "bin": {
+    "cogitator": "dist/src/cli.js"
+  },
+  "files": [
+    "dist/src",
+    "dist/extensions",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "tsx --test test/*.test.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "pi": {
+    "extensions": [
+      "./dist/extensions/index.js"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.11.1"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.0.4",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

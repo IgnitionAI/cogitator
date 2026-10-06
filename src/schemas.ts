@@ -96,9 +96,16 @@ export const conversationCreateSchema = z.object({
 });
 export type ConversationCreate = z.infer<typeof conversationCreateSchema>;
 
+export const imageContentSchema = z.object({
+  type: z.literal("image"),
+  data: z.string().max(15_000_000, "image > ~10 Mo (base64)"),
+  mimeType: z.string().regex(/^image\//, "mimeType image/* requis"),
+});
+export type ImageContentInput = z.infer<typeof imageContentSchema>;
+
 export const messageSchema = z.object({
   text: z.string().optional(),
-  images: z.array(z.unknown()).optional(),
+  images: z.array(imageContentSchema).max(8, "8 images max par message").optional(),
 }).refine((b) => (b.text?.trim() ?? "") !== "" || (b.images?.length ?? 0) > 0, {
   message: "text ou images requis",
 });

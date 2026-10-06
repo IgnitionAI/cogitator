@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, openEvents } from "../api";
-import type { AgentPreset, Conversation, ProviderView, SkillRef, SseEvent, Workspace } from "../types";
+import type {
+  AgentPreset, Conversation, ImageContentInput, ProviderView, SkillRef, SseEvent, Workspace,
+} from "../types";
 import { Badge, Empty, ErrorText, Field, Modal, statusColor } from "../ui";
 
 interface ChatItem {
@@ -13,36 +15,46 @@ interface RenderMsg {
   text: string;
 }
 
-function eventsToItems(events: SseEvent[]): ChatItem[] {
-  const items: ChatItem[] = [];
-  let currentAssistant: ChatItem | null = null;
-  let currentTool: ChatItem | null = null;
-  for (const e of events) {
-    const ame = e.assistantMessageEvent;
-    if (e.type === "turn_start") {
-      currentAssistant = null;
-      currentTool = null;
-    }
-    if (e.type === "message_update" && ame) {
+interface StreamState {
+  assistantIndex: number | null; // index dans la timeline du message assistant en cours de stream
+}
+
+/** Applique UN événement SSE à la timeline (pi n'émet pas d'événement user : l'UI fait l'écho local). */
+function applyEvent(prev: ChatItem[], ev: SseEvent, st: StreamState): ChatItem[] {
+  const ame = ev.assistantMessageEvent;
+  switch (ev.type) {
+    case "turn_start":
+      st.assistantIndex = null;
+      return prev;
+    case "message_update": {
+      if (!ame) return prev;
       if (ame.type === "text_start") {
-        currentAssistant = { kind: "assistant", text: "" };
-        items.push(currentAssistant);
-      } else if (ame.type === "text_delta" && currentAssistant) {
-        currentAssistant.text += ame.delta ?? "";
-      } else if (ame.type === "text_end" && currentAssistant) {
-        currentAssistant.text = ame.content ?? currentAssistant.text;
-      } else if (ame.type === "toolcall_start") {
-        currentTool = { kind: "tool", text: `⚙ ${ame.toolName ?? "outil"}…` };
-        items.push(currentTool);
-      } else if (ame.type === "toolcall_end") {
-        currentTool = null;
+        st.assistantIndex = prev.length;
+        return [...prev, { kind: "assistant", text: "" }];
       }
+      if (ame.type === "text_delta" && st.assistantIndex !== null) {
+        const next = [...prev];
+        const target = next[st.assistantIndex];
+        if (target) next[st.assistantIndex] = { ...target, text: target.text + (ame.delta ?? "") };
+        return next;
+      }
+      if (ame.type === "text_end" && st.assistantIndex !== null) {
+        const next = [...prev];
+        const target = next[st.assistantIndex];
+        if (target && ame.content) next[st.assistantIndex] = { ...target, text: ame.content };
+        return next;
+      }
+      if (ame.type === "toolcall_start") {
+        return [...prev, { kind: "tool", text: `⚙ ${ame.toolName ?? "outil"}…` }];
+      }
+      return prev;
     }
-    if (e.type === "agent_end") {
-      items.push({ kind: "status", text: "— tour terminé —" });
-    }
+    case "agent_end":
+      st.assistantIndex = null;
+      return [...prev, { kind: "status", text: "— tour terminé —" }];
+    default:
+      return prev;
   }
-  return items;
 }
 
 function historyToItems(messages: RenderMsg[]): ChatItem[] {
@@ -133,49 +145,74 @@ function ChatView(props: {
   toast: (t: string, err?: boolean) => void;
 }) {
   const { conversation } = props;
-  const [items, setItems] = useState<ChatItem[]>([]);
-  const [liveEvents, setLiveEvents] = useState<SseEvent[]>([]);
+  const [timeline, setTimeline] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
+  const [images, setImages] = useState<ImageContentInput[]>([]);
   const [skills, setSkills] = useState<SkillRef[]>([]);
   const [busy, setBusy] = useState(false);
   const [closed, setClosed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const streamRef = useRef<StreamState>({ assistantIndex: null });
 
   // historique puis SSE + liste des skills (invocables via /skill:name, expandé par pi)
   useEffect(() => {
-    api.history(conversation.id).then((r) => setItems(historyToItems(r.messages))).catch(() => undefined);
+    api.history(conversation.id).then((r) => setTimeline(historyToItems(r.messages))).catch(() => undefined);
+    // l'historique peut ne pas être flushé au montage (prompt initial) : on re-tente une fois
+    const refetch = setTimeout(() => {
+      api.history(conversation.id).then((r) => {
+        if (r.messages.length > 0) setTimeline((prev) => (prev.length === 0 ? historyToItems(r.messages) : prev));
+      }).catch(() => undefined);
+    }, 3000);
     api.skills().then((r) => {
       const seen = new Set<string>();
       setSkills(r.skills.filter((s) => (seen.has(s.name) ? false : (seen.add(s.name), true))));
     }).catch(() => undefined);
     const close = openEvents(
       `/api/conversations/${conversation.id}/events`,
-      (e) => setLiveEvents((prev) => [...prev, e as SseEvent]),
+      (e) => setTimeline((prev) => applyEvent(prev, e as SseEvent, streamRef.current)),
       () => setClosed(true),
     );
-    return close;
+    return () => {
+      clearTimeout(refetch);
+      close();
+    };
   }, [conversation.id]);
-
-  const liveItems = eventsToItems(liveEvents);
-  const all = [...items, ...liveItems];
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [all.length, all[all.length - 1]?.text.length]);
+  }, [timeline.length, timeline[timeline.length - 1]?.text.length]);
 
   const send = async () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text && images.length === 0) return;
+    const toSend = images;
     setInput("");
+    setImages([]);
     setBusy(true);
     try {
-      await api.sendMessage(conversation.id, text);
+      await api.sendMessage(conversation.id, text, toSend.length ? toSend : undefined);
+      // écho local : le flux SSE de pi ne contient pas les messages utilisateur
+      setTimeline((prev) => [...prev, { kind: "user", text: text || "🖼 image(s) jointe(s)" }]);
     } catch (e) {
       props.toast((e as Error).message, true);
     } finally {
       setBusy(false);
       taRef.current?.focus();
+    }
+  };
+
+  const addFiles = (files: Iterable<File>) => {
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) continue;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = String(reader.result ?? "");
+        const base64 = dataUrl.split(",")[1] ?? "";
+        if (base64) setImages((prev) => [...prev, { type: "image" as const, data: base64, mimeType: file.type }]);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -202,13 +239,13 @@ function ChatView(props: {
         </button>
       </div>
       <div className="chat-scroll" ref={scrollRef}>
-        {all.length === 0 ? (
+        {timeline.length === 0 ? (
         <Empty>
           {closed ? "Session prête — envoie un message." : "En attente d'événements…"}
           <div style={{ marginTop: 6, fontSize: 12 }}>Astuce : le menu 🧩 charge un skill, ou tape <code>/skill:nom</code> directement.</div>
         </Empty>
       ) : null}
-        {all.map((m, i) =>
+        {timeline.map((m, i) =>
           m.kind === "status" ? (
             <div key={i} className="msg-status">{m.text}</div>
           ) : m.kind === "tool" ? (
@@ -217,8 +254,37 @@ function ChatView(props: {
             <div key={i} className={`msg msg-${m.kind}`}>{m.text}</div>
           ),
         )}
+        {images.length > 0 ? (
+          <div className="msg msg-user" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {images.map((img, i) => (
+              <span key={i} style={{ position: "relative" }}>
+                <img src={`data:${img.mimeType};base64,${img.data}`} style={{ maxWidth: 120, maxHeight: 120, borderRadius: 6 }} />
+                <button
+                  className="btn btn-sm btn-ghost"
+                  style={{ position: "absolute", top: -8, right: -8, background: "var(--bg-3)", borderRadius: "50%" }}
+                  onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+            <span className="muted" style={{ fontSize: 12, alignSelf: "center" }}>{images.length} image(s) à envoyer</span>
+          </div>
+        ) : null}
       </div>
       <div className="chat-input">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files) addFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        <button className="btn" onClick={() => fileRef.current?.click()} title="Joindre une image">📎</button>
         <select
           value=""
           onChange={(e) => {
@@ -235,8 +301,15 @@ function ChatView(props: {
         <textarea
           ref={taRef}
           value={input}
-          placeholder="Message… (Entrée = envoyer, Maj+Entrée = nouvelle ligne)"
+          placeholder="Message… (Entrée = envoyer, Maj+Entrée = nouvelle ligne, collage d'image accepté)"
           onChange={(e) => setInput(e.target.value)}
+          onPaste={(e) => {
+            const files = Array.from(e.clipboardData?.files ?? []);
+            if (files.some((f) => f.type.startsWith("image/"))) {
+              e.preventDefault();
+              addFiles(files);
+            }
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -244,7 +317,7 @@ function ChatView(props: {
             }
           }}
         />
-        <button className="btn btn-primary" onClick={() => void send()} disabled={busy || !input.trim()}>
+        <button className="btn btn-primary" onClick={() => void send()} disabled={busy || (!input.trim() && images.length === 0)}>
           Envoyer
         </button>
       </div>

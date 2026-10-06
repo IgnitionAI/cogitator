@@ -111,6 +111,12 @@ export interface Health {
   db: { path: string; version: number };
 }
 
+export interface ImageContentInput {
+  type: "image";
+  data: string; // base64 sans préfixe data:
+  mimeType: string;
+}
+
 // Événements SSE pi (sous-ensemble rendu par l'UI)
 export interface SseEvent {
   type: string;

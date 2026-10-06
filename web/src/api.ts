@@ -1,5 +1,5 @@
 import type {
-  AgentPreset, Conversation, CronRun, CronTask, Health, ProviderView, SkillRef, Workspace,
+  AgentPreset, Conversation, CronRun, CronTask, Health, ImageContentInput, ProviderView, SkillRef, Workspace,
 } from "./types";
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -47,7 +47,8 @@ export const api = {
   conversation: (id: string) => req<{ conversation: Conversation; live: boolean }>("GET", `/api/conversations/${id}`),
   createConversation: (b: unknown) => req<{ conversation: Conversation }>("POST", "/api/conversations", b),
   deleteConversation: (id: string) => req<{ ok: true }>("DELETE", `/api/conversations/${id}`),
-  sendMessage: (id: string, text: string) => req<{ ok: true }>("POST", `/api/conversations/${id}/messages`, { text }),
+  sendMessage: (id: string, text: string, images?: ImageContentInput[]) =>
+    req<{ ok: true }>("POST", `/api/conversations/${id}/messages`, { text, images }),
   stopConversation: (id: string) => req<{ ok: true }>("POST", `/api/conversations/${id}/stop`),
   switchModel: (id: string, provider: string, modelId: string) =>
     req<{ ok: true }>("POST", `/api/conversations/${id}/model`, { provider, id: modelId }),

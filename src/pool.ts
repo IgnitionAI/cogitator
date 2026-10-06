@@ -8,7 +8,7 @@ export interface PiClientLike {
   stop(): Promise<void>;
   onEvent(listener: (event: unknown) => void): () => void;
   getState(): Promise<{ sessionFile?: string; isStreaming?: boolean }>;
-  prompt(message: string, images?: unknown[]): Promise<unknown>;
+  prompt(message: string, images?: unknown[], streamingBehavior?: "steer" | "followUp"): Promise<unknown>;
   abort(): Promise<void>;
   setModel(provider: string, modelId: string): Promise<unknown>;
 }
@@ -144,7 +144,8 @@ export class PiPool {
   async prompt(convId: string, text: string, images?: unknown[]): Promise<unknown> {
     const h = this.live(convId);
     try {
-      return await h.client.prompt(text, images);
+      // followUp : file comme le TUI quand un tour est en cours (sinon pi rejette le prompt)
+      return await h.client.prompt(text, images, "followUp");
     } catch (err) {
       h.dead = true;
       this.status(convId, "dead");

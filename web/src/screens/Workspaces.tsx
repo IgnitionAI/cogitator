@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import type { AgentPreset, Workspace } from "../types";
+import type { AgentPreset, FileChange, Workspace } from "../types";
 import { Empty, ErrorText, Field, Modal } from "../ui";
+
+interface WorkspaceActivity {
+  files: FileChange[];
+  totals: { additions: number; deletions: number };
+  conversations: number;
+}
 
 interface BrowseResult {
   path: string;
@@ -12,11 +18,18 @@ interface BrowseResult {
 export default function Workspaces({ toast }: { toast: (t: string, err?: boolean) => void }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [agents, setAgents] = useState<AgentPreset[]>([]);
+  const [activity, setActivity] = useState<Record<string, WorkspaceActivity>>({});
+  const [activityFor, setActivityFor] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    api.workspaces().then((r) => setWorkspaces(r.workspaces)).catch((e: Error) => setError(e.message));
+    api.workspaces().then((r) => {
+      setWorkspaces(r.workspaces);
+      for (const w of r.workspaces) {
+        api.workspaceActivity(w.id).then((a) => setActivity((prev) => ({ ...prev, [w.id]: a }))).catch(() => undefined);
+      }
+    }).catch((e: Error) => setError(e.message));
     api.agents().then((r) => setAgents(r.agents as AgentPreset[])).catch(() => undefined);
   }, []);
 
@@ -40,6 +53,13 @@ export default function Workspaces({ toast }: { toast: (t: string, err?: boolean
               <div className="meta">
                 <span className="mono">{w.dir}</span>
                 <span>{w.conversation_count ?? 0} conversation(s)</span>
+                {activity[w.id] && activity[w.id]!.files.length > 0 ? (
+                  <span className="file-stats">
+                    activité : <span className="add">+{activity[w.id]!.totals.additions}</span>
+                    <span className="del">−{activity[w.id]!.totals.deletions}</span>
+                    <span className="muted"> sur {activity[w.id]!.files.length} fichier(s)</span>
+                  </span>
+                ) : null}
               </div>
               <Field label="Agent par défaut">
                 <select
@@ -55,6 +75,9 @@ export default function Workspaces({ toast }: { toast: (t: string, err?: boolean
                 </select>
               </Field>
               <div className="actions">
+                <button className="btn btn-sm" onClick={() => setActivityFor(w.id)}>
+                  📄 Activité{activity[w.id] && activity[w.id]!.files.length > 0 ? ` (${activity[w.id]!.files.length})` : ""}
+                </button>{" "}
                 <button
                   className="btn btn-sm btn-danger"
                   onClick={() => {
@@ -71,6 +94,27 @@ export default function Workspaces({ toast }: { toast: (t: string, err?: boolean
         </div>
       )}
       {showAdd ? <AddWorkspaceModal onClose={() => setShowAdd(false)} onAdded={() => { setShowAdd(false); refresh(); }} toast={toast} /> : null}
+      {activityFor && activity[activityFor] ? (
+        <Modal title={`Activité — ${workspaces.find((w) => w.id === activityFor)?.name ?? ""}`} onClose={() => setActivityFor(null)} wide>
+          <div className="file-stats" style={{ marginBottom: 12, fontSize: 13 }}>
+            <span className="add">+{activity[activityFor]!.totals.additions}</span>
+            <span className="del">−{activity[activityFor]!.totals.deletions}</span>
+            <span className="muted"> sur {activity[activityFor]!.files.length} fichier(s) · {activity[activityFor]!.conversations} conversation(s) scannée(s)</span>
+          </div>
+          <div className="chat-side-list" style={{ maxHeight: "55vh" }}>
+            {activity[activityFor]!.files.map((f) => (
+              <div key={f.path} className="file-row" title={f.path}>
+                <span className={`file-kind ${f.kind}`}>{f.kind === "write" ? "W" : "E"}</span>
+                <span className="file-path mono">{f.path.split("/").slice(-2).join("/")}</span>
+                <span className="file-stats">
+                  {f.additions > 0 ? <span className="add">+{f.additions}</span> : null}
+                  {f.deletions > 0 ? <span className="del">−{f.deletions}</span> : null}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      ) : null}
     </>
   );
 }

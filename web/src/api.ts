@@ -41,6 +41,10 @@ export const api = {
     req<{ path: string; parent: string | null; entries: Array<{ name: string; path: string; type: "dir" | "file" }> }>(
       "GET", `/api/fs/browse${path ? `?path=${encodeURIComponent(path)}` : ""}`,
     ),
+  workspaceActivity: (id: string) =>
+    req<{ files: FileChange[]; totals: { additions: number; deletions: number }; conversations: number }>(
+      "GET", `/api/workspaces/${id}/activity`,
+    ),
 
   conversations: (workspaceId?: string) =>
     req<{ conversations: Conversation[] }>("GET", `/api/conversations${workspaceId ? `?workspace_id=${workspaceId}` : ""}`),

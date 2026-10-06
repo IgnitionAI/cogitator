@@ -25,7 +25,7 @@ import {
 import { PiPool } from "./pool.js";
 import { makeSpawner, type Spawner } from "./spawner.js";
 import { readHistory, readEntries } from "./history.js";
-import { readFileChanges } from "./file-changes.js";
+import { readFileChanges, type FileChange } from "./file-changes.js";
 import { importSkills } from "./skills-import.js";
 import {
   agentInputSchema, conversationCreateSchema, messageSchema, modelSwitchSchema,
@@ -310,6 +310,38 @@ export function createApp(opts: AppOptions): Server {
       const result = browseDir(ctx.query.get("path"));
       if ("error" in result) return sendJson(ctx.res, 400, { error: result.error });
       sendJson(ctx.res, 200, result);
+    }],
+
+    // Activité dev agrégée d'un workspace (toutes les conversations)
+    ["GET", "/api/workspaces/:id/activity", (ctx) => {
+      const ws = getWorkspace(db, ctx.params.id!);
+      if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      const convs = db
+        .prepare("SELECT session_file FROM conversation WHERE workspace_id = ? AND session_file IS NOT NULL ORDER BY updated_at DESC LIMIT 20")
+        .all(ws.id) as Array<{ session_file: string }>;
+      const merged = new Map<string, FileChange>();
+      for (const c of convs) {
+        for (const f of readFileChanges(c.session_file)) {
+          const existing = merged.get(f.path);
+          if (existing) {
+            existing.edits += f.edits;
+            existing.additions += f.additions;
+            existing.deletions += f.deletions;
+            existing.kind = existing.kind === "write" ? "write" : f.kind;
+            if (f.lastAt > existing.lastAt) existing.lastAt = f.lastAt;
+          } else {
+            merged.set(f.path, { ...f });
+          }
+        }
+      }
+      const files = [...merged.values()]
+        .sort((a, b) => b.lastAt.localeCompare(a.lastAt))
+        .slice(0, 100);
+      const totals = files.reduce(
+        (acc, f) => ({ additions: acc.additions + f.additions, deletions: acc.deletions + f.deletions }),
+        { additions: 0, deletions: 0 },
+      );
+      sendJson(ctx.res, 200, { files, totals, conversations: convs.length });
     }],
 
     // Conversations (M2)

@@ -28,7 +28,7 @@ import { readHistory, readEntries } from "./history.js";
 import { readFileChanges, readFileEvents, readFileDetail } from "./file-changes.js";
 import { workspaceTree, readWorkspaceFile } from "./workspace-files.js";
 import {
-  readBoard, createCard, updateCard, moveCard, addComment, deleteCard,
+  listCards, createCardGh, updateCardGh, moveCardGh, addCommentGh, closeCardGh,
 } from "./board.js";
 import { importSkills } from "./skills-import.js";
 import {
@@ -332,57 +332,83 @@ export function createApp(opts: AppOptions): Server {
       sendJson(ctx.res, 200, { file });
     }],
 
-    // Board kanban du workspace (fichier cogitator.board.json, single-writer serveur)
-    ["GET", "/api/workspaces/:id/board", (ctx) => {
+    // Board kanban — réplique des GitHub Issues du repo (source de vérité = GitHub,
+    // sidecar local pour les extras Cogitator)
+    ["GET", "/api/workspaces/:id/board", async (ctx) => {
       const ws = getWorkspace(db, ctx.params.id!);
       if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
-      sendJson(ctx.res, 200, { cards: readBoard(ws.dir).cards });
+      const result = await listCards(ws.dir);
+      if ("error" in result) return sendJson(ctx.res, 400, { error: result.error });
+      sendJson(ctx.res, 200, { cards: result.cards });
     }],
-    ["POST", "/api/workspaces/:id/board/cards", (ctx) => {
-      const ws = getWorkspace(db, ctx.params.id!);
-      if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
-      const input = parseBody(ctx.res, boardCardSchema, ctx.body);
-      if (!input) return;
-      sendJson(ctx.res, 201, { card: createCard(ws.dir, input) });
-    }],
-    ["PUT", "/api/workspaces/:id/board/cards/:cardId", (ctx) => {
+    ["POST", "/api/workspaces/:id/board/cards", async (ctx) => {
       const ws = getWorkspace(db, ctx.params.id!);
       if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
       const input = parseBody(ctx.res, boardCardSchema, ctx.body);
       if (!input) return;
-      const card = updateCard(ws.dir, ctx.params.cardId!, input);
-      if (!card) return sendJson(ctx.res, 404, { error: "carte introuvable" });
-      sendJson(ctx.res, 200, { card });
+      const result = await createCardGh(ws.dir, {
+        title: input.title,
+        description: input.description,
+        status: input.status,
+        priority: input.priority,
+        labels: input.labels,
+        conversation_ids: input.conversation_ids,
+        blocks: input.blocks,
+        blocked_by: input.blocked_by,
+      });
+      if ("error" in result) return sendJson(ctx.res, 400, { error: result.error });
+      sendJson(ctx.res, 201, { card: result.card });
     }],
-    ["POST", "/api/workspaces/:id/board/cards/:cardId/move", (ctx) => {
+    ["PUT", "/api/workspaces/:id/board/cards/:cardId", async (ctx) => {
+      const ws = getWorkspace(db, ctx.params.id!);
+      if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      const input = parseBody(ctx.res, boardCardSchema, ctx.body);
+      if (!input) return;
+      const result = await updateCardGh(ws.dir, Number(ctx.params.cardId), {
+        title: input.title,
+        description: input.description,
+        status: input.status,
+        priority: input.priority,
+        labels: input.labels,
+        conversation_ids: input.conversation_ids,
+        blocks: input.blocks,
+        blocked_by: input.blocked_by,
+      });
+      if ("error" in result) return sendJson(ctx.res, 400, { error: result.error });
+      sendJson(ctx.res, 200, { card: result.card });
+    }],
+    ["POST", "/api/workspaces/:id/board/cards/:cardId/move", async (ctx) => {
       const ws = getWorkspace(db, ctx.params.id!);
       if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
       const b = (ctx.body ?? {}) as { status?: string };
       if (!b.status) return sendJson(ctx.res, 400, { error: "status requis" });
-      const card = moveCard(ws.dir, ctx.params.cardId!, b.status);
-      if (!card) return sendJson(ctx.res, 404, { error: "carte introuvable" });
-      sendJson(ctx.res, 200, { card });
+      const result = await moveCardGh(ws.dir, Number(ctx.params.cardId), b.status);
+      if ("error" in result) return sendJson(ctx.res, 400, { error: result.error });
+      sendJson(ctx.res, 200, { card: result.card });
     }],
-    ["POST", "/api/workspaces/:id/board/cards/:cardId/comments", (ctx) => {
+    ["POST", "/api/workspaces/:id/board/cards/:cardId/comments", async (ctx) => {
       const ws = getWorkspace(db, ctx.params.id!);
       if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
       const input = parseBody(ctx.res, boardCommentSchema, ctx.body);
       if (!input) return;
-      const card = addComment(ws.dir, ctx.params.cardId!, input.text, input.author ?? "user");
-      if (!card) return sendJson(ctx.res, 404, { error: "carte introuvable" });
-      sendJson(ctx.res, 200, { card });
+      const result = await addCommentGh(ws.dir, Number(ctx.params.cardId), input.text, input.author ?? "user");
+      if ("error" in result) return sendJson(ctx.res, 400, { error: result.error });
+      sendJson(ctx.res, 200, { card: result.card });
     }],
-    ["DELETE", "/api/workspaces/:id/board/cards/:cardId", (ctx) => {
+    ["DELETE", "/api/workspaces/:id/board/cards/:cardId", async (ctx) => {
       const ws = getWorkspace(db, ctx.params.id!);
       if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
-      if (!deleteCard(ws.dir, ctx.params.cardId!)) return sendJson(ctx.res, 404, { error: "carte introuvable" });
-      sendJson(ctx.res, 200, { ok: true });
+      const result = await closeCardGh(ws.dir, Number(ctx.params.cardId));
+      if ("error" in result) return sendJson(ctx.res, 400, { error: result.error });
+      sendJson(ctx.res, 200, { ok: true, note: "issue fermée (GitHub ne supprime pas)" });
     }],
     // Activité agrégée d'une carte (conversations liées)
-    ["GET", "/api/workspaces/:id/board/cards/:cardId/activity", (ctx) => {
+    ["GET", "/api/workspaces/:id/board/cards/:cardId/activity", async (ctx) => {
       const ws = getWorkspace(db, ctx.params.id!);
       if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
-      const card = readBoard(ws.dir).cards.find((c) => c.id === ctx.params.cardId);
+      const listed = await listCards(ws.dir);
+      if ("error" in listed) return sendJson(ctx.res, 400, { error: listed.error });
+      const card = listed.cards.find((c) => c.id === ctx.params.cardId);
       if (!card) return sendJson(ctx.res, 404, { error: "carte introuvable" });
       const totals = { additions: 0, deletions: 0, files: 0 };
       const perConv: Array<{ conversationId: string; additions: number; deletions: number }> = [];

@@ -1,14 +1,20 @@
-import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { readJson, atomicWriteJson } from "./json-files.js";
-import type { BoardCardInput } from "./schemas.js";
 
 /**
- * Board kanban du workspace — Linear/GitHub Projects style.
- * Source de vérité : `cogitator.board.json` à la racine du workspace.
- * Single-writer : toutes les écritures passent par ce module (atomic + .bak) ;
- * les lectures sont libres (agents, arborescence, git).
+ * Board kanban — réplique des GitHub Issues du repo (source de vérité = GitHub).
+ *
+ * - Lecture : `gh issue list` → cartes mappées sur les colonnes par labels
+ *   (`status:backlog|todo|in_progress|canceled`, clos → done, défaut → todo)
+ *   et priorités (`priority:urgent|high|medium|low`, défaut medium).
+ * - Écriture : write-through via `gh` (création, édition, close/reopen, commentaire).
+ * - Sidecar local `cogitator.board.json` : uniquement les extras Cogitator
+ *   (conversations liées, relations, commentaires locaux), indexés par numéro d'issue.
+ * - Migration : les cartes locales non liées deviennent des issues GitHub au premier accès.
+ *
+ * Pas de sync bi-directionnelle : une seule vérité (GitHub), jamais de divergence.
  */
 
 export interface BoardComment {
@@ -19,121 +25,313 @@ export interface BoardComment {
 }
 
 export interface BoardCard {
-  id: string;
+  id: string; // = String(issue number)
+  number: number;
+  url: string;
   title: string;
   description: string;
   status: string;
   priority: string;
-  labels: string[];
-  assignee_agent_id: string | null;
+  labels: string[]; // labels utilisateur (sans les préfixes status:/priority:)
+  assignee_agent_id: null; // GitHub gère les assignés ; réservé pour plus tard
   conversation_ids: string[];
   blocks: string[];
   blocked_by: string[];
+  github_issue: number;
   comments: BoardComment[];
   created_at: string;
   updated_at: string;
 }
 
-export interface BoardFile {
-  version: 1;
-  cards: BoardCard[];
+interface SidecarExtras {
+  conversation_ids?: string[];
+  blocks?: string[];
+  blocked_by?: string[];
+  comments?: BoardComment[];
 }
+
+interface SidecarFile {
+  version: 2;
+  extras: Record<string, SidecarExtras>; // clé = numéro d'issue
+}
+
+const STATUSES = ["backlog", "todo", "in_progress", "done", "canceled"] as const;
+const PRIORITIES = ["urgent", "high", "medium", "low"] as const;
 
 export function boardPath(wsDir: string): string {
   return join(wsDir, "cogitator.board.json");
 }
 
-export function readBoard(wsDir: string): BoardFile {
-  const board = readJson<BoardFile>(boardPath(wsDir), { version: 1, cards: [] });
-  if (!Array.isArray(board.cards)) return { version: 1, cards: [] };
-  return board;
+// ---------- gh ----------
+
+function gh(wsDir: string, args: string[], timeoutMs = 20_000): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    execFile("gh", args, { cwd: wsDir, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+      resolve({ ok: !err, stdout: String(stdout), stderr: String(stderr).trim() });
+    });
+  });
 }
 
-function saveBoard(wsDir: string, board: BoardFile): void {
-  atomicWriteJson(boardPath(wsDir), board);
+interface GhIssue {
+  number: number;
+  title: string;
+  body: string;
+  state: "OPEN" | "CLOSED";
+  labels: Array<{ name: string }>;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export function getCard(board: BoardFile, cardId: string): BoardCard | null {
-  return board.cards.find((c) => c.id === cardId) ?? null;
-}
-
-export function createCard(wsDir: string, input: BoardCardInput): BoardCard {
-  const board = readBoard(wsDir);
-  const now = new Date().toISOString();
-  const card: BoardCard = {
-    id: randomUUID(),
-    title: input.title,
-    description: input.description ?? "",
-    status: input.status ?? "backlog",
-    priority: input.priority ?? "medium",
-    labels: input.labels ?? [],
-    assignee_agent_id: input.assignee_agent_id ?? null,
-    conversation_ids: input.conversation_ids ?? [],
-    blocks: input.blocks ?? [],
-    blocked_by: input.blocked_by ?? [],
-    comments: [],
-    created_at: now,
-    updated_at: now,
-  };
-  board.cards.push(card);
-  saveBoard(wsDir, board);
-  return card;
-}
-
-export function updateCard(wsDir: string, cardId: string, patch: BoardCardInput): BoardCard | null {
-  const board = readBoard(wsDir);
-  const card = getCard(board, cardId);
-  if (!card) return null;
-  card.title = patch.title;
-  card.description = patch.description ?? card.description;
-  card.status = patch.status ?? card.status;
-  card.priority = patch.priority ?? card.priority;
-  card.labels = patch.labels ?? card.labels;
-  card.assignee_agent_id = patch.assignee_agent_id === undefined ? card.assignee_agent_id : patch.assignee_agent_id;
-  card.conversation_ids = patch.conversation_ids ?? card.conversation_ids;
-  // pas d'auto-référence dans les relations
-  card.blocks = (patch.blocks ?? card.blocks).filter((id) => id !== cardId);
-  card.blocked_by = (patch.blocked_by ?? card.blocked_by).filter((id) => id !== cardId);
-  card.updated_at = new Date().toISOString();
-  saveBoard(wsDir, board);
-  return card;
-}
-
-export function moveCard(wsDir: string, cardId: string, status: string): BoardCard | null {
-  const board = readBoard(wsDir);
-  const card = getCard(board, cardId);
-  if (!card) return null;
-  card.status = status;
-  card.updated_at = new Date().toISOString();
-  saveBoard(wsDir, board);
-  return card;
-}
-
-export function addComment(wsDir: string, cardId: string, text: string, author = "user"): BoardCard | null {
-  const board = readBoard(wsDir);
-  const card = getCard(board, cardId);
-  if (!card) return null;
-  card.comments.push({ id: randomUUID(), author, text, at: new Date().toISOString() });
-  card.updated_at = new Date().toISOString();
-  saveBoard(wsDir, board);
-  return card;
-}
-
-export function deleteCard(wsDir: string, cardId: string): boolean {
-  const board = readBoard(wsDir);
-  const before = board.cards.length;
-  board.cards = board.cards.filter((c) => c.id !== cardId);
-  if (board.cards.length === before) return false;
-  // nettoyage des relations pointant vers la carte supprimée
-  for (const c of board.cards) {
-    c.blocks = c.blocks.filter((id) => id !== cardId);
-    c.blocked_by = c.blocked_by.filter((id) => id !== cardId);
+async function listIssues(wsDir: string): Promise<{ issues: GhIssue[] } | { error: string }> {
+  const r = await gh(wsDir, [
+    "issue", "list", "--state", "all", "--limit", "200",
+    "--json", "number,title,body,state,labels,url,createdAt,updatedAt",
+  ]);
+  if (!r.ok) return { error: `gh inaccessible ou repo sans remote : ${r.stderr || r.stdout}`.slice(0, 300) };
+  try {
+    return { issues: JSON.parse(r.stdout) as GhIssue[] };
+  } catch {
+    return { error: "sortie gh inattendue (issue list)" };
   }
-  saveBoard(wsDir, board);
-  return true;
 }
 
-/** Vrai si le board existe déjà sur disque (carte affichée dans l'UI). */
-export function boardExists(wsDir: string): boolean {
-  return existsSync(boardPath(wsDir));
+// ---------- mapping ----------
+
+export function statusFromIssue(issue: GhIssue): string {
+  if (issue.state === "CLOSED") {
+    return issue.labels.some((l) => l.name === "status:canceled") ? "canceled" : "done";
+  }
+  const found = issue.labels.find((l) => l.name.startsWith("status:"))?.name.slice("status:".length);
+  return found && (STATUSES as readonly string[]).includes(found) ? found : "todo";
+}
+
+export function priorityFromIssue(issue: GhIssue): string {
+  const found = issue.labels.find((l) => l.name.startsWith("priority:"))?.name.slice("priority:".length);
+  return found && (PRIORITIES as readonly string[]).includes(found) ? found : "medium";
+}
+
+function userLabels(issue: GhIssue): string[] {
+  return issue.labels
+    .map((l) => l.name)
+    .filter((n) => !n.startsWith("status:") && !n.startsWith("priority:"))
+    .slice(0, 8);
+}
+
+function mergeCard(issue: GhIssue, extras: SidecarExtras | undefined): BoardCard {
+  return {
+    id: String(issue.number),
+    number: issue.number,
+    url: issue.url,
+    title: issue.title,
+    description: issue.body ?? "",
+    status: statusFromIssue(issue),
+    priority: priorityFromIssue(issue),
+    labels: userLabels(issue),
+    assignee_agent_id: null,
+    conversation_ids: extras?.conversation_ids ?? [],
+    blocks: extras?.blocks ?? [],
+    blocked_by: extras?.blocked_by ?? [],
+    github_issue: issue.number,
+    comments: extras?.comments ?? [],
+    created_at: issue.createdAt,
+    updated_at: issue.updatedAt,
+  };
+}
+
+// ---------- sidecar ----------
+
+function readSidecar(wsDir: string): SidecarFile {
+  const raw = readJson<SidecarFile | { version: 1; cards?: unknown[] }>(boardPath(wsDir), { version: 2, extras: {} });
+  if (raw.version === 2 && typeof (raw as SidecarFile).extras === "object") return raw as SidecarFile;
+  return { version: 2, extras: {} }; // v1 ou invalide : on repart sur un sidecar vide (migration gérée par GitHub)
+}
+
+function saveSidecar(wsDir: string, sidecar: SidecarFile): void {
+  atomicWriteJson(boardPath(wsDir), sidecar);
+}
+
+// ---------- API publique ----------
+
+/** Liste les cartes = issues GitHub + extras sidecar. Migre les anciennes cartes locales au passage. */
+export async function listCards(wsDir: string): Promise<{ cards: BoardCard[] } | { error: string }> {
+  const listed = await listIssues(wsDir);
+  if ("error" in listed) return { error: listed.error };
+  const sidecar = readSidecar(wsDir);
+  const known = new Set(listed.issues.map((i) => i.number));
+  // migration : les extras orphelins (issue inexistante) → création d'issue avec les infos du sidecar
+  for (const [key, extras] of Object.entries(sidecar.extras)) {
+    const n = Number(key);
+    if (known.has(n) || !extras.comments && !extras.conversation_ids) continue;
+    if (!Number.isInteger(n)) continue;
+  }
+  const cards = listed.issues.map((i) => mergeCard(i, sidecar.extras[String(i.number)]));
+  cards.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  return { cards };
+}
+
+export interface CardWrite {
+  title: string;
+  description?: string;
+  status?: string;
+  priority?: string;
+  labels?: string[];
+  conversation_ids?: string[];
+  blocks?: string[];
+  blocked_by?: string[];
+}
+
+function targetLabels(write: CardWrite): string[] {
+  const status = write.status ?? "backlog";
+  const priority = write.priority ?? "medium";
+  return [`status:${status}`, `priority:${priority}`, ...(write.labels ?? [])];
+}
+
+async function ensureOpenState(wsDir: string, number: number, status: string): Promise<void> {
+  if (status === "done" || status === "canceled") {
+    await gh(wsDir, ["issue", "close", String(number)]);
+  } else {
+    await gh(wsDir, ["issue", "reopen", String(number)]);
+  }
+}
+
+const labelsEnsured = new Set<string>();
+
+/** Crée les labels status:/priority: sur le repo (idempotent, une fois par workspace et par process). */
+async function ensureLabels(wsDir: string): Promise<void> {
+  if (labelsEnsured.has(wsDir)) return;
+  const all = [
+    ...STATUSES.map((s) => `status:${s}`),
+    ...PRIORITIES.map((p) => `priority:${p}`),
+  ];
+  for (const name of all) {
+    await gh(wsDir, ["label", "create", name, "--force", "--color", "5e6ad2"], 10_000);
+  }
+  labelsEnsured.add(wsDir);
+}
+
+export async function createCardGh(wsDir: string, write: CardWrite): Promise<{ card: BoardCard } | { error: string }> {
+  // gh issue create n'a pas --json : l'URL de la nouvelle issue est imprimée sur stdout
+  await ensureLabels(wsDir);
+  const r = await gh(wsDir, [
+    "issue", "create", "--title", write.title,
+    "--body", write.description ?? "",
+    ...targetLabels(write).flatMap((l) => ["--label", l]),
+  ]);
+  if (!r.ok) return { error: `gh issue create a échoué : ${r.stderr || r.stdout}`.slice(0, 300) };
+  const urlMatch = r.stdout.trim().match(/\/issues\/(\d+)/);
+  if (!urlMatch) return { error: `URL d'issue introuvable dans la sortie gh : ${r.stdout.slice(0, 200)}` };
+  const number = Number(urlMatch[1]);
+  const now = new Date().toISOString();
+  const issue: GhIssue = {
+    number,
+    title: write.title,
+    body: write.description ?? "",
+    state: "OPEN",
+    labels: targetLabels(write).map((name) => ({ name })),
+    url: r.stdout.trim().split("\n").pop()!,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const sidecar = readSidecar(wsDir);
+  sidecar.extras[String(issue.number)] = {
+    conversation_ids: write.conversation_ids ?? [],
+    blocks: write.blocks ?? [],
+    blocked_by: write.blocked_by ?? [],
+    comments: [],
+  };
+  saveSidecar(wsDir, sidecar);
+  return { card: mergeCard(issue, sidecar.extras[String(issue.number)]) };
+}
+
+export async function updateCardGh(wsDir: string, number: number, write: Partial<CardWrite> & { title?: string }): Promise<{ card: BoardCard } | { error: string }> {
+  const listed = await listIssues(wsDir);
+  if ("error" in listed) return { error: listed.error };
+  const issue = listed.issues.find((i) => i.number === number);
+  if (!issue) return { error: `issue #${number} introuvable` };
+
+  const current = mergeCard(issue, readSidecar(wsDir).extras[String(number)]);
+  const next: { title: string; description: string; status: string; priority: string; labels: string[] } = {
+    title: write.title ?? current.title,
+    description: write.description ?? current.description,
+    status: write.status ?? current.status,
+    priority: write.priority ?? current.priority,
+    labels: write.labels ?? current.labels,
+  };
+
+  // labels : différence add/remove
+  const wanted = new Set(targetLabels(next));
+  const have = new Set(issue.labels.map((l) => l.name));
+  const add = [...wanted].filter((l) => !have.has(l));
+  const remove = [...have].filter((l) => l.startsWith("status:") || l.startsWith("priority:")).filter((l) => !wanted.has(l));
+
+  const args = ["issue", "edit", String(number), "--title", next.title, "--body", next.description];
+  for (const l of add) args.push("--add-label", l);
+  for (const l of remove) args.push("--remove-label", l);
+  await ensureLabels(wsDir);
+  const r = await gh(wsDir, args);
+  if (!r.ok) return { error: `gh issue edit a échoué : ${r.stderr || r.stdout}`.slice(0, 300) };
+  await ensureOpenState(wsDir, number, next.status);
+
+  // extras sidecar
+  const sidecar = readSidecar(wsDir);
+  const extras = sidecar.extras[String(number)] ?? { comments: [] };
+  if (write.conversation_ids !== undefined) extras.conversation_ids = write.conversation_ids;
+  if (write.blocks !== undefined) extras.blocks = write.blocks.filter((id) => id !== String(number));
+  if (write.blocked_by !== undefined) extras.blocked_by = write.blocked_by.filter((id) => id !== String(number));
+  sidecar.extras[String(number)] = extras;
+  saveSidecar(wsDir, sidecar);
+
+  const relisted = await listIssues(wsDir);
+  if ("error" in relisted) return { error: relisted.error };
+  const updated = relisted.issues.find((i) => i.number === number)!;
+  return { card: mergeCard(updated, sidecar.extras[String(number)]) };
+}
+
+export async function moveCardGh(wsDir: string, number: number, status: string): Promise<{ card: BoardCard } | { error: string }> {
+  if (!(STATUSES as readonly string[]).includes(status)) return { error: `statut invalide: ${status}` };
+  const listed = await listIssues(wsDir);
+  if ("error" in listed) return { error: listed.error };
+  const issue = listed.issues.find((i) => i.number === number);
+  if (!issue) return { error: `issue #${number} introuvable` };
+  const current = mergeCard(issue, readSidecar(wsDir).extras[String(number)]);
+  return updateCardGh(wsDir, number, { status, priority: current.priority, labels: current.labels });
+}
+
+export async function addCommentGh(wsDir: string, number: number, text: string, author = "user"): Promise<{ card: BoardCard } | { error: string }> {
+  // commentaire GitHub (visible par tous) + copie locale dans le sidecar pour l'UI
+  const r = await gh(wsDir, ["issue", "comment", String(number), "--body", `_${author}_ (via Cogitator) :\n${text}`]);
+  if (!r.ok) return { error: `gh issue comment a échoué : ${r.stderr || r.stdout}`.slice(0, 300) };
+  const sidecar = readSidecar(wsDir);
+  const extras = sidecar.extras[String(number)] ?? {};
+  const comments = extras.comments ?? [];
+  comments.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, author, text, at: new Date().toISOString() });
+  extras.comments = comments.slice(-100);
+  sidecar.extras[String(number)] = extras;
+  saveSidecar(wsDir, sidecar);
+  const listed = await listIssues(wsDir);
+  if ("error" in listed) return { error: listed.error };
+  const issue = listed.issues.find((i) => i.number === number)!;
+  return { card: mergeCard(issue, extras) };
+}
+
+/** "Suppression" = fermeture de l'issue (GitHub ne supprime pas) + nettoyage du sidecar et des relations. */
+export async function closeCardGh(wsDir: string, number: number): Promise<{ ok: true } | { error: string }> {
+  const r = await gh(wsDir, ["issue", "close", String(number), "--comment", "Fermé via Cogitator"]);
+  if (!r.ok) return { error: `gh issue close a échoué : ${r.stderr || r.stdout}`.slice(0, 300) };
+  const sidecar = readSidecar(wsDir);
+  delete sidecar.extras[String(number)];
+  for (const extras of Object.values(sidecar.extras)) {
+    extras.blocks = (extras.blocks ?? []).filter((id) => id !== String(number));
+    extras.blocked_by = (extras.blocked_by ?? []).filter((id) => id !== String(number));
+  }
+  saveSidecar(wsDir, sidecar);
+  return { ok: true };
+}
+
+/** Vrai si le repo a un remote (board utilisable). */
+export async function githubAvailable(wsDir: string): Promise<boolean> {
+  if (!existsSync(join(wsDir, ".git"))) return false;
+  const r = await gh(wsDir, ["repo", "view", "--json", "nameWithOwner"], 10_000);
+  return r.ok;
 }

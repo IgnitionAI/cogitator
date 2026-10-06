@@ -505,6 +505,8 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 .board-card-top { display: flex; align-items: flex-start; gap: 7px; }
 .board-prio { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; margin-top: 5px; }
 .board-title { font-size: 12.5px; font-weight: 500; line-height: 1.4; }
+.board-gh { font-size: 10.5px; color: var(--subtle); text-decoration: none; display: inline-block; margin-top: 4px; }
+.board-gh:hover { color: var(--accent-hover); }
 .board-labels { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
 .board-label {
   font-size: 10.5px; padding: 0 6px; border-radius: 4px;

@@ -157,6 +157,7 @@ export const boardCardSchema = z.object({
   conversation_ids: z.array(z.string()).max(10).optional(),
   blocks: z.array(z.string()).max(20).optional(),
   blocked_by: z.array(z.string()).max(20).optional(),
+  github_issue: z.number().int().nullable().optional(),
 });
 export type BoardCardInput = z.infer<typeof boardCardSchema>;
 

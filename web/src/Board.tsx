@@ -69,6 +69,7 @@ export function BoardPanel(props: {
                       <span className="board-prio" style={{ background: prio?.color }} title={prio?.label} />
                       <span className="board-title">{c.title}</span>
                     </div>
+                    <a className="board-gh mono" href={c.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>↗ #{c.number}</a>
                     {c.labels.length > 0 ? (
                       <div className="board-labels">
                         {c.labels.map((l) => (
@@ -247,11 +248,8 @@ function CardDetail(props: {
       <Field label="Description"><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
       <div className="form-row">
         <Field label="Labels (virgules)"><input value={form.labels} onChange={(e) => setForm({ ...form, labels: e.target.value })} /></Field>
-        <Field label="Assigné (agent)">
-          <select value={form.assignee_agent_id} onChange={(e) => setForm({ ...form, assignee_agent_id: e.target.value })}>
-            <option value="">— non assigné —</option>
-            {props.agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
+        <Field label="Issue">
+          <a className="md-link mono" href={card.url} target="_blank" rel="noreferrer">↗ GitHub #{card.number}</a>
         </Field>
       </div>
       <Field label={`Conversations liées (${form.conversation_ids.length})`}>

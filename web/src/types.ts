@@ -126,6 +126,8 @@ export interface BoardComment {
 
 export interface BoardCard {
   id: string;
+  number: number;
+  url: string;
   title: string;
   description: string;
   status: string;

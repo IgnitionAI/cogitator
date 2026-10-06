@@ -78,13 +78,9 @@ function DiffAffordance() {
   return <span className="chevron afford">▸</span>;
 }
 
-/** Arborescence du workspace : tree à gauche, contenu read-only à droite. */
-export function FileTreeModal(props: {
+export function TreePanel(props: {
   workspaceId: string;
-  workspaceName: string;
-  /** fichiers modifiés (activité) : surlignés dans le tree */
   modifiedPaths?: Set<string>;
-  onClose: () => void;
 }) {
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -137,7 +133,6 @@ export function FileTreeModal(props: {
     ));
 
   return (
-    <Modal title={`Arborescence — ${props.workspaceName}`} onClose={props.onClose} wide>
       <div className="tree-panes">
         <div className="tree-nav">{renderNodes(tree, 0)}</div>
         <div className="tree-viewer">
@@ -156,6 +151,19 @@ export function FileTreeModal(props: {
           ) : null}
         </div>
       </div>
+  );
+}
+
+/** Arborescence du workspace : tree à gauche, contenu read-only à droite. */
+export function FileTreeModal(props: {
+  workspaceId: string;
+  workspaceName: string;
+  modifiedPaths?: Set<string>;
+  onClose: () => void;
+}) {
+  return (
+    <Modal title={`Arborescence — ${props.workspaceName}`} onClose={props.onClose} wide>
+      <TreePanel workspaceId={props.workspaceId} modifiedPaths={props.modifiedPaths} />
     </Modal>
   );
 }

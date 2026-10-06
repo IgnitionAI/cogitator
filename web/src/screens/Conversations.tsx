@@ -139,9 +139,20 @@ function reconcile(prev: ChatItem[], entries: HistoryEntry[], st: StreamState): 
   return out;
 }
 
-export default function Conversations({ toast }: { toast: (t: string, err?: boolean) => void }) {
+export default function Conversations({ toast, initialOpenId, onConsumeInitial }: {
+  toast: (t: string, err?: boolean) => void;
+  initialOpenId?: string | null;
+  onConsumeInitial?: () => void;
+}) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null);
+
+  useEffect(() => {
+    if (initialOpenId) {
+      setOpenId(initialOpenId);
+      onConsumeInitial?.();
+    }
+  }, [initialOpenId, onConsumeInitial]);
   const [showNew, setShowNew] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

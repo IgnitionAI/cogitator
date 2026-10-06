@@ -6,7 +6,7 @@ import { getPackageDir, RpcClient } from "@earendil-works/pi-coding-agent";
 import { HOST, PORT } from "./config.js";
 import { CronService } from "./cron.js";
 import { setConversationStatus } from "./conversations.js";
-import { seedDefaultAgent } from "./default-agent.js";
+import { seedDefaultAgents } from "./default-agent.js";
 import { openDb } from "./db.js";
 import { getPaths } from "./paths.js";
 import { PiPool } from "./pool.js";
@@ -17,10 +17,11 @@ const paths = getPaths();
 mkdirSync(paths.home, { recursive: true });
 const { db, version } = openDb(paths.db);
 
-// Seed du Majordome (agent opérateur par défaut) si aucun agent n'existe
+// Seed des agents par défaut : Majordome (opérateur) + Chef de Projet (PM)
 {
-  const { created } = seedDefaultAgent(db, paths);
-  if (created) console.log("[cogitator] agent par défaut créé : Majordome");
+  const seeded = seedDefaultAgents(db, paths);
+  if (seeded.majordome) console.log("[cogitator] agent par défaut créé : Majordome");
+  if (seeded.chef) console.log("[cogitator] agent créé : Chef de Projet");
 }
 
 // I3 : tout spawn passe par ce pool (factory RpcClient officiel, cli.js du pi résolu)

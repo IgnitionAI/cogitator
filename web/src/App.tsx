@@ -7,6 +7,8 @@ import Agents from "./screens/Agents";
 import Providers from "./screens/Providers";
 import Cron from "./screens/Cron";
 import Settings from "./screens/Settings";
+import WorkspacePage from "./WorkspacePage";
+import type { Workspace } from "./types";
 
 const NAV = [
   { id: "conversations", icon: "💬", label: "Conversations" },
@@ -37,9 +39,13 @@ export default function App() {
   const [screen, setScreen] = useState<string>("conversations");
   const [health, setHealth] = useState<Health | null>(null);
   const [toasts, toast] = useToasts();
+  const [openWorkspace, setOpenWorkspace] = useState<Workspace | null>(null);
+  const [agents, setAgents] = useState<import("./types").AgentPreset[]>([]);
+  const [pendingConv, setPendingConv] = useState<string | null>(null);
 
   useEffect(() => {
     api.health().then(setHealth).catch(() => undefined);
+    api.agents().then((r) => setAgents(r.agents as import("./types").AgentPreset[])).catch(() => undefined);
     const close = openEvents("/api/events", (e) => {
       const ev = e as { type?: string; name?: string; status?: string; error?: string };
       if (ev.type === "cron_run_finished") {
@@ -58,6 +64,12 @@ export default function App() {
     settings: Settings,
   }[screen] ?? Conversations;
 
+  const commonProps = {
+    toast,
+    ...(screen === "conversations" ? { initialOpenId: pendingConv, onConsumeInitial: () => setPendingConv(null) } : {}),
+    ...(screen === "workspaces" ? { onOpenWorkspace: (w: Workspace) => { setAgents; setOpenWorkspace(w); } } : {}),
+  };
+
   return (
     <>
       <aside className="sidebar">
@@ -72,7 +84,17 @@ export default function App() {
         </div>
       </aside>
       <main className="main">
-        <Screen toast={toast} />
+        {openWorkspace ? (
+          <WorkspacePage
+            workspace={openWorkspace}
+            agents={agents}
+            toast={toast}
+            onBack={() => setOpenWorkspace(null)}
+            onOpenConversation={(id) => { setPendingConv(id); setOpenWorkspace(null); setScreen("conversations"); }}
+          />
+        ) : (
+          <Screen {...commonProps} />
+        )}
       </main>
       <div className="toasts">
         {toasts.map((t) => (

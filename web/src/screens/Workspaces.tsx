@@ -3,6 +3,7 @@ import { api } from "../api";
 import type { AgentPreset, FeedEvent, FileChange, Workspace } from "../types";
 import { Empty, ErrorText, Field, Modal } from "../ui";
 import { FileDiffModal, FileRow, FileTreeModal } from "../FileViews";
+import BoardModal from "../Board";
 
 interface WorkspaceActivity {
   files: FileChange[];
@@ -16,7 +17,7 @@ interface BrowseResult {
   entries: Array<{ name: string; path: string; type: "dir" | "file" }>;
 }
 
-export default function Workspaces({ toast }: { toast: (t: string, err?: boolean) => void }) {
+export default function Workspaces({ toast, onOpenWorkspace }: { toast: (t: string, err?: boolean) => void; onOpenWorkspace?: (w: Workspace) => void }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [agents, setAgents] = useState<AgentPreset[]>([]);
   const [activity, setActivity] = useState<Record<string, WorkspaceActivity>>({});
@@ -25,6 +26,7 @@ export default function Workspaces({ toast }: { toast: (t: string, err?: boolean
   const [feed, setFeed] = useState<FeedEvent[]>([]);
   const [diffFor, setDiffFor] = useState<{ convId: string; path: string } | null>(null);
   const [treeFor, setTreeFor] = useState<string | null>(null);
+  const [boardFor, setBoardFor] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,7 +55,7 @@ export default function Workspaces({ toast }: { toast: (t: string, err?: boolean
       ) : (
         <div className="cards">
           {workspaces.map((w) => (
-            <div key={w.id} className="card" style={{ cursor: "default" }}>
+            <div key={w.id} className="card clickable" onClick={() => onOpenWorkspace?.(w)}>
               <h4>{w.name}</h4>
               <div className="meta">
                 <span className="mono">{w.dir}</span>
@@ -94,6 +96,9 @@ export default function Workspaces({ toast }: { toast: (t: string, err?: boolean
                 </button>{" "}
                 <button className="btn btn-sm" onClick={() => setTreeFor(w.id)} title="Arborescence read-only">
                   🌳 Arborescence
+                </button>{" "}
+                <button className="btn btn-sm" onClick={() => setBoardFor(w.id)} title="Board kanban du projet">
+                  🗂 Board
                 </button>{" "}
                 <button
                   className="btn btn-sm btn-danger"
@@ -157,6 +162,15 @@ export default function Workspaces({ toast }: { toast: (t: string, err?: boolean
       ) : null}
       {diffFor ? (
         <FileDiffModal conversationId={diffFor.convId} path={diffFor.path} onClose={() => setDiffFor(null)} />
+      ) : null}
+      {boardFor ? (
+        <BoardModal
+          workspaceId={boardFor}
+          workspaceName={workspaces.find((w) => w.id === boardFor)?.name ?? ""}
+          agents={agents}
+          onClose={() => setBoardFor(null)}
+          toast={toast}
+        />
       ) : null}
       {treeFor ? (
         <FileTreeModal

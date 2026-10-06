@@ -142,6 +142,30 @@ export const scheduleUpdateSchema = z.object({
 });
 export type ScheduleUpdate = z.infer<typeof scheduleUpdateSchema>;
 
+// ---------- Board (kanban workspace) ----------
+
+export const CARD_STATUSES = ["backlog", "todo", "in_progress", "done", "canceled"] as const;
+export const CARD_PRIORITIES = ["urgent", "high", "medium", "low"] as const;
+
+export const boardCardSchema = z.object({
+  title: z.string().min(1, "title requis").max(200),
+  description: z.string().max(20_000).optional(),
+  status: z.enum(CARD_STATUSES).optional(),
+  priority: z.enum(CARD_PRIORITIES).optional(),
+  labels: z.array(z.string().min(1).max(30)).max(8).optional(),
+  assignee_agent_id: z.string().nullable().optional(),
+  conversation_ids: z.array(z.string()).max(10).optional(),
+  blocks: z.array(z.string()).max(20).optional(),
+  blocked_by: z.array(z.string()).max(20).optional(),
+});
+export type BoardCardInput = z.infer<typeof boardCardSchema>;
+
+export const boardCommentSchema = z.object({
+  text: z.string().min(1).max(5000),
+  author: z.string().min(1).max(60).optional(), // défaut "user" ; le Majordome passe son nom
+});
+export type BoardCommentInput = z.infer<typeof boardCommentSchema>;
+
 // ---------- Skills ----------
 
 export const skillImportSchema = z.object({

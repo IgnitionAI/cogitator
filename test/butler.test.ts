@@ -25,7 +25,7 @@ const { getPaths } = await import("../src/paths.js");
 const { createApp } = await import("../src/server.js");
 const { PiPool } = await import("../src/pool.js");
 const { setConversationStatus } = await import("../src/conversations.js");
-const { seedDefaultAgent, findPackageRoot } = await import("../src/default-agent.js");
+const { seedDefaultAgents, findPackageRoot } = await import("../src/default-agent.js");
 const { getDefaultAgentId, setDefaultAgent, createAgent, getAgent } = await import("../src/agents.js");
 
 let fakeCounter = 0;
@@ -68,11 +68,12 @@ after(async () => {
   rmSync(home, { recursive: true, force: true });
 });
 
-test("seed : crée le Majordome avec le serveur MCP cogitator, une seule fois", () => {
-  const r1 = seedDefaultAgent(db, getPaths());
-  assert.equal(r1.created, true);
-  const maj = getAgent(db, r1.agentId!)!;
-  assert.equal(maj.slug, "majordome");
+test("seed : Majordome (défaut) + Chef de Projet, avec MCP cogitator, idempotent", () => {
+  const r1 = seedDefaultAgents(db, getPaths());
+  assert.equal(r1.majordome, true);
+  assert.equal(r1.chef, true);
+  const majRow = db.prepare("SELECT id FROM agent_preset WHERE slug = 'majordome'").get() as { id: string };
+  const maj = getAgent(db, majRow.id)!;
   assert.equal(maj.is_default, 1);
   assert.equal(maj.provider, "openai"); // repris des defaults pi
   assert.equal(maj.mcp_servers.length, 1);
@@ -80,10 +81,17 @@ test("seed : crée le Majordome avec le serveur MCP cogitator, une seule fois", 
   assert.match(maj.mcp_servers[0]!.args?.[0] ?? "", /mcp-server\.js$/);
   assert.match(maj.system_prompt, /Majordome/);
 
-  const r2 = seedDefaultAgent(db, getPaths());
-  assert.equal(r2.created, false); // idempotent
+  const chefRow = db.prepare("SELECT id FROM agent_preset WHERE slug = 'chef-de-projet'").get() as { id: string };
+  const chef = getAgent(db, chefRow.id)!;
+  assert.equal(chef.is_default ?? 0, 0); // pas l'agent par défaut
+  assert.match(chef.system_prompt, /cogitator\.board\.json/);
+  assert.match(chef.system_prompt, /Chef de Projet/);
+
+  const r2 = seedDefaultAgents(db, getPaths());
+  assert.equal(r2.majordome, false); // idempotent
+  assert.equal(r2.chef, false);
   const count = db.prepare("SELECT COUNT(*) AS n FROM agent_preset").get() as { n: number };
-  assert.equal(count.n, 1);
+  assert.equal(count.n, 2);
 });
 
 test("défaut unique : setDefaultAgent bascule, un seul à 1", () => {

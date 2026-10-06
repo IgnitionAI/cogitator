@@ -1,5 +1,5 @@
 import type {
-  AgentPreset, Conversation, CronRun, CronTask, FeedEvent, FileChange, FileEvent, Health, ImageContentInput, ProviderView, SkillRef, Workspace,
+  AgentPreset, BoardCard, Conversation, CronRun, CronTask, FeedEvent, FileChange, FileEvent, Health, ImageContentInput, ProviderView, SkillRef, Workspace,
 } from "./types";
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -68,6 +68,16 @@ export const api = {
     req<{ events: FeedEvent[]; conversations: number }>("GET", `/api/workspaces/${id}/feed`),
   workspaceTree: (id: string) =>
     req<{ root: string; tree: import("./FileViews").TreeNode[] }>("GET", `/api/workspaces/${id}/tree`),
+  board: (id: string) => req<{ cards: BoardCard[] }>("GET", `/api/workspaces/${id}/board`),
+  boardCreateCard: (id: string, b: unknown) => req<{ card: BoardCard }>("POST", `/api/workspaces/${id}/board/cards`, b),
+  boardUpdateCard: (id: string, cardId: string, b: unknown) => req<{ card: BoardCard }>("PUT", `/api/workspaces/${id}/board/cards/${cardId}`, b),
+  boardMove: (id: string, cardId: string, status: string) => req<{ card: BoardCard }>("POST", `/api/workspaces/${id}/board/cards/${cardId}/move`, { status }),
+  boardComment: (id: string, cardId: string, b: unknown) => req<{ card: BoardCard }>("POST", `/api/workspaces/${id}/board/cards/${cardId}/comments`, b),
+  boardDeleteCard: (id: string, cardId: string) => req<{ ok: true }>("DELETE", `/api/workspaces/${id}/board/cards/${cardId}`),
+  boardCardActivity: (id: string, cardId: string) =>
+    req<{ totals: { additions: number; deletions: number; files: number }; perConversation: Array<{ conversationId: string; additions: number; deletions: number }> }>(
+      "GET", `/api/workspaces/${id}/board/cards/${cardId}/activity`,
+    ),
   workspaceFile: (id: string, path: string) =>
     req<{ file: { path: string; name: string; size: number; content: string; truncated: boolean } }>(
       "GET", `/api/workspaces/${id}/file?path=${encodeURIComponent(path)}`,

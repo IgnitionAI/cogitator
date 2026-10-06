@@ -117,6 +117,29 @@ export interface ImageContentInput {
   mimeType: string;
 }
 
+export interface BoardComment {
+  id: string;
+  author: string;
+  text: string;
+  at: string;
+}
+
+export interface BoardCard {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  labels: string[];
+  assignee_agent_id: string | null;
+  conversation_ids: string[];
+  blocks: string[];
+  blocked_by: string[];
+  comments: BoardComment[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface FileChange {
   path: string;
   kind: "edit" | "write";

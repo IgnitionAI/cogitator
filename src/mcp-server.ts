@@ -182,6 +182,61 @@ addTool("cogitator_import_skills", "Importe des skills : repo GitHub (ex: Igniti
 
 addTool("cogitator_health", "État du serveur Cogitator (version, pi, sessions, base).", {}, () => call("GET", "/api/health"));
 
+// ---------- Board kanban (gestion de projet du workspace) ----------
+
+addTool("cogitator_board_list", "Liste les cartes du board kanban d'un workspace (statut, priorité, labels, assigné, relations).",
+  { workspace_id: z.string() },
+  (a) => call("GET", `/api/workspaces/${a.workspace_id}/board`));
+
+addTool("cogitator_board_create_card", "Crée une carte sur le board : titre, description, statut, priorité, labels, assigné (agent id), conversations liées, relations blocks/blocked_by.",
+  {
+    workspace_id: z.string(),
+    title: z.string(),
+    description: z.string().optional(),
+    status: z.enum(["backlog", "todo", "in_progress", "done", "canceled"]).optional(),
+    priority: z.enum(["urgent", "high", "medium", "low"]).optional(),
+    labels: z.array(z.string()).optional(),
+    assignee_agent_id: z.string().nullable().optional(),
+    conversation_ids: z.array(z.string()).optional(),
+  },
+  (a) => call("POST", `/api/workspaces/${a.workspace_id}/board/cards`, a));
+
+addTool("cogitator_board_update_card", "Met à jour une carte (mêmes champs que create ; écrase la config). Relations : blocks/blocked_by (ids de cartes).",
+  {
+    workspace_id: z.string(),
+    card_id: z.string(),
+    title: z.string().optional(),
+    description: z.string().optional(),
+    status: z.enum(["backlog", "todo", "in_progress", "done", "canceled"]).optional(),
+    priority: z.enum(["urgent", "high", "medium", "low"]).optional(),
+    labels: z.array(z.string()).optional(),
+    assignee_agent_id: z.string().nullable().optional(),
+    conversation_ids: z.array(z.string()).optional(),
+    blocks: z.array(z.string()).optional(),
+    blocked_by: z.array(z.string()).optional(),
+  },
+  (a) => {
+    const { workspace_id, card_id, ...body } = a;
+    return call("PUT", `/api/workspaces/${workspace_id}/board/cards/${card_id}`, body);
+  });
+
+addTool("cogitator_board_move", "Déplace une carte vers une colonne (statut).",
+  {
+    workspace_id: z.string(),
+    card_id: z.string(),
+    status: z.enum(["backlog", "todo", "in_progress", "done", "canceled"]),
+  },
+  (a) => call("POST", `/api/workspaces/${a.workspace_id}/board/cards/${a.card_id}/move`, { status: a.status }));
+
+addTool("cogitator_board_comment", "Ajoute un commentaire à une carte (append-only). Auteur par défaut : Majordome.",
+  {
+    workspace_id: z.string(),
+    card_id: z.string(),
+    text: z.string(),
+    author: z.string().optional(),
+  },
+  (a) => call("POST", `/api/workspaces/${a.workspace_id}/board/cards/${a.card_id}/comments`, { text: a.text, author: a.author ?? "Majordome" }));
+
 const transport = new StdioServerTransport();
 await server.connect(transport);
 console.error(`[cogitator-mcp] connecté à ${BASE}`);

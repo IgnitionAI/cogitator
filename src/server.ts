@@ -27,11 +27,14 @@ import { makeSpawner, type Spawner } from "./spawner.js";
 import { readHistory, readEntries } from "./history.js";
 import { readFileChanges, readFileEvents, readFileDetail } from "./file-changes.js";
 import { workspaceTree, readWorkspaceFile } from "./workspace-files.js";
+import {
+  readBoard, createCard, updateCard, moveCard, addComment, deleteCard,
+} from "./board.js";
 import { importSkills } from "./skills-import.js";
 import {
   agentInputSchema, conversationCreateSchema, messageSchema, modelSwitchSchema,
   providerUpsertSchema, scheduleCreateSchema, scheduleUpdateSchema, skillImportSchema,
-  workspaceCreateSchema, workspaceUpdateSchema,
+  workspaceCreateSchema, workspaceUpdateSchema, boardCardSchema, boardCommentSchema,
 } from "./schemas.js";
 import type { SpawnConfig } from "./spawn.js";
 import {
@@ -327,6 +330,74 @@ export function createApp(opts: AppOptions): Server {
       const { file, error } = readWorkspaceFile(ws.dir, path);
       if (error) return sendJson(ctx.res, 400, { error });
       sendJson(ctx.res, 200, { file });
+    }],
+
+    // Board kanban du workspace (fichier cogitator.board.json, single-writer serveur)
+    ["GET", "/api/workspaces/:id/board", (ctx) => {
+      const ws = getWorkspace(db, ctx.params.id!);
+      if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      sendJson(ctx.res, 200, { cards: readBoard(ws.dir).cards });
+    }],
+    ["POST", "/api/workspaces/:id/board/cards", (ctx) => {
+      const ws = getWorkspace(db, ctx.params.id!);
+      if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      const input = parseBody(ctx.res, boardCardSchema, ctx.body);
+      if (!input) return;
+      sendJson(ctx.res, 201, { card: createCard(ws.dir, input) });
+    }],
+    ["PUT", "/api/workspaces/:id/board/cards/:cardId", (ctx) => {
+      const ws = getWorkspace(db, ctx.params.id!);
+      if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      const input = parseBody(ctx.res, boardCardSchema, ctx.body);
+      if (!input) return;
+      const card = updateCard(ws.dir, ctx.params.cardId!, input);
+      if (!card) return sendJson(ctx.res, 404, { error: "carte introuvable" });
+      sendJson(ctx.res, 200, { card });
+    }],
+    ["POST", "/api/workspaces/:id/board/cards/:cardId/move", (ctx) => {
+      const ws = getWorkspace(db, ctx.params.id!);
+      if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      const b = (ctx.body ?? {}) as { status?: string };
+      if (!b.status) return sendJson(ctx.res, 400, { error: "status requis" });
+      const card = moveCard(ws.dir, ctx.params.cardId!, b.status);
+      if (!card) return sendJson(ctx.res, 404, { error: "carte introuvable" });
+      sendJson(ctx.res, 200, { card });
+    }],
+    ["POST", "/api/workspaces/:id/board/cards/:cardId/comments", (ctx) => {
+      const ws = getWorkspace(db, ctx.params.id!);
+      if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      const input = parseBody(ctx.res, boardCommentSchema, ctx.body);
+      if (!input) return;
+      const card = addComment(ws.dir, ctx.params.cardId!, input.text, input.author ?? "user");
+      if (!card) return sendJson(ctx.res, 404, { error: "carte introuvable" });
+      sendJson(ctx.res, 200, { card });
+    }],
+    ["DELETE", "/api/workspaces/:id/board/cards/:cardId", (ctx) => {
+      const ws = getWorkspace(db, ctx.params.id!);
+      if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      if (!deleteCard(ws.dir, ctx.params.cardId!)) return sendJson(ctx.res, 404, { error: "carte introuvable" });
+      sendJson(ctx.res, 200, { ok: true });
+    }],
+    // Activité agrégée d'une carte (conversations liées)
+    ["GET", "/api/workspaces/:id/board/cards/:cardId/activity", (ctx) => {
+      const ws = getWorkspace(db, ctx.params.id!);
+      if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      const card = readBoard(ws.dir).cards.find((c) => c.id === ctx.params.cardId);
+      if (!card) return sendJson(ctx.res, 404, { error: "carte introuvable" });
+      const totals = { additions: 0, deletions: 0, files: 0 };
+      const perConv: Array<{ conversationId: string; additions: number; deletions: number }> = [];
+      for (const convId of card.conversation_ids) {
+        const conv = db.prepare("SELECT session_file FROM conversation WHERE id = ?").get(convId) as { session_file: string | null } | undefined;
+        if (!conv?.session_file) continue;
+        const changes = readFileChanges(conv.session_file);
+        const a = changes.reduce((n, f) => n + f.additions, 0);
+        const d = changes.reduce((n, f) => n + f.deletions, 0);
+        totals.additions += a;
+        totals.deletions += d;
+        totals.files += changes.length;
+        perConv.push({ conversationId: convId, additions: a, deletions: d });
+      }
+      sendJson(ctx.res, 200, { totals, perConversation: perConv });
     }],
     ["GET", "/api/workspaces/:id/activity", (ctx) => {
       const ws = getWorkspace(db, ctx.params.id!);

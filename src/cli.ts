@@ -1,15 +1,19 @@
 #!/usr/bin/env node
-import { join } from "node:path";
-import { HOST, PORT, HOME } from "./config.js";
+import { mkdirSync } from "node:fs";
+import { HOST, PORT } from "./config.js";
 import { openDb } from "./db.js";
+import { getPaths } from "./paths.js";
 import { createApp } from "./server.js";
 
-const { db, version } = openDb();
-const server = createApp({ db, dbPath: join(HOME, "cogitator.db"), dbVersion: version });
+const paths = getPaths();
+mkdirSync(paths.home, { recursive: true });
+const { db, version } = openDb(paths.db);
+const server = createApp({ db, dbPath: paths.db, dbVersion: version, paths });
 
 server.listen(PORT, HOST, () => {
   console.log(`[cogitator] http://${HOST}:${PORT}`);
-  console.log(`[cogitator] data: ${HOME}`);
+  console.log(`[cogitator] data: ${paths.home}`);
+  console.log(`[cogitator] pi agents: ${paths.piAgentsDir}`);
 });
 
 server.on("error", (err: NodeJS.ErrnoException) => {

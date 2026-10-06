@@ -4,7 +4,12 @@ Date : 2026-10-06
 
 ## État
 
-**M0 (squelette) terminé le 2026-10-06** — branche `dev`. Le serveur HTTP natif répond sur `127.0.0.1:5320` (health + placeholder), le schéma SQLite v1 est en place (`~/.cogitator/cogitator.db`), l'extension pi charge sans warning et la commande `/cogitator` démarre le serveur détaché (survit à la session pi). Vérifié : critères de sortie M0 + checklist items 1 et 10.
+**M0 (squelette) et M1 (registry + agents) terminés le 2026-10-06** — branche `dev`.
+
+- **M0** : serveur HTTP natif (health + placeholder), schéma SQLite v1, extension pi `/cogitator` (spawn détaché). Vérifié : critères de sortie + checklist items 1, 10.
+- **M1** : read model pi (providers + statut auth via `pi auth check`, skills scannés, `mcp.json`), CRUD providers (models.json/auth.json atomiques + backup), CRUD AgentPresets + validation, Apply → définitions herdr `noo-*.md` (O1/O2), détection pi-mcp-adapter dans health. 13 tests au vert ; E2E live validé (création d'un preset openai/gpt-5.4 + subagent deepseek, validate 0 erreur, `.md` correct, cleanup propre). Checklist items 5, 6 verts.
+
+Prochain : M2 (PiProcessPool + conversations).
 
 ## Environment cible de développement
 

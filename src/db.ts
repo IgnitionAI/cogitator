@@ -1,8 +1,4 @@
 import Database from "better-sqlite3";
-import { join } from "node:path";
-import { HOME } from "./config.js";
-
-export type Db = Database.Database;
 
 const SCHEMA_V1 = `
 CREATE TABLE IF NOT EXISTS agent_preset (
@@ -82,8 +78,10 @@ CREATE TABLE IF NOT EXISTS cron_run (
 );
 `;
 
-export function openDb(): { db: Db; version: number } {
-  const db = new Database(join(HOME, "cogitator.db"));
+export type Db = Database.Database;
+
+export function openDb(dbPath: string): { db: Db; version: number } {
+  const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   const version = db.pragma("user_version", { simple: true }) as number;

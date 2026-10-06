@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { createApp } from "../src/server.js";
+import { getPaths } from "../src/paths.js";
 
 let home: string;
 let db: Database.Database;
@@ -23,7 +24,7 @@ before(async () => {
     CREATE TABLE cron_task (id TEXT PRIMARY KEY);
     CREATE TABLE cron_run (id TEXT PRIMARY KEY);
   `);
-  server = createApp({ db, dbPath: join(home, "cogitator.db"), dbVersion: 1 });
+  server = createApp({ db, dbPath: join(home, "cogitator.db"), dbVersion: 1, paths: getPaths() });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });

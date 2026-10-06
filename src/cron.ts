@@ -4,6 +4,7 @@ import type { Db } from "./db.js";
 import { getAgent } from "./agents.js";
 import { createConversation, type ConversationRow } from "./conversations.js";
 import type { PiPool } from "./pool.js";
+import type { ScheduleCreate, ScheduleUpdate } from "./schemas.js";
 import type { SpawnConfig } from "./spawn.js";
 import type { Spawner } from "./spawner.js";
 
@@ -75,18 +76,9 @@ export function nextAfter(task: CronTaskRow, from = new Date()): Date | null {
   }
 }
 
-export interface CronTaskInput {
-  name: string;
-  cron_expr: string;
-  prompt: string;
-  agent_id: string;
-  workspace_id: string;
-  output_policy?: string;
-  busy_policy?: string;
-  catchup?: boolean;
-}
+export type CronTaskInput = ScheduleCreate;
 
-export function createTask(db: Db, input: CronTaskInput): { task?: CronTaskRow; error?: string } {
+export function createTask(db: Db, input: ScheduleCreate): { task?: CronTaskRow; error?: string } {
   if (!input.name?.trim()) return { error: "name requis" };
   if (!validateCronExpr(input.cron_expr)) return { error: `expression cron invalide: ${input.cron_expr}` };
   if (!input.prompt?.trim()) return { error: "prompt requis" };
@@ -105,7 +97,7 @@ export function createTask(db: Db, input: CronTaskInput): { task?: CronTaskRow; 
   return { task: getTask(db, id)! };
 }
 
-export function updateTask(db: Db, id: string, input: Partial<CronTaskInput> & { enabled?: boolean }): CronTaskRow | null {
+export function updateTask(db: Db, id: string, input: ScheduleUpdate): CronTaskRow | null {
   const t = getTask(db, id);
   if (!t) return null;
   if (input.cron_expr !== undefined && !validateCronExpr(input.cron_expr)) return null;

@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { existsSync, statSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from "node:http";
@@ -10,25 +9,29 @@ import { packageVersion, piVersion } from "./pi.js";
 import type { Paths } from "./paths.js";
 import {
   API_PROTOCOLS, deleteProvider, listProviders, listSkills, mcpAdapterDetected,
-  readMcp, upsertProvider, validateMcpConfig, writeMcp, type ProviderInput,
+  readMcp, upsertProvider, validateMcpConfig, writeMcp,
 } from "./registry.js";
 import {
   applyAgent, createAgent, deleteAgent, getAgent, listAgents, unapplyAgent,
-  updateAgent, validateAgent, getDefaultAgentId, setDefaultAgent, type AgentInput,
+  updateAgent, validateAgent, getDefaultAgentId, setDefaultAgent,
 } from "./agents.js";
 import {
   CronService, createTask, deleteTask, getTask, listRuns, listTasks, updateTask,
 } from "./cron.js";
 import {
   createConversation, deleteConversation, getConversation, listConversations,
-  setConversationModel, setConversationSession, setConversationStatus, setConversationTitle,
+  setConversationModel, setConversationTitle,
 } from "./conversations.js";
-import { PiPool, PoolError, type PiClientFactory } from "./pool.js";
+import { PiPool } from "./pool.js";
 import { makeSpawner, type Spawner } from "./spawner.js";
 import { readHistory } from "./history.js";
 import { importSkills } from "./skills-import.js";
-import { MCP_ENV_VAR, encodeMcpEnv } from "./mcp-env.js";
-import { buildArgs, type SpawnConfig } from "./spawn.js";
+import {
+  agentInputSchema, conversationCreateSchema, messageSchema, modelSwitchSchema,
+  providerUpsertSchema, scheduleCreateSchema, scheduleUpdateSchema, skillImportSchema,
+  workspaceCreateSchema, workspaceUpdateSchema,
+} from "./schemas.js";
+import type { SpawnConfig } from "./spawn.js";
 import {
   browseDir, createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, updateWorkspace,
 } from "./workspaces.js";
@@ -127,6 +130,19 @@ function readBody(req: IncomingMessage): Promise<unknown> {
   });
 }
 
+/** Valide un body brut contre un schéma zod ; répond 400 et renvoie null si invalide. */
+function parseBody<T>(res: ServerResponse, schema: import("zod").ZodType<T>, body: unknown): T | null {
+  const result = schema.safeParse(body ?? {});
+  if (!result.success) {
+    sendJson(res, 400, {
+      error: "entrée invalide",
+      issues: result.error.issues.map((i) => `${i.path.join(".") || "body"}: ${i.message}`),
+    });
+    return null;
+  }
+  return result.data;
+}
+
 // ---------- App ----------
 
 // Checker auth réel pour la route validate (la fonction validateAgent reste injectable pour les tests)
@@ -183,14 +199,17 @@ export function createApp(opts: AppOptions): Server {
       sendJson(ctx.res, 200, { providers: await listProviders(paths) });
     }],
     ["POST", "/api/providers", (ctx) => {
-      const b = (ctx.body ?? {}) as ProviderInput & { id?: string };
-      if (!b.id) return sendJson(ctx.res, 400, { error: "id requis" });
+      const b = parseBody(ctx.res, providerUpsertSchema, ctx.body);
+      if (!b) return;
+      if (!b.id) return sendJson(ctx.res, 400, { error: "id requis", issues: ["id: requis"] });
       const { error } = upsertProvider(paths, b.id, b);
       if (error) return sendJson(ctx.res, 400, { error });
       sendJson(ctx.res, 201, { ok: true });
     }],
     ["PUT", "/api/providers/:id", (ctx) => {
-      const { error } = upsertProvider(paths, ctx.params.id!, (ctx.body ?? {}) as ProviderInput);
+      const b = parseBody(ctx.res, providerUpsertSchema, ctx.body);
+      if (!b) return;
+      const { error } = upsertProvider(paths, ctx.params.id!, b);
       if (error) return sendJson(ctx.res, 400, { error });
       sendJson(ctx.res, 200, { ok: true });
     }],
@@ -202,10 +221,10 @@ export function createApp(opts: AppOptions): Server {
       sendJson(ctx.res, 200, { skills: listSkills(paths) });
     }],
     ["POST", "/api/skills/import", async (ctx) => {
-      const b = (ctx.body ?? {}) as { source?: string; overwrite?: boolean };
-      if (!b.source?.trim()) return sendJson(ctx.res, 400, { error: "source requise (URL GitHub ou chemin local)" });
+      const b = parseBody(ctx.res, skillImportSchema, ctx.body);
+      if (!b) return;
       const destRoot = paths.skillsDirs[0] ?? join(paths.piAgentDir, "skills");
-      const result = await importSkills(b.source.trim(), destRoot, b.overwrite === true);
+      const result = await importSkills(b.source, destRoot, b.overwrite === true);
       if (result.error && result.imported.length === 0) return sendJson(ctx.res, 400, { error: result.error });
       sendJson(ctx.res, 200, { ...result, dest: destRoot, skills: listSkills(paths) });
     }],
@@ -224,10 +243,8 @@ export function createApp(opts: AppOptions): Server {
       sendJson(ctx.res, 200, { agents: listAgents(db) });
     }],
     ["POST", "/api/agents", (ctx) => {
-      const input = ctx.body as AgentInput;
-      if (!input?.name || !input?.provider || !input?.model) {
-        return sendJson(ctx.res, 400, { error: "name, provider, model requis" });
-      }
+      const input = parseBody(ctx.res, agentInputSchema, ctx.body);
+      if (!input) return;
       const preset = createAgent(db, input);
       const apply = applyAgent(paths, preset);
       sendJson(ctx.res, 201, { agent: preset, apply });
@@ -238,7 +255,9 @@ export function createApp(opts: AppOptions): Server {
       sendJson(ctx.res, 200, { agent });
     }],
     ["PUT", "/api/agents/:id", (ctx) => {
-      const preset = updateAgent(db, ctx.params.id!, ctx.body as AgentInput);
+      const input = parseBody(ctx.res, agentInputSchema, ctx.body);
+      if (!input) return;
+      const preset = updateAgent(db, ctx.params.id!, input);
       if (!preset) return sendJson(ctx.res, 404, { error: "agent introuvable" });
       const apply = applyAgent(paths, preset);
       sendJson(ctx.res, 200, { agent: preset, apply });
@@ -266,18 +285,15 @@ export function createApp(opts: AppOptions): Server {
       sendJson(ctx.res, 200, { workspaces: listWorkspaces(db) });
     }],
     ["POST", "/api/workspaces", (ctx) => {
-      const b = (ctx.body ?? {}) as { dir?: string; name?: string; default_agent_id?: string };
-      if (!b.dir) return sendJson(ctx.res, 400, { error: "dir requis" });
-      const { workspace, error } = createWorkspace(db, {
-        dir: b.dir,
-        name: b.name,
-        default_agent_id: b.default_agent_id ?? null,
-      });
+      const b = parseBody(ctx.res, workspaceCreateSchema, ctx.body);
+      if (!b) return;
+      const { workspace, error } = createWorkspace(db, b);
       if (error) return sendJson(ctx.res, 400, { error });
       sendJson(ctx.res, 201, { workspace });
     }],
     ["PUT", "/api/workspaces/:id", (ctx) => {
-      const b = (ctx.body ?? {}) as { name?: string; default_agent_id?: string | null };
+      const b = parseBody(ctx.res, workspaceUpdateSchema, ctx.body);
+      if (!b) return;
       const current = getWorkspace(db, ctx.params.id!);
       if (!current) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
       if (b.default_agent_id && !db.prepare("SELECT 1 FROM agent_preset WHERE id = ?").get(b.default_agent_id)) {
@@ -301,12 +317,8 @@ export function createApp(opts: AppOptions): Server {
       sendJson(ctx.res, 200, { conversations: listConversations(db, workspaceId ?? undefined) });
     }],
     ["POST", "/api/conversations", async (ctx) => {
-      const b = (ctx.body ?? {}) as {
-        workspace_id?: string; prompt?: string; agent_id?: string;
-        provider?: string; model?: string; thinking?: string;
-        system_prompt?: string; skills?: string[]; tools?: string[];
-        mcp_servers?: import("./mcp-env.js").McpServerEntry[];
-      };
+      const b = parseBody(ctx.res, conversationCreateSchema, ctx.body);
+      if (!b) return;
       let spawn: SpawnConfig;
       let agentId: string | null = null;
       if (b.workspace_id) {
@@ -383,9 +395,9 @@ export function createApp(opts: AppOptions): Server {
     ["POST", "/api/conversations/:id/messages", async (ctx) => {
       const conv = getConversation(db, ctx.params.id!);
       if (!conv) return sendJson(ctx.res, 404, { error: "conversation introuvable" });
-      const b = (ctx.body ?? {}) as { text?: string; images?: unknown[] };
+      const b = parseBody(ctx.res, messageSchema, ctx.body);
+      if (!b) return;
       const text = (b.text ?? "").trim();
-      if (!text && !b.images?.length) return sendJson(ctx.res, 400, { error: "text ou images requis" });
       await ensureSpawned(conv);
       await pool.prompt(conv.id, text, b.images);
       if (text) setConversationTitle(db, conv.id, text);
@@ -400,8 +412,8 @@ export function createApp(opts: AppOptions): Server {
     ["POST", "/api/conversations/:id/model", async (ctx) => {
       const conv = getConversation(db, ctx.params.id!);
       if (!conv) return sendJson(ctx.res, 404, { error: "conversation introuvable" });
-      const b = (ctx.body ?? {}) as { provider?: string; id?: string };
-      if (!b.provider || !b.id) return sendJson(ctx.res, 400, { error: "provider et id requis" });
+      const b = parseBody(ctx.res, modelSwitchSchema, ctx.body);
+      if (!b) return;
       await pool.setModel(conv.id, b.provider, b.id);
       const spawn = { ...(JSON.parse(conv.spawn_args || "{}") as SpawnConfig), provider: b.provider, model: b.id };
       setConversationModel(db, conv.id, b.provider, b.id, spawn);
@@ -420,13 +432,16 @@ export function createApp(opts: AppOptions): Server {
       sendJson(ctx.res, 200, { schedules: listTasks(db) });
     }],
     ["POST", "/api/schedules", (ctx) => {
-      const b = (ctx.body ?? {}) as Parameters<typeof createTask>[1];
+      const b = parseBody(ctx.res, scheduleCreateSchema, ctx.body);
+      if (!b) return;
       const { task, error } = createTask(db, b);
       if (error) return sendJson(ctx.res, 400, { error });
       sendJson(ctx.res, 201, { schedule: task });
     }],
     ["PUT", "/api/schedules/:id", (ctx) => {
-      const task = updateTask(db, ctx.params.id!, (ctx.body ?? {}) as Parameters<typeof updateTask>[2]);
+      const b = parseBody(ctx.res, scheduleUpdateSchema, ctx.body);
+      if (!b) return;
+      const task = updateTask(db, ctx.params.id!, b);
       if (!task) return sendJson(ctx.res, 400, { error: "schedule introuvable ou expression cron invalide" });
       sendJson(ctx.res, 200, { schedule: task });
     }],

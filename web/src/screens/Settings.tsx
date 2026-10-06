@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import type { Health, McpConfig } from "./types-ext";
+import type { Health } from "../types";
 import { Badge, Field } from "../ui";
 
 export default function Settings() {

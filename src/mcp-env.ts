@@ -1,13 +1,6 @@
-/** Entrée MCP au format mcpServers (mcp.json / registerMcpServer). */
-export interface McpServerEntry {
-  name: string;
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  cwd?: string;
-  url?: string;
-  headers?: Record<string, string>;
-}
+/** Entrée MCP au format mcpServers — type dérivé du schéma zod (source unique de vérité). */
+import type { McpServerEntry } from "./schemas.js";
+export type { McpServerEntry } from "./schemas.js";
 
 /** Nom de la variable d'environnement qui transporte les serveurs MCP d'un preset vers la session pi. */
 export const MCP_ENV_VAR = "COGITATOR_MCP";

@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readJson, atomicWriteJson } from "./json-files.js";
 import type { Paths } from "./paths.js";
+import type { ProviderUpsert } from "./schemas.js";
 
 // ---------- Types ----------
 
@@ -127,12 +128,7 @@ export async function listProviders(paths: Paths): Promise<ProviderView[]> {
 
 const PROVIDER_ID = /^[a-z][a-z0-9-]*$/;
 
-export interface ProviderInput {
-  baseUrl?: string;
-  api?: string;
-  apiKey?: string;
-  models?: Array<{ id: string }>;
-}
+export type ProviderInput = Omit<ProviderUpsert, "id">;
 
 export function upsertProvider(paths: Paths, id: string, input: ProviderInput): { error?: string } {
   if (!PROVIDER_ID.test(id)) return { error: `id provider invalide: ${id}` };

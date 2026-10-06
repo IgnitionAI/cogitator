@@ -2,38 +2,11 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Db } from "./db.js";
-import type { McpServerEntry } from "./mcp-env.js";
+import type { AgentInput, McpServerEntry, SubagentInput } from "./schemas.js";
 import { readCatalog } from "./registry.js";
 import type { Paths } from "./paths.js";
 
-// ---------- Types ----------
-
-export type { McpServerEntry } from "./mcp-env.js";
-
-export interface SubagentInput {
-  id?: string;
-  name: string;
-  description?: string;
-  provider: string;
-  model: string;
-  thinking?: string | null;
-  system_prompt?: string;
-  skills?: string[];
-  mcp_servers?: McpServerEntry[];
-}
-
-export interface AgentInput {
-  name: string;
-  description?: string;
-  provider: string;
-  model: string;
-  thinking?: string | null;
-  system_prompt?: string;
-  skills?: string[];
-  tools_allowlist?: string[] | null;
-  mcp_servers?: McpServerEntry[];
-  subagents?: SubagentInput[];
-}
+export type { AgentInput, McpServerEntry, SubagentInput } from "./schemas.js";
 
 export interface AgentPreset extends AgentInput {
   id: string;
@@ -74,6 +47,11 @@ interface SubRow {
   thinking: string | null; system_prompt: string; skills: string; mcp_servers: string;
 }
 
+/** Narrowing à la frontière DB : valeur invalide → null (la validation métier est dans validateAgent). */
+function parseThinking(value: string | null): AgentPreset["thinking"] {
+  return THINKING_LEVELS.has(value ?? "") ? (value as AgentPreset["thinking"]) : null;
+}
+
 function rowToPreset(row: PresetRow, subs: SubRow[]): AgentPreset {
   return {
     id: row.id,
@@ -82,11 +60,11 @@ function rowToPreset(row: PresetRow, subs: SubRow[]): AgentPreset {
     description: row.description,
     provider: row.provider,
     model: row.model,
-    thinking: row.thinking,
+    thinking: parseThinking(row.thinking),
     system_prompt: row.system_prompt,
-    skills: JSON.parse(row.skills || "[]"),
-    tools_allowlist: row.tools_allowlist ? JSON.parse(row.tools_allowlist) : null,
-    mcp_servers: JSON.parse(row.mcp_servers || "[]"),
+    skills: JSON.parse(row.skills || "[]") as string[],
+    tools_allowlist: row.tools_allowlist ? (JSON.parse(row.tools_allowlist) as string[]) : null,
+    mcp_servers: JSON.parse(row.mcp_servers || "[]") as McpServerEntry[],
     created_at: row.created_at,
     updated_at: row.updated_at,
     is_default: row.is_default,
@@ -96,10 +74,10 @@ function rowToPreset(row: PresetRow, subs: SubRow[]): AgentPreset {
       description: s.description,
       provider: s.provider,
       model: s.model,
-      thinking: s.thinking,
+      thinking: parseThinking(s.thinking),
       system_prompt: s.system_prompt,
-      skills: JSON.parse(s.skills || "[]"),
-      mcp_servers: JSON.parse(s.mcp_servers || "[]"),
+      skills: JSON.parse(s.skills || "[]") as string[],
+      mcp_servers: JSON.parse(s.mcp_servers || "[]") as McpServerEntry[],
     })),
   };
 }

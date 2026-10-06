@@ -4,7 +4,6 @@ import type { AgentPreset, McpServerEntry, ProviderView, SkillRef, SubagentInput
 import { Badge, Empty, ErrorText, Field, Modal } from "../ui";
 
 const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-const PRESET_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls", "subagent", "herdr_spawn_agent", "herdr_message_agent", "todo"];
 
 export default function Agents({ toast }: { toast: (t: string, err?: boolean) => void }) {
   const [agents, setAgents] = useState<AgentPreset[]>([]);
@@ -137,7 +136,8 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
   useEffect(() => {
     api.providers().then((r) => {
       setProviders(r.providers);
-      if (!form.provider && r.providers[0]) setForm((f) => ({ ...f, provider: r.providers[0].id }));
+      const first = r.providers[0];
+      if (!form.provider && first) setForm((f) => ({ ...f, provider: first.id }));
     }).catch(() => undefined);
     api.skills().then((r) => setSkills(r.skills)).catch(() => undefined);
   }, []);

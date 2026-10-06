@@ -352,6 +352,7 @@ export function createApp(opts: AppOptions): Server {
         status: input.status,
         priority: input.priority,
         labels: input.labels,
+        assignee_agent_id: input.assignee_agent_id,
         conversation_ids: input.conversation_ids,
         blocks: input.blocks,
         blocked_by: input.blocked_by,
@@ -370,6 +371,7 @@ export function createApp(opts: AppOptions): Server {
         status: input.status,
         priority: input.priority,
         labels: input.labels,
+        assignee_agent_id: input.assignee_agent_id,
         conversation_ids: input.conversation_ids,
         blocks: input.blocks,
         blocked_by: input.blocked_by,
@@ -394,6 +396,53 @@ export function createApp(opts: AppOptions): Server {
       const result = await addCommentGh(ws.dir, Number(ctx.params.cardId), input.text, input.author ?? "user");
       if ("error" in result) return sendJson(ctx.res, 400, { error: result.error });
       sendJson(ctx.res, 200, { card: result.card });
+    }],
+    // Lancer l'agent assigné sur un ticket : conversation dans le workspace + lien carte + in_progress
+    ["POST", "/api/workspaces/:id/board/cards/:cardId/start", async (ctx) => {
+      const ws = getWorkspace(db, ctx.params.id!);
+      if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      const listed = await listCards(ws.dir);
+      if ("error" in listed) return sendJson(ctx.res, 400, { error: listed.error });
+      const card = listed.cards.find((c) => c.id === ctx.params.cardId);
+      if (!card) return sendJson(ctx.res, 404, { error: "carte introuvable" });
+      if (!card.assignee_agent_id) {
+        return sendJson(ctx.res, 400, { error: "carte sans agent assigné — assigne un agent Cogitator d'abord" });
+      }
+      const preset = getAgent(db, card.assignee_agent_id);
+      if (!preset) return sendJson(ctx.res, 400, { error: "agent assigné introuvable (supprimé ?)" });
+
+      const b = (ctx.body ?? {}) as { extra?: string };
+      const prompt = [
+        `Ticket #${card.number} — ${card.title}`,
+        card.description ? `\n${card.description}` : "",
+        b.extra ? `\nPrécision : ${b.extra}` : "",
+        `\n(issue GitHub : ${card.url} — mets à jour le board au besoin via les outils cogitator_board_*)`,
+      ].join("");
+
+      const conv = createConversation(db, {
+        workspaceId: ws.id,
+        agentId: preset.id,
+        spawn: {
+          provider: preset.provider, model: preset.model, thinking: preset.thinking,
+          systemPrompt: preset.system_prompt || undefined,
+          skills: preset.skills, tools: preset.tools_allowlist, mcpServers: preset.mcp_servers,
+        },
+      });
+      db.prepare("UPDATE conversation SET title = ? WHERE id = ?").run(`#${card.number} ${card.title}`.slice(0, 80), conv.id);
+      const convWithDir = getConversation(db, conv.id)!;
+      await ensureSpawned(convWithDir);
+      await pool.prompt(conv.id, prompt);
+
+      const moved = await moveCardGh(ws.dir, card.number, "in_progress");
+      let finalCard = card;
+      if (!("error" in moved)) {
+        const linked = await updateCardGh(ws.dir, card.number, {
+          title: moved.card.title,
+          conversation_ids: [...new Set([...card.conversation_ids, conv.id])],
+        });
+        if (!("error" in linked)) finalCard = linked.card;
+      }
+      sendJson(ctx.res, 201, { conversation: conv, card: finalCard });
     }],
     ["DELETE", "/api/workspaces/:id/board/cards/:cardId", async (ctx) => {
       const ws = getWorkspace(db, ctx.params.id!);

@@ -228,6 +228,14 @@ addTool("cogitator_board_move", "Déplace une carte vers une colonne (statut).",
   },
   (a) => call("POST", `/api/workspaces/${a.workspace_id}/board/cards/${a.card_id}/move`, { status: a.status }));
 
+addTool("cogitator_board_start_work", "Lance l'agent Cogitator assigné sur un ticket : spawn une conversation dans le workspace avec le contenu de la carte, lie la conversation (rollup activité) et passe la carte en in_progress. Nécessite un assignee_agent_id (extra Cogitator) sur la carte.",
+  {
+    workspace_id: z.string(),
+    card_id: z.string(),
+    extra: z.string().optional().describe("Précision complémentaire à ajouter au prompt"),
+  },
+  (a) => call("POST", `/api/workspaces/${a.workspace_id}/board/cards/${a.card_id}/start`, { extra: a.extra }));
+
 addTool("cogitator_board_comment", "Ajoute un commentaire à une carte (append-only). Auteur par défaut : Majordome.",
   {
     workspace_id: z.string(),

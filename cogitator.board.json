@@ -1,4 +1,19 @@
 {
   "version": 2,
-  "extras": {}
+  "extras": {
+    "2": {
+      "assignee_agent_id": null,
+      "conversation_ids": [],
+      "blocks": [],
+      "blocked_by": [],
+      "comments": []
+    },
+    "3": {
+      "assignee_agent_id": null,
+      "conversation_ids": [],
+      "blocks": [],
+      "blocked_by": [],
+      "comments": []
+    }
+  }
 }

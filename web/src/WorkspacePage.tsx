@@ -86,7 +86,7 @@ export default function WorkspacePage(props: {
         ))}
       </div>
 
-      {tab === "board" ? <BoardPanel workspaceId={workspace.id} agents={props.agents} toast={props.toast} /> : null}
+      {tab === "board" ? <BoardPanel workspaceId={workspace.id} agents={props.agents} toast={props.toast} onOpenConversation={props.onOpenConversation} /> : null}
 
       {tab === "activity" ? (
         activity && activity.files.length > 0 ? (

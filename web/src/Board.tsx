@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import type { AgentPreset, BoardCard, Conversation } from "./types";
 import { Field, Modal } from "./ui";
+import { api as apiClient } from "./api";
 
 const COLUMNS: Array<{ id: string; label: string }> = [
   { id: "backlog", label: "Backlog" },
@@ -30,6 +31,7 @@ export function BoardPanel(props: {
   workspaceId: string;
   agents: AgentPreset[];
   toast: (t: string, err?: boolean) => void;
+  onOpenConversation?: (id: string) => void;
 }) {
   const [cards, setCards] = useState<BoardCard[]>([]);
   const [convs, setConvs] = useState<Conversation[]>([]);
@@ -101,6 +103,7 @@ export function BoardPanel(props: {
           onChanged={() => { refresh(); }}
           onDeleted={() => { setDetail(null); refresh(); }}
           toast={props.toast}
+          onOpenConversation={props.onOpenConversation}
         />
       ) : null}
       {showNew ? (
@@ -172,6 +175,7 @@ function CardDetail(props: {
   onChanged: () => void;
   onDeleted: () => void;
   toast: (t: string, err?: boolean) => void;
+  onOpenConversation?: (id: string) => void;
 }) {
   const { card, workspaceId } = props;
   const [form, setForm] = useState({
@@ -248,8 +252,11 @@ function CardDetail(props: {
       <Field label="Description"><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
       <div className="form-row">
         <Field label="Labels (virgules)"><input value={form.labels} onChange={(e) => setForm({ ...form, labels: e.target.value })} /></Field>
-        <Field label="Issue">
-          <a className="md-link mono" href={card.url} target="_blank" rel="noreferrer">↗ GitHub #{card.number}</a>
+        <Field label="Assigné (agent Cogitator)">
+          <select value={form.assignee_agent_id} onChange={(e) => setForm({ ...form, assignee_agent_id: e.target.value })}>
+            <option value="">— non assigné —</option>
+            {props.agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
         </Field>
       </div>
       <Field label={`Conversations liées (${form.conversation_ids.length})`}>
@@ -317,6 +324,22 @@ function CardDetail(props: {
       </Field>
       <div className="toolbar">
         <button className="btn btn-primary" onClick={() => void save()}>Sauvegarder</button>
+        <button
+          className="btn"
+          disabled={!form.assignee_agent_id}
+          title={form.assignee_agent_id ? "Spawn une conversation avec l'agent assigné, dans ce workspace" : "Assigne un agent d'abord"}
+          onClick={() => {
+            apiClient.boardStartWork(props.workspaceId, card.id)
+              .then((r) => {
+                props.toast(`Agent lancé sur #${r.card.number} — conversation #${r.conversation.id.slice(0, 8)}`);
+                props.onOpenConversation?.(r.conversation.id);
+                props.onChanged();
+              })
+              .catch((e: Error) => props.toast(e.message, true));
+          }}
+        >
+          🚀 Lancer l'agent
+        </button>
         <button
           className="btn btn-danger"
           onClick={() => {

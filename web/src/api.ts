@@ -74,6 +74,8 @@ export const api = {
   boardMove: (id: string, cardId: string, status: string) => req<{ card: BoardCard }>("POST", `/api/workspaces/${id}/board/cards/${cardId}/move`, { status }),
   boardComment: (id: string, cardId: string, b: unknown) => req<{ card: BoardCard }>("POST", `/api/workspaces/${id}/board/cards/${cardId}/comments`, b),
   boardDeleteCard: (id: string, cardId: string) => req<{ ok: true }>("DELETE", `/api/workspaces/${id}/board/cards/${cardId}`),
+  boardStartWork: (id: string, cardId: string) =>
+    req<{ conversation: Conversation; card: BoardCard }>("POST", `/api/workspaces/${id}/board/cards/${cardId}/start`),
   boardCardActivity: (id: string, cardId: string) =>
     req<{ totals: { additions: number; deletions: number; files: number }; perConversation: Array<{ conversationId: string; additions: number; deletions: number }> }>(
       "GET", `/api/workspaces/${id}/board/cards/${cardId}/activity`,

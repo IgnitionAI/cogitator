@@ -33,7 +33,7 @@ export interface BoardCard {
   status: string;
   priority: string;
   labels: string[]; // labels utilisateur (sans les préfixes status:/priority:)
-  assignee_agent_id: null; // GitHub gère les assignés ; réservé pour plus tard
+  assignee_agent_id: string | null; // extra Cogitator (GitHub garde ses assignés humains)
   conversation_ids: string[];
   blocks: string[];
   blocked_by: string[];
@@ -44,6 +44,7 @@ export interface BoardCard {
 }
 
 interface SidecarExtras {
+  assignee_agent_id?: string | null;
   conversation_ids?: string[];
   blocks?: string[];
   blocked_by?: string[];
@@ -128,7 +129,7 @@ function mergeCard(issue: GhIssue, extras: SidecarExtras | undefined): BoardCard
     status: statusFromIssue(issue),
     priority: priorityFromIssue(issue),
     labels: userLabels(issue),
-    assignee_agent_id: null,
+    assignee_agent_id: extras?.assignee_agent_id ?? null,
     conversation_ids: extras?.conversation_ids ?? [],
     blocks: extras?.blocks ?? [],
     blocked_by: extras?.blocked_by ?? [],
@@ -176,6 +177,7 @@ export interface CardWrite {
   status?: string;
   priority?: string;
   labels?: string[];
+  assignee_agent_id?: string | null;
   conversation_ids?: string[];
   blocks?: string[];
   blocked_by?: string[];
@@ -240,6 +242,7 @@ export async function createCardGh(wsDir: string, write: CardWrite): Promise<{ c
   };
   const sidecar = readSidecar(wsDir);
   sidecar.extras[String(issue.number)] = {
+    assignee_agent_id: write.assignee_agent_id ?? null,
     conversation_ids: write.conversation_ids ?? [],
     blocks: write.blocks ?? [],
     blocked_by: write.blocked_by ?? [],
@@ -281,6 +284,7 @@ export async function updateCardGh(wsDir: string, number: number, write: Partial
   // extras sidecar
   const sidecar = readSidecar(wsDir);
   const extras = sidecar.extras[String(number)] ?? { comments: [] };
+  if (write.assignee_agent_id !== undefined) extras.assignee_agent_id = write.assignee_agent_id;
   if (write.conversation_ids !== undefined) extras.conversation_ids = write.conversation_ids;
   if (write.blocks !== undefined) extras.blocks = write.blocks.filter((id) => id !== String(number));
   if (write.blocked_by !== undefined) extras.blocked_by = write.blocked_by.filter((id) => id !== String(number));

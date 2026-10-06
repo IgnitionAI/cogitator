@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, openEvents } from "../api";
-import type { AgentPreset, Conversation, ProviderView, SseEvent, Workspace } from "../types";
+import type { AgentPreset, Conversation, ProviderView, SkillRef, SseEvent, Workspace } from "../types";
 import { Badge, Empty, ErrorText, Field, Modal, statusColor } from "../ui";
 
 interface ChatItem {
@@ -136,14 +136,19 @@ function ChatView(props: {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [liveEvents, setLiveEvents] = useState<SseEvent[]>([]);
   const [input, setInput] = useState("");
+  const [skills, setSkills] = useState<SkillRef[]>([]);
   const [busy, setBusy] = useState(false);
   const [closed, setClosed] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
-  // historique puis SSE
+  // historique puis SSE + liste des skills (invocables via /skill:name, expandé par pi)
   useEffect(() => {
     api.history(conversation.id).then((r) => setItems(historyToItems(r.messages))).catch(() => undefined);
+    api.skills().then((r) => {
+      const seen = new Set<string>();
+      setSkills(r.skills.filter((s) => (seen.has(s.name) ? false : (seen.add(s.name), true))));
+    }).catch(() => undefined);
     const close = openEvents(
       `/api/conversations/${conversation.id}/events`,
       (e) => setLiveEvents((prev) => [...prev, e as SseEvent]),
@@ -197,7 +202,12 @@ function ChatView(props: {
         </button>
       </div>
       <div className="chat-scroll" ref={scrollRef}>
-        {all.length === 0 ? <Empty>{closed ? "Session non démarrée — envoie un message." : "En attente d'événements…"}</Empty> : null}
+        {all.length === 0 ? (
+        <Empty>
+          {closed ? "Session prête — envoie un message." : "En attente d'événements…"}
+          <div style={{ marginTop: 6, fontSize: 12 }}>Astuce : le menu 🧩 charge un skill, ou tape <code>/skill:nom</code> directement.</div>
+        </Empty>
+      ) : null}
         {all.map((m, i) =>
           m.kind === "status" ? (
             <div key={i} className="msg-status">{m.text}</div>
@@ -209,6 +219,19 @@ function ChatView(props: {
         )}
       </div>
       <div className="chat-input">
+        <select
+          value=""
+          onChange={(e) => {
+            if (!e.target.value) return;
+            setInput((v) => `/skill:${e.target.value} ${v}`.trimEnd() + " ");
+            taRef.current?.focus();
+          }}
+          title="Charger un skill (/skill:name — expandé par pi dans la session)"
+          style={{ width: 150, flexShrink: 0 }}
+        >
+          <option value="">🧩 Skills…</option>
+          {skills.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
+        </select>
         <textarea
           ref={taRef}
           value={input}

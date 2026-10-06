@@ -25,6 +25,7 @@ import {
 import { PiPool } from "./pool.js";
 import { makeSpawner, type Spawner } from "./spawner.js";
 import { readHistory, readEntries } from "./history.js";
+import { readFileChanges } from "./file-changes.js";
 import { importSkills } from "./skills-import.js";
 import {
   agentInputSchema, conversationCreateSchema, messageSchema, modelSwitchSchema,
@@ -394,6 +395,11 @@ export function createApp(opts: AppOptions): Server {
         messages: readHistory(conv.session_file ?? ""),
         entries: readEntries(conv.session_file ?? ""),
       });
+    }],
+    ["GET", "/api/conversations/:id/files", (ctx) => {
+      const conv = getConversation(db, ctx.params.id!);
+      if (!conv) return sendJson(ctx.res, 404, { error: "conversation introuvable" });
+      sendJson(ctx.res, 200, { files: readFileChanges(conv.session_file ?? "") });
     }],
     ["POST", "/api/conversations/:id/messages", async (ctx) => {
       const conv = getConversation(db, ctx.params.id!);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, openEvents } from "../api";
 import type {
-  AgentPreset, Conversation, HistoryEntry, ImageContentInput, ProviderView, SkillRef, SseEvent, Workspace,
+  AgentPreset, Conversation, FileChange, HistoryEntry, ImageContentInput, ProviderView, SkillRef, SseEvent, Workspace,
 } from "../types";
 import { Badge, Empty, ErrorText, Field, Modal, statusColor } from "../ui";
 
@@ -233,6 +233,12 @@ function ChatView(props: {
   const [streaming, setStreaming] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [openThinking, setOpenThinking] = useState<Set<number>>(new Set());
+  const [filesPanel, setFilesPanel] = useState(false);
+  const [files, setFiles] = useState<FileChange[]>([]);
+
+  const refreshFiles = useCallback(() => {
+    api.conversationFiles(conversation.id).then((r) => setFiles(r.files)).catch(() => undefined);
+  }, [conversation.id]);
 
   const toggle = (set: Set<number>, setter: (s: Set<number>) => void, i: number) => {
     const next = new Set(set);
@@ -253,7 +259,8 @@ function ChatView(props: {
         setTimeline((prev) => reconcile(prev, r.entries, streamRef.current));
       }
     }).catch(() => undefined);
-  }, [conversation.id]);
+    refreshFiles();
+  }, [conversation.id, refreshFiles]);
 
   // historique puis SSE + liste des skills (invocables via /skill:name, expandé par pi)
   useEffect(() => {
@@ -330,6 +337,13 @@ function ChatView(props: {
         <h2>{conversation.title || "(sans titre)"}</h2>
         <span className="muted mono">{conversation.provider}/{conversation.model}</span>
         <Badge color={statusColor(conversation.status)}>{conversation.status}</Badge>
+        <button
+          className={`btn btn-sm ${filesPanel ? "btn-primary" : ""}`}
+          onClick={() => { setFilesPanel((v) => !v); refreshFiles(); }}
+          title="Fichiers modifiés dans cette conversation"
+        >
+          📄 Fichiers{files.length > 0 ? ` (${files.length})` : ""}
+        </button>
         <div style={{ flex: 1 }} />
         {busy ? (
           <button className="btn btn-sm btn-danger" onClick={() => api.stopConversation(conversation.id).catch(() => undefined)}>■ Stop</button>
@@ -345,6 +359,8 @@ function ChatView(props: {
           Suppr.
         </button>
       </div>
+      <div className="chat-body">
+      <div className="chat-main">
       <div className="chat-scroll" ref={scrollRef}>
         {timeline.length === 0 ? (
         <Empty>
@@ -481,6 +497,32 @@ function ChatView(props: {
         <button className="btn btn-primary" onClick={() => void send()} disabled={busy || (!input.trim() && images.length === 0)}>
           Envoyer
         </button>
+      </div>
+      </div>
+      {filesPanel ? (
+        <aside className="chat-side">
+          <div className="chat-side-head">
+            <span>Fichiers modifiés</span>
+            <span className="muted">{files.length}</span>
+          </div>
+          {files.length === 0 ? (
+            <div className="muted" style={{ padding: 12, fontSize: 12.5 }}>Aucun fichier modifié pour l'instant.</div>
+          ) : (
+            <div className="chat-side-list">
+              {files.map((f) => (
+                <div key={f.path} className="file-row" title={f.path}>
+                  <span className={`file-kind ${f.kind}`}>{f.kind === "write" ? "W" : "E"}</span>
+                  <span className="file-path mono">{f.path.split("/").slice(-2).join("/")}</span>
+                  <span className="file-stats">
+                    {f.additions > 0 ? <span className="add">+{f.additions}</span> : null}
+                    {f.deletions > 0 ? <span className="del">−{f.deletions}</span> : null}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </aside>
+      ) : null}
       </div>
     </div>
   );

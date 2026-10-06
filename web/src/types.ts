@@ -117,6 +117,15 @@ export interface ImageContentInput {
   mimeType: string;
 }
 
+export interface FileChange {
+  path: string;
+  kind: "edit" | "write";
+  edits: number;
+  additions: number;
+  deletions: number;
+  lastAt: string;
+}
+
 export interface HistoryEntryTool {
   type: "tool";
   id: string;

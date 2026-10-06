@@ -1,5 +1,5 @@
 import type {
-  AgentPreset, Conversation, CronRun, CronTask, Health, ImageContentInput, ProviderView, SkillRef, Workspace,
+  AgentPreset, Conversation, CronRun, CronTask, FileChange, Health, ImageContentInput, ProviderView, SkillRef, Workspace,
 } from "./types";
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -56,6 +56,7 @@ export const api = {
     req<{ messages: Array<{ role: string; text: string }>; entries: import("./types").HistoryEntry[] }>(
       "GET", `/api/conversations/${id}/history`,
     ),
+  conversationFiles: (id: string) => req<{ files: FileChange[] }>("GET", `/api/conversations/${id}/files`),
 
   schedules: () => req<{ schedules: CronTask[] }>("GET", "/api/schedules"),
   createSchedule: (b: unknown) => req<{ schedule: CronTask }>("POST", "/api/schedules", b),

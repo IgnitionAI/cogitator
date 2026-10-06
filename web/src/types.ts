@@ -124,6 +124,21 @@ export interface FileChange {
   additions: number;
   deletions: number;
   lastAt: string;
+  lastConversationId?: string;
+}
+
+export interface FileEvent {
+  path: string;
+  kind: "edit" | "write";
+  at: string;
+  additions: number;
+  deletions: number;
+  hunks: Array<{ old: string; new: string }>;
+}
+
+export interface FeedEvent extends FileEvent {
+  conversationId: string;
+  conversationTitle: string;
 }
 
 export interface HistoryEntryTool {

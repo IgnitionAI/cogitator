@@ -1,5 +1,5 @@
 import type {
-  AgentPreset, Conversation, CronRun, CronTask, FileChange, Health, ImageContentInput, ProviderView, SkillRef, Workspace,
+  AgentPreset, Conversation, CronRun, CronTask, FeedEvent, FileChange, FileEvent, Health, ImageContentInput, ProviderView, SkillRef, Workspace,
 } from "./types";
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -46,6 +46,7 @@ export const api = {
       "GET", `/api/workspaces/${id}/activity`,
     ),
 
+
   conversations: (workspaceId?: string) =>
     req<{ conversations: Conversation[] }>("GET", `/api/conversations${workspaceId ? `?workspace_id=${workspaceId}` : ""}`),
   conversation: (id: string) => req<{ conversation: Conversation; live: boolean }>("GET", `/api/conversations/${id}`),
@@ -61,6 +62,10 @@ export const api = {
       "GET", `/api/conversations/${id}/history`,
     ),
   conversationFiles: (id: string) => req<{ files: FileChange[] }>("GET", `/api/conversations/${id}/files`),
+  fileDetail: (id: string, path: string) =>
+    req<{ path: string; operations: FileEvent[] }>("GET", `/api/conversations/${id}/file?path=${encodeURIComponent(path)}`),
+  workspaceFeed: (id: string) =>
+    req<{ events: FeedEvent[]; conversations: number }>("GET", `/api/workspaces/${id}/feed`),
 
   schedules: () => req<{ schedules: CronTask[] }>("GET", "/api/schedules"),
   createSchedule: (b: unknown) => req<{ schedule: CronTask }>("POST", "/api/schedules", b),

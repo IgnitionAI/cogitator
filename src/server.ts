@@ -25,7 +25,7 @@ import {
 import { PiPool } from "./pool.js";
 import { makeSpawner, type Spawner } from "./spawner.js";
 import { readHistory, readEntries } from "./history.js";
-import { readFileChanges, type FileChange } from "./file-changes.js";
+import { readFileChanges, readFileEvents, readFileDetail } from "./file-changes.js";
 import { importSkills } from "./skills-import.js";
 import {
   agentInputSchema, conversationCreateSchema, messageSchema, modelSwitchSchema,
@@ -317,9 +317,9 @@ export function createApp(opts: AppOptions): Server {
       const ws = getWorkspace(db, ctx.params.id!);
       if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
       const convs = db
-        .prepare("SELECT session_file FROM conversation WHERE workspace_id = ? AND session_file IS NOT NULL ORDER BY updated_at DESC LIMIT 20")
-        .all(ws.id) as Array<{ session_file: string }>;
-      const merged = new Map<string, FileChange>();
+        .prepare("SELECT id, session_file FROM conversation WHERE workspace_id = ? AND session_file IS NOT NULL ORDER BY updated_at DESC LIMIT 20")
+        .all(ws.id) as Array<{ id: string; session_file: string }>;
+      const merged = new Map<string, import("./file-changes.js").FileChange>();
       for (const c of convs) {
         for (const f of readFileChanges(c.session_file)) {
           const existing = merged.get(f.path);
@@ -328,9 +328,12 @@ export function createApp(opts: AppOptions): Server {
             existing.additions += f.additions;
             existing.deletions += f.deletions;
             existing.kind = existing.kind === "write" ? "write" : f.kind;
-            if (f.lastAt > existing.lastAt) existing.lastAt = f.lastAt;
+            if (f.lastAt > existing.lastAt) {
+              existing.lastAt = f.lastAt;
+              existing.lastConversationId = c.id;
+            }
           } else {
-            merged.set(f.path, { ...f });
+            merged.set(f.path, { ...f, lastConversationId: c.id });
           }
         }
       }
@@ -342,6 +345,25 @@ export function createApp(opts: AppOptions): Server {
         { additions: 0, deletions: 0 },
       );
       sendJson(ctx.res, 200, { files, totals, conversations: convs.length });
+    }],
+
+    // Feed chronologique d'un workspace (toutes conversations fusionnées)
+    ["GET", "/api/workspaces/:id/feed", (ctx) => {
+      const ws = getWorkspace(db, ctx.params.id!);
+      if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      const convs = db
+        .prepare("SELECT id, title, session_file FROM conversation WHERE workspace_id = ? AND session_file IS NOT NULL ORDER BY updated_at DESC LIMIT 20")
+        .all(ws.id) as Array<{ id: string; title: string; session_file: string }>;
+      const events = convs.flatMap((c) =>
+        readFileEvents(c.session_file, 200).map((e) => ({
+          ...e,
+          hunks: undefined, // le feed n'a pas besoin du contenu
+          conversationId: c.id,
+          conversationTitle: c.title || "(sans titre)",
+        })),
+      );
+      events.sort((a, b) => b.at.localeCompare(a.at));
+      sendJson(ctx.res, 200, { events: events.slice(0, 100), conversations: convs.length });
     }],
 
     // Conversations (M2)
@@ -432,6 +454,13 @@ export function createApp(opts: AppOptions): Server {
       const conv = getConversation(db, ctx.params.id!);
       if (!conv) return sendJson(ctx.res, 404, { error: "conversation introuvable" });
       sendJson(ctx.res, 200, { files: readFileChanges(conv.session_file ?? "") });
+    }],
+    ["GET", "/api/conversations/:id/file", (ctx) => {
+      const conv = getConversation(db, ctx.params.id!);
+      if (!conv) return sendJson(ctx.res, 404, { error: "conversation introuvable" });
+      const path = ctx.query.get("path");
+      if (!path) return sendJson(ctx.res, 400, { error: "path requis" });
+      sendJson(ctx.res, 200, { path, operations: readFileDetail(conv.session_file ?? "", path) });
     }],
     ["POST", "/api/conversations/:id/messages", async (ctx) => {
       const conv = getConversation(db, ctx.params.id!);

@@ -4,6 +4,7 @@ import type {
   AgentPreset, Conversation, FileChange, HistoryEntry, ImageContentInput, ProviderView, SkillRef, SseEvent, Workspace,
 } from "../types";
 import { Badge, Empty, ErrorText, Field, Modal, statusColor } from "../ui";
+import { FileDiffModal, FileRow } from "../FileViews";
 
 
 type ChatItem =
@@ -235,6 +236,7 @@ function ChatView(props: {
   const [openThinking, setOpenThinking] = useState<Set<number>>(new Set());
   const [filesPanel, setFilesPanel] = useState(false);
   const [files, setFiles] = useState<FileChange[]>([]);
+  const [diffFor, setDiffFor] = useState<{ path: string } | null>(null);
 
   const refreshFiles = useCallback(() => {
     api.conversationFiles(conversation.id).then((r) => setFiles(r.files)).catch(() => undefined);
@@ -510,20 +512,16 @@ function ChatView(props: {
           ) : (
             <div className="chat-side-list">
               {files.map((f) => (
-                <div key={f.path} className="file-row" title={f.path}>
-                  <span className={`file-kind ${f.kind}`}>{f.kind === "write" ? "W" : "E"}</span>
-                  <span className="file-path mono">{f.path.split("/").slice(-2).join("/")}</span>
-                  <span className="file-stats">
-                    {f.additions > 0 ? <span className="add">+{f.additions}</span> : null}
-                    {f.deletions > 0 ? <span className="del">−{f.deletions}</span> : null}
-                  </span>
-                </div>
+                <FileRow key={f.path} f={f} onClick={() => setDiffFor({ path: f.path })} />
               ))}
             </div>
           )}
         </aside>
       ) : null}
       </div>
+      {diffFor ? (
+        <FileDiffModal conversationId={conversation.id} path={diffFor.path} onClose={() => setDiffFor(null)} />
+      ) : null}
     </div>
   );
 }

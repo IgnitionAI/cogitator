@@ -18,6 +18,14 @@ Choix de stack pour : serveur Node local, UI web temps réel, communication avec
 | Persistance | SQLite (ADR-006) | — |
 | Distribution | **pi package** : `pi install npm:@ignitionai/cogitator`, commande `/cogitator` qui démarre le serveur détaché ; bin standalone `npx @ignitionai/cogitator` | La cible d'usage est l'écosystème pi |
 
+## Empreinte packaging (validée contre docs/packages.md de pi 1.0.4)
+
+- Manifeste `pi` explicite : `"pi": { "extensions": ["./extensions"] }` + keyword `pi-package` (visibilité galerie pi.dev/packages)
+- **`@earendil-works/pi-coding-agent` en `peerDependencies: "*"`** — fourni par l'hôte pi, jamais en `dependencies` (sinon warning + classes dupliquées : c'était le défaut de pi-web-simple)
+- `bin` autorisé : `cogitator` démarre le serveur standalone ; la commande `/cogitator` (via `pi.registerCommand()`) spawn le serveur **détaché** — l'entry de l'extension reste minimale (I4)
+- better-sqlite3 en `dependencies` : pi installe les dépendances du paquet lors de `pi install`
+- Install cible : `pi install npm:@ignitionai/cogitator` (pin de version supporté : `@x.y.z`)
+
 ## Conséquences
 
 + Une seul langage, réutilisation directe de l'API pi, packaging natif pour les utilisateurs pi

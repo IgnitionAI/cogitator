@@ -25,19 +25,26 @@ export function Field(props: { label: string; hint?: string; children: ReactNode
 }
 
 export function Badge(props: { color?: string; children: ReactNode }) {
-  return <span className="badge" style={props.color ? { background: props.color } : undefined}>{props.children}</span>;
+  // Linear : la couleur vit dans un point-glyphe, jamais en remplissage
+  return (
+    <span className="badge">
+      {props.color ? <span className="dot" style={{ background: props.color }} /> : null}
+      {props.children}
+    </span>
+  );
 }
 
 export function statusColor(status: string): string {
+  // Couleurs-glyphes Linear : success / progress / todo / urgent / done
   switch (status) {
-    case "active": return "#1a7f37";
-    case "idle": return "#57606a";
-    case "spawning": return "#9a6700";
-    case "dead": case "error": case "timeout": return "#cf222e";
-    case "ok": return "#1a7f37";
-    case "skipped": case "killed": return "#9a6700";
-    case "running": return "#0969da";
-    default: return "#57606a";
+    case "active": return "#4cb782";
+    case "idle": return "#62666d";
+    case "spawning": return "#e2a336";
+    case "dead": case "error": case "timeout": return "#eb5757";
+    case "ok": return "#5e6ad2";
+    case "skipped": case "killed": return "#e2a336";
+    case "running": return "#f2994a";
+    default: return "#62666d";
   }
 }
 

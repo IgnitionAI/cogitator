@@ -61,7 +61,7 @@ export default function App() {
   return (
     <>
       <aside className="sidebar">
-        <div className="brand">Cogita<span>tor</span></div>
+        <div className="brand"><span className="mark" />Cogita<em>tor</em></div>
         {NAV.map((n) => (
           <button key={n.id} className={`nav-item ${screen === n.id ? "active" : ""}`} onClick={() => setScreen(n.id)}>
             <span>{n.icon}</span> {n.label}

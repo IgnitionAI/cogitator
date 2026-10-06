@@ -1,12 +1,21 @@
 {
   "version": 2,
   "extras": {
-    "2": {
-      "assignee_agent_id": null,
-      "conversation_ids": [],
+    "4": {
+      "assignee_agent_id": "a38a5638-16cb-4926-b7ee-25ef6a078303",
+      "conversation_ids": [
+        "dd921248-43b5-4789-8bc5-b1da4613fc9a"
+      ],
       "blocks": [],
       "blocked_by": [],
-      "comments": []
+      "comments": [
+        {
+          "id": "1791323913460-a0yal9",
+          "author": "Majordome",
+          "text": "TICKET-PRIS",
+          "at": "2026-10-06T21:58:33.460Z"
+        }
+      ]
     }
   }
 }

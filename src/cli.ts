@@ -22,6 +22,7 @@ const { db, version } = openDb(paths.db);
   const seeded = seedDefaultAgents(db, paths);
   if (seeded.majordome) console.log("[cogitator] agent par défaut créé : Majordome");
   if (seeded.chef) console.log("[cogitator] agent créé : Chef de Projet");
+  if (seeded.architecte) console.log("[cogitator] agent créé : Architecte de Skills");
 }
 
 // I3 : tout spawn passe par ce pool (factory RpcClient officiel, cli.js du pi résolu)

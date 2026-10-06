@@ -49,6 +49,7 @@ Tes responsabilités :
 3. Relier les cartes aux conversations de travail (conversation_ids) pour que l'activité fichiers se cumule sur la carte.
 4. Repérer les cartes stagnantes (in_progress sans activité récente) et les blocages (blocked_by non résolus).
 4bis. Lancer les agents sur leurs tickets : assigne la carte (assignee_agent_id = id d'un agent Cogitator) puis cogitator_board_start_work — la conversation spawnée dans le workspace est automatiquement liée à la carte (activité cumulée).
+4ter. Créer les moyens manquants selon la tâche : agent inexistant → cogitator_create_agent (provider, modèle, thinking, prompt de scope, skills, MCP) ; skill manquant → déléguer à l'Architecte de Skills (agent dédié) pour concevoir et écrire dans ~/.agents/skills, ou importer un catalogue via cogitator_import_skills (GitHub/npx).
 5. Proposer des priorités — ne jamais décider seul d'annuler une carte sans confirmation explicite.
 6. Fournir des bilans : "où on en est", "qu'est-ce qui bloque", "prochaines étapes" — courts et factuels.
 
@@ -108,9 +109,45 @@ export function seedDefaultAgent(db: Db, paths: Paths): { created: boolean; agen
   return { created: true, agentId: agent.id };
 }
 
-/** Seed des agents par défaut : Majordome (si aucun agent) + Chef de Projet (si absent). */
-export function seedDefaultAgents(db: Db, paths: Paths): { majordome: boolean; chef: boolean } {
+
+export const ARCHITECTE_SKILLS_PROMPT = `Tu es l'Architecte de Skills — expert en création de skills pour agents (specification Agent Skills / SKILL.md, compatible pi, Claude Code, Codex).
+
+Ton travail, quand on te demande un skill :
+1. COMPRENDRE le besoin réel : ce que le skill doit faire, QUAND il doit se déclencher (mots-clés, situations), pour quel outil. Pose UNE question si le besoin est flou, puis propose un plan.
+2. CONCEVOIR : name (kebab-case, ≤64), description (≤1024 caractères — jamais au-delà, pi refuse), corps structuré : ce que le skill produit, ses règles, ses limites, ses étapes. Références progressives (references/ pour le détail) si le skill est gros.
+3. ÉCRIRE dans ~/.agents/skills/<name>/SKILL.md (frontmatter YAML + corps markdown). Crée references/ ou scripts/ si nécessaire. Jamais de secrets ni d'appels réseau cachés dans un skill.
+4. VALIDER : vérifie via cogitator_list_skills (ou relis le fichier) que le skill est découvert, que la description fait moins de 1024 caractères, que le frontmatter a name + description. Corrige immédiatement si non.
+5. RENDRE COMPTE : chemin du skill, description choisie, ce qui la déclenche, comment le tester (/skill:<name>).
+
+Règles : réponds en français. Un skill = une responsabilité. La description doit dire CE QUE fait le skill ET QUAND l'utiliser (c'est elle qui route le modèle vers le skill). Ne surcharge jamais : si un skill existant fait déjà le job, dis-le et améliore-le plutôt.`;
+
+/** Seed de l'Architecte de Skills (expert création de SKILL.md). */
+function seedArchitecteSkills(db: Db, paths: Paths): { created: boolean; agentId?: string } {
+  const existing = db.prepare("SELECT id FROM agent_preset WHERE slug = 'architecte-de-skills'").get();
+  if (existing) return { created: false };
+  const piSettings = readJson<{ defaultProvider?: string; defaultModel?: string }>(
+    join(paths.piAgentDir, "settings.json"),
+    {},
+  );
+  const root = findPackageRoot();
+  const script = root ? join(root, "dist", "src", "mcp-server.js") : null;
+  const mcpServers = script ? [{ name: "cogitator", command: "node", args: [script] }] : [];
+  const agent = createAgent(db, {
+    name: "Architecte de Skills",
+    description: "Expert création de skills (SKILL.md, spec Agent Skills) : conçoit, écrit dans ~/.agents/skills, valide la découverte et la qualité du frontmatter.",
+    provider: piSettings.defaultProvider ?? "openai",
+    model: piSettings.defaultModel ?? "gpt-5.4",
+    system_prompt: ARCHITECTE_SKILLS_PROMPT,
+    skills: [],
+    mcp_servers: mcpServers,
+  });
+  return { created: true, agentId: agent.id };
+}
+
+/** Seed des agents par défaut : Majordome (si aucun) + Chef de Projet + Architecte de Skills. */
+export function seedDefaultAgents(db: Db, paths: Paths): { majordome: boolean; chef: boolean; architecte: boolean } {
   const m = seedDefaultAgent(db, paths);
   const c = seedChefDeProjet(db, paths);
-  return { majordome: m.created, chef: c.created };
+  const a = seedArchitecteSkills(db, paths);
+  return { majordome: m.created, chef: c.created, architecte: a.created };
 }

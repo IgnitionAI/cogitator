@@ -68,7 +68,7 @@ after(async () => {
   rmSync(home, { recursive: true, force: true });
 });
 
-test("seed : Majordome (défaut) + Chef de Projet, avec MCP cogitator, idempotent", () => {
+test("seed : Majordome (défaut) + Chef de Projet + Architecte de Skills, MCP cogitator, idempotent", () => {
   const r1 = seedDefaultAgents(db, getPaths());
   assert.equal(r1.majordome, true);
   assert.equal(r1.chef, true);
@@ -87,11 +87,17 @@ test("seed : Majordome (défaut) + Chef de Projet, avec MCP cogitator, idempoten
   assert.match(chef.system_prompt, /cogitator\.board\.json/);
   assert.match(chef.system_prompt, /Chef de Projet/);
 
+  const archRow = db.prepare("SELECT id FROM agent_preset WHERE slug = 'architecte-de-skills'").get() as { id: string };
+  const arch = getAgent(db, archRow.id)!;
+  assert.match(arch.system_prompt, /Agent Skills/);
+  assert.equal(arch.mcp_servers[0]!.name, "cogitator");
+
   const r2 = seedDefaultAgents(db, getPaths());
   assert.equal(r2.majordome, false); // idempotent
   assert.equal(r2.chef, false);
+  assert.equal(r2.architecte, false);
   const count = db.prepare("SELECT COUNT(*) AS n FROM agent_preset").get() as { n: number };
-  assert.equal(count.n, 2);
+  assert.equal(count.n, 3);
 });
 
 test("défaut unique : setDefaultAgent bascule, un seul à 1", () => {

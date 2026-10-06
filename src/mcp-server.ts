@@ -173,6 +173,13 @@ addTool("cogitator_list_providers", "Liste les providers pi (catalogue + statut 
 
 addTool("cogitator_list_skills", "Liste les skills disponibles (name, description, path).", {}, () => call("GET", "/api/skills"));
 
+addTool("cogitator_import_skills", "Importe des skills depuis un repo GitHub (ex: IgnitionAI/skills) ou un dossier local vers ~/.agents/skills/. Les dossiers contenant un SKILL.md sont copiés.",
+  {
+    source: z.string().describe("URL GitHub (https://github.com/owner/repo) ou chemin absolu d'un dossier local"),
+    overwrite: z.boolean().optional().describe("Écrase les skills existants du même nom (défaut: skip)"),
+  },
+  (a) => call("POST", "/api/skills/import", a));
+
 addTool("cogitator_health", "État du serveur Cogitator (version, pi, sessions, base).", {}, () => call("GET", "/api/health"));
 
 const transport = new StdioServerTransport();

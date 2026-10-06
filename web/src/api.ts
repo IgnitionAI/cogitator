@@ -22,6 +22,8 @@ export const api = {
   deleteProvider: (id: string) => req<{ ok: true }>("DELETE", `/api/providers/${id}`),
 
   skills: () => req<{ skills: SkillRef[] }>("GET", "/api/skills"),
+  importSkills: (source: string, overwrite?: boolean) =>
+    req<{ imported: string[]; skipped: string[]; dest: string }>("POST", "/api/skills/import", { source, overwrite }),
 
   agents: () => req<{ agents: Omit<AgentPreset, "system_prompt" | "subagents">[] }>("GET", "/api/agents"),
   agent: (id: string) => req<{ agent: AgentPreset }>("GET", `/api/agents/${id}`),

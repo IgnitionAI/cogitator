@@ -26,6 +26,7 @@ import {
 import { PiPool, PoolError, type PiClientFactory } from "./pool.js";
 import { makeSpawner, type Spawner } from "./spawner.js";
 import { readHistory } from "./history.js";
+import { importSkills } from "./skills-import.js";
 import { MCP_ENV_VAR, encodeMcpEnv } from "./mcp-env.js";
 import { buildArgs, type SpawnConfig } from "./spawn.js";
 import {
@@ -199,6 +200,14 @@ export function createApp(opts: AppOptions): Server {
     }],
     ["GET", "/api/skills", (ctx) => {
       sendJson(ctx.res, 200, { skills: listSkills(paths) });
+    }],
+    ["POST", "/api/skills/import", async (ctx) => {
+      const b = (ctx.body ?? {}) as { source?: string; overwrite?: boolean };
+      if (!b.source?.trim()) return sendJson(ctx.res, 400, { error: "source requise (URL GitHub ou chemin local)" });
+      const destRoot = paths.skillsDirs[0] ?? join(paths.piAgentDir, "skills");
+      const result = await importSkills(b.source.trim(), destRoot, b.overwrite === true);
+      if (result.error && result.imported.length === 0) return sendJson(ctx.res, 400, { error: result.error });
+      sendJson(ctx.res, 200, { ...result, dest: destRoot, skills: listSkills(paths) });
     }],
     ["GET", "/api/mcp", (ctx) => {
       sendJson(ctx.res, 200, readMcp(paths));

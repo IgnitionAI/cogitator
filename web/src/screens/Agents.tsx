@@ -9,6 +9,7 @@ const PRESET_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls", "su
 export default function Agents({ toast }: { toast: (t: string, err?: boolean) => void }) {
   const [agents, setAgents] = useState<AgentPreset[]>([]);
   const [editing, setEditing] = useState<AgentPreset | "new" | null>(null);
+  const [showImport, setShowImport] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
@@ -24,6 +25,7 @@ export default function Agents({ toast }: { toast: (t: string, err?: boolean) =>
       <ErrorText error={error} />
       <div className="toolbar">
         <button className="btn btn-primary" onClick={() => setEditing("new")}>+ Nouvel agent</button>
+        <button className="btn" onClick={() => setShowImport(true)}>⤓ Importer des skills</button>
       </div>
       {agents.length === 0 ? (
         <Empty>Aucun agent — crée un preset pour matérialiser des configs complètes en flags pi.</Empty>
@@ -65,7 +67,52 @@ export default function Agents({ toast }: { toast: (t: string, err?: boolean) =>
           toast={toast}
         />
       ) : null}
+      {showImport ? <ImportSkillsModal onClose={() => setShowImport(false)} toast={toast} /> : null}
     </>
+  );
+}
+
+function ImportSkillsModal(props: { onClose: () => void; toast: (t: string, err?: boolean) => void }) {
+  const [source, setSource] = useState("");
+  const [overwrite, setOverwrite] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ imported: string[]; skipped: string[] } | null>(null);
+
+  const run = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await api.importSkills(source.trim(), overwrite);
+      setResult(r);
+      props.toast(`${r.imported.length} skill(s) importé(s)${r.skipped.length ? `, ${r.skipped.length} ignoré(s)` : ""}`);
+    } catch (e) {
+      props.toast((e as Error).message, true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="Importer des skills" onClose={props.onClose}>
+      <Field label="Source" hint="Repo GitHub (https://github.com/owner/repo) ou chemin local d'un dossier contenant des SKILL.md">
+        <input value={source} onChange={(e) => setSource(e.target.value)} placeholder="IgnitionAI/skills" />
+      </Field>
+      <label style={{ display: "flex", gap: 8, marginBottom: 14, fontSize: 13 }}>
+        <input type="checkbox" style={{ width: "auto" }} checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} />
+        Écraser les skills existants du même nom
+      </label>
+      {result ? (
+        <div className="checks" style={{ marginBottom: 12 }}>
+          {result.imported.map((s) => <div key={s} style={{ color: "var(--ok)" }}>✓ {s}</div>)}
+          {result.skipped.map((s) => <div key={s} className="warn">≡ {s} (existant, ignoré)</div>)}
+        </div>
+      ) : null}
+      <div className="toolbar">
+        <button className="btn btn-primary" disabled={!source.trim() || busy} onClick={() => void run()}>
+          {busy ? "Import…" : "Importer vers ~/.agents/skills"}
+        </button>
+      </div>
+    </Modal>
   );
 }
 

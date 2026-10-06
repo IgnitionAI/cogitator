@@ -117,6 +117,20 @@ export interface ImageContentInput {
   mimeType: string;
 }
 
+export interface HistoryEntryTool {
+  type: "tool";
+  id: string;
+  name: string;
+  args: string;
+  result?: string;
+  isError?: boolean;
+}
+export type HistoryEntry =
+  | { type: "user"; text: string }
+  | { type: "assistant"; text: string }
+  | { type: "thinking"; text: string }
+  | HistoryEntryTool;
+
 // Événements SSE pi (sous-ensemble rendu par l'UI)
 export interface SseEvent {
   type: string;

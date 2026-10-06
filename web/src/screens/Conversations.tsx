@@ -1,22 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, openEvents } from "../api";
 import type {
-  AgentPreset, Conversation, ImageContentInput, ProviderView, SkillRef, SseEvent, Workspace,
+  AgentPreset, Conversation, HistoryEntry, ImageContentInput, ProviderView, SkillRef, SseEvent, Workspace,
 } from "../types";
 import { Badge, Empty, ErrorText, Field, Modal, statusColor } from "../ui";
 
-interface ChatItem {
-  kind: "user" | "assistant" | "tool" | "status";
-  text: string;
-}
 
-interface RenderMsg {
-  role: string;
-  text: string;
-}
+type ChatItem =
+  | { kind: "user"; text: string }
+  | { kind: "assistant"; text: string }
+  | { kind: "thinking"; text: string }
+  | { kind: "tool"; text: string; args?: string; result?: string; isError?: boolean; state: "running" | "done" }
+  | { kind: "status"; text: string };
 
 interface StreamState {
-  assistantIndex: number | null; // index dans la timeline du message assistant en cours de stream
+  assistantIndex: number | null;
+  streaming: boolean;
+  /** contentIndex pi → index dans la timeline (pour toolcall_end) */
+  toolByContent: Record<number, number>;
+  /** nombre d'assistants déjà pourvus d'un bloc thinking (anti double-insertion) */
+  thinkingInserted: number;
+}
+
+function patchAt(prev: ChatItem[], index: number, patch: Partial<ChatItem>): ChatItem[] {
+  const next = [...prev];
+  const target = next[index];
+  if (target) next[index] = { ...target, ...patch } as ChatItem;
+  return next;
 }
 
 /** Applique UN événement SSE à la timeline (pi n'émet pas d'événement user : l'UI fait l'écho local). */
@@ -28,39 +38,85 @@ function applyEvent(prev: ChatItem[], ev: SseEvent, st: StreamState): ChatItem[]
       return prev;
     case "message_update": {
       if (!ame) return prev;
-      if (ame.type === "text_start") {
-        st.assistantIndex = prev.length;
-        return [...prev, { kind: "assistant", text: "" }];
+      switch (ame.type) {
+        case "text_start":
+          st.assistantIndex = prev.length;
+          st.streaming = true;
+          return [...prev, { kind: "assistant", text: "" }];
+        case "text_delta":
+          if (st.assistantIndex === null) return prev;
+          return patchAt(prev, st.assistantIndex, { text: (prev[st.assistantIndex]?.text ?? "") + (ame.delta ?? "") });
+        case "text_end":
+          if (st.assistantIndex === null || !ame.content) return prev;
+          return patchAt(prev, st.assistantIndex, { text: ame.content });
+        case "toolcall_start": {
+          const index = prev.length;
+          if (ame.contentIndex !== undefined) st.toolByContent[ame.contentIndex] = index;
+          return [...prev, { kind: "tool", text: ame.toolName ?? "outil", state: "running" }];
+        }
+        case "toolcall_end": {
+          const index = ame.contentIndex !== undefined ? st.toolByContent[ame.contentIndex] : undefined;
+          return index !== undefined ? patchAt(prev, index, { state: "done" }) : prev;
+        }
+        default:
+          return prev;
       }
-      if (ame.type === "text_delta" && st.assistantIndex !== null) {
-        const next = [...prev];
-        const target = next[st.assistantIndex];
-        if (target) next[st.assistantIndex] = { ...target, text: target.text + (ame.delta ?? "") };
-        return next;
-      }
-      if (ame.type === "text_end" && st.assistantIndex !== null) {
-        const next = [...prev];
-        const target = next[st.assistantIndex];
-        if (target && ame.content) next[st.assistantIndex] = { ...target, text: ame.content };
-        return next;
-      }
-      if (ame.type === "toolcall_start") {
-        return [...prev, { kind: "tool", text: `⚙ ${ame.toolName ?? "outil"}…` }];
-      }
-      return prev;
     }
     case "agent_end":
       st.assistantIndex = null;
+      st.streaming = false;
       return [...prev, { kind: "status", text: "— tour terminé —" }];
     default:
       return prev;
   }
 }
 
-function historyToItems(messages: RenderMsg[]): ChatItem[] {
-  return messages
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m) => ({ kind: m.role as "user" | "assistant", text: m.text }));
+/** Construit la timeline depuis les entrées structurées du .jsonl (montage). */
+function entriesToItems(entries: HistoryEntry[]): ChatItem[] {
+  const items: ChatItem[] = [];
+  for (const e of entries) {
+    if (e.type === "user") items.push({ kind: "user", text: e.text });
+    else if (e.type === "assistant") items.push({ kind: "assistant", text: e.text });
+    else if (e.type === "thinking") items.push({ kind: "thinking", text: e.text });
+    else items.push({ kind: "tool", text: e.name, args: e.args, result: e.result, isError: e.isError, state: "done" });
+  }
+  return items;
+}
+
+/**
+ * Réconcilie la timeline live avec les entrées du .jsonl après un tour :
+ * injecte le raisonnement (thinking) et le détail args/résultat des outils.
+ * L'appariement est ordinal (nième tool, nième thinking) — suffisant car les deux
+ * sources suivent le même ordre chronologique. `st.thinkingInserted` évite les
+ * double-insertions lors des tours suivants.
+ */
+function reconcile(prev: ChatItem[], entries: HistoryEntry[], st: StreamState): ChatItem[] {
+  const tools = entries.filter((e): e is Extract<HistoryEntry, { type: "tool" }> => e.type === "tool");
+  const thinkings = entries.filter((e): e is Extract<HistoryEntry, { type: "thinking" }> => e.type === "thinking");
+  const out: ChatItem[] = [];
+  let ti = 0;
+  let thi = 0;
+  let assistantOrdinal = 0;
+  for (const item of prev) {
+    if (item.kind === "assistant") {
+      assistantOrdinal += 1;
+      if (assistantOrdinal > st.thinkingInserted && thi < thinkings.length) {
+        out.push({ kind: "thinking", text: thinkings[thi]!.text });
+        thi += 1;
+        st.thinkingInserted = assistantOrdinal;
+      }
+    }
+    if (item.kind === "tool" && ti < tools.length) {
+      const t = tools[ti]!;
+      ti += 1;
+      if (item.args === undefined || item.result === undefined) {
+        out.push({ ...item, text: t.name, args: t.args, result: t.result, isError: t.isError, state: "done" });
+        continue;
+      }
+    }
+    out.push(item);
+  }
+  return out;
 }
 
 export default function Conversations({ toast }: { toast: (t: string, err?: boolean) => void }) {
@@ -154,31 +210,59 @@ function ChatView(props: {
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const streamRef = useRef<StreamState>({ assistantIndex: null });
+  const streamRef = useRef<StreamState>({ assistantIndex: null, streaming: false, toolByContent: {}, thinkingInserted: 0 });
+  const [streaming, setStreaming] = useState(false);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [openThinking, setOpenThinking] = useState<Set<number>>(new Set());
+
+  const toggle = (set: Set<number>, setter: (s: Set<number>) => void, i: number) => {
+    const next = new Set(set);
+    if (next.has(i)) next.delete(i);
+    else next.add(i);
+    setter(next);
+  };
+
+  const loadHistory = useCallback((replaceIfEmpty: boolean) => {
+    api.history(conversation.id).then((r) => {
+      if (replaceIfEmpty) {
+        setTimeline((prev) => {
+          if (prev.length > 0) return prev;
+          streamRef.current.thinkingInserted = r.entries.filter((e) => e.type === "assistant").length;
+          return entriesToItems(r.entries);
+        });
+      } else {
+        setTimeline((prev) => reconcile(prev, r.entries, streamRef.current));
+      }
+    }).catch(() => undefined);
+  }, [conversation.id]);
 
   // historique puis SSE + liste des skills (invocables via /skill:name, expandé par pi)
   useEffect(() => {
-    api.history(conversation.id).then((r) => setTimeline(historyToItems(r.messages))).catch(() => undefined);
+    loadHistory(true);
     // l'historique peut ne pas être flushé au montage (prompt initial) : on re-tente une fois
-    const refetch = setTimeout(() => {
-      api.history(conversation.id).then((r) => {
-        if (r.messages.length > 0) setTimeline((prev) => (prev.length === 0 ? historyToItems(r.messages) : prev));
-      }).catch(() => undefined);
-    }, 3000);
+    const refetch = setTimeout(() => loadHistory(true), 3000);
     api.skills().then((r) => {
       const seen = new Set<string>();
       setSkills(r.skills.filter((s) => (seen.has(s.name) ? false : (seen.add(s.name), true))));
     }).catch(() => undefined);
     const close = openEvents(
       `/api/conversations/${conversation.id}/events`,
-      (e) => setTimeline((prev) => applyEvent(prev, e as SseEvent, streamRef.current)),
+      (e) => {
+        const ev = e as SseEvent;
+        setTimeline((prev) => applyEvent(prev, ev, streamRef.current));
+        if (ev.type === "message_update" && ev.assistantMessageEvent?.type === "text_start") setStreaming(true);
+        if (ev.type === "agent_end") {
+          setStreaming(false);
+          loadHistory(false); // réconcilie : thinking + args/résultats des outils du tour
+        }
+      },
       () => setClosed(true),
     );
     return () => {
       clearTimeout(refetch);
       close();
     };
-  }, [conversation.id]);
+  }, [conversation.id, loadHistory]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -245,15 +329,55 @@ function ChatView(props: {
           <div style={{ marginTop: 6, fontSize: 12 }}>Astuce : le menu 🧩 charge un skill, ou tape <code>/skill:nom</code> directement.</div>
         </Empty>
       ) : null}
-        {timeline.map((m, i) =>
-          m.kind === "status" ? (
-            <div key={i} className="msg-status">{m.text}</div>
-          ) : m.kind === "tool" ? (
-            <div key={i} className="msg msg-tool">{m.text}</div>
-          ) : (
-            <div key={i} className={`msg msg-${m.kind}`}>{m.text}</div>
-          ),
-        )}
+        {timeline.map((m, i) => {
+          if (m.kind === "status") return <div key={i} className="msg-status">{m.text}</div>;
+          if (m.kind === "thinking") {
+            return (
+              <div key={i} className="msg-thinking">
+                <button className="thinking-head" onClick={() => toggle(openThinking, setOpenThinking, i)}>
+                  <span className={`chevron ${openThinking.has(i) ? "open" : ""}`}>▸</span>
+                  Réflexion · {m.text.length.toLocaleString()} caractères
+                </button>
+                {openThinking.has(i) ? <div className="thinking-body">{m.text}</div> : null}
+              </div>
+            );
+          }
+          if (m.kind === "tool") {
+            return (
+              <div key={i} className={`tool-chip ${m.state} ${m.isError ? "error" : ""}`}>
+                <button className="tool-head" onClick={() => toggle(expanded, setExpanded, i)}>
+                  <span className={`tool-dot ${m.state}`} />
+                  <span className="tool-name">{m.text}</span>
+                  {m.result !== undefined ? (
+                    <span className="tool-meta">{m.isError ? "erreur" : "ok"}</span>
+                  ) : m.state === "done" ? null : (
+                    <span className="tool-meta">en cours…</span>
+                  )}
+                  <span className={`chevron ${expanded.has(i) ? "open" : ""}`}>▸</span>
+                </button>
+                {expanded.has(i) ? (
+                  <div className="tool-detail">
+                    <div className="tool-label">Arguments</div>
+                    <pre>{m.args ?? "(disponible à la fin du tour)"}</pre>
+                    {m.result !== undefined ? (
+                      <>
+                        <div className="tool-label">Résultat</div>
+                        <pre className={m.isError ? "error" : ""}>{m.result}</pre>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            );
+          }
+          const isLastAssistant = m.kind === "assistant" && i === timeline.length - 1;
+          return (
+            <div key={i} className={`msg msg-${m.kind}`}>
+              {m.text}
+              {isLastAssistant && streaming ? <span className="caret" /> : null}
+            </div>
+          );
+        })}
         {images.length > 0 ? (
           <div className="msg msg-user" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {images.map((img, i) => (

@@ -53,7 +53,9 @@ export const api = {
   switchModel: (id: string, provider: string, modelId: string) =>
     req<{ ok: true }>("POST", `/api/conversations/${id}/model`, { provider, id: modelId }),
   history: (id: string) =>
-    req<{ messages: Array<{ role: string; text: string }> }>("GET", `/api/conversations/${id}/history`),
+    req<{ messages: Array<{ role: string; text: string }>; entries: import("./types").HistoryEntry[] }>(
+      "GET", `/api/conversations/${id}/history`,
+    ),
 
   schedules: () => req<{ schedules: CronTask[] }>("GET", "/api/schedules"),
   createSchedule: (b: unknown) => req<{ schedule: CronTask }>("POST", "/api/schedules", b),

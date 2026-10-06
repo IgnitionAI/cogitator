@@ -258,11 +258,82 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 .checks .err { color: var(--urgent); }
 .checks .warn { color: var(--todo); }
 
+/* ---------- Thinking & Tool calls (inspecteur) ---------- */
+.msg-thinking { align-self: flex-start; max-width: 78%; animation: msg-in 0.2s var(--ease-out-expo); }
+.thinking-head {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--subtle); font-size: 12px; font-weight: 500; font-family: inherit;
+  padding: 2px 4px; border-radius: var(--radius);
+  transition: 0.1s ease; transition-property: color, background-color;
+}
+.thinking-head:hover { color: var(--muted); background: var(--raised); }
+.thinking-body {
+  margin-top: 6px; padding: 10px 13px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-left: 2px solid var(--subtle);
+  border-radius: var(--radius);
+  color: var(--muted); font-size: 12.5px; line-height: 1.6;
+  white-space: pre-wrap; font-style: italic;
+  animation: expand-in 0.18s var(--ease-out-quad);
+}
+
+.tool-chip {
+  align-self: flex-start; max-width: 82%;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface);
+  animation: msg-in 0.2s var(--ease-out-expo);
+  overflow: hidden;
+}
+.tool-chip.error { border-color: rgba(235, 87, 87, 0.4); }
+.tool-head {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 6px 11px;
+  background: none; border: none; cursor: pointer;
+  color: var(--fg); font-family: inherit; font-size: 12.5px; font-weight: 500;
+  transition: 0.1s ease; transition-property: background-color;
+}
+.tool-head:hover { background: var(--raised); }
+.tool-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.tool-dot.running { background: var(--progress); animation: pulse 1.1s ease-in-out infinite; }
+.tool-dot.done { background: var(--success); }
+.tool-chip.error .tool-dot.done { background: var(--urgent); }
+.tool-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.tool-meta { color: var(--subtle); font-size: 11.5px; margin-left: auto; }
+.chevron { color: var(--subtle); font-size: 10px; transition: transform 0.15s var(--ease-out-quad); }
+.chevron.open { transform: rotate(90deg); }
+.tool-detail {
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+  animation: expand-in 0.18s var(--ease-out-quad);
+}
+.tool-label { color: var(--subtle); font-size: 11px; font-weight: 500; margin: 8px 0 4px; }
+.tool-label:first-child { margin-top: 0; }
+.tool-detail pre {
+  margin: 0; padding: 9px 11px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px; line-height: 1.55; color: var(--muted);
+  max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+}
+.tool-detail pre.error { color: var(--urgent); }
+
+/* caret de stream SSE */
+.caret {
+  display: inline-block; width: 8px; height: 15px;
+  margin-left: 3px; vertical-align: text-bottom;
+  background: var(--accent-hover);
+  animation: blink 1s steps(2, start) infinite;
+}
+
 /* ---------- Motion ---------- */
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pop-in { from { opacity: 0; transform: scale(0.97) translateY(4px); } to { opacity: 1; transform: none; } }
 @keyframes msg-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes toast-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@keyframes expand-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes blink { to { visibility: hidden; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

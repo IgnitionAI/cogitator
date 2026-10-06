@@ -14,8 +14,8 @@ mkdirSync(paths.home, { recursive: true });
 const { db, version } = openDb(paths.db);
 
 // I3 : tout spawn passe par ce pool (factory RpcClient officiel, cli.js du pi résolu)
-const factory = (opts: { cwd: string; args: string[] }) =>
-  new RpcClient({ cliPath: join(getPackageDir(), "dist/cli.js"), cwd: opts.cwd, args: opts.args });
+const factory = (opts: { cwd: string; args: string[]; env?: Record<string, string> }) =>
+  new RpcClient({ cliPath: join(getPackageDir(), "dist/cli.js"), cwd: opts.cwd, args: opts.args, env: opts.env });
 
 const pool = new PiPool({
   factory,

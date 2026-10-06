@@ -16,6 +16,8 @@ export interface PiClientLike {
 export interface PiClientFactoryOptions {
   cwd: string;
   args: string[];
+  /** Variables d'environnement passées au process pi (transport du MCP du preset) */
+  env?: Record<string, string>;
 }
 
 export type PiClientFactory = (opts: PiClientFactoryOptions) => PiClientLike;
@@ -110,7 +112,7 @@ export class PiPool {
     }
 
     const args = spawn.resumeSessionFile ? [...spawn.args, "--session", spawn.resumeSessionFile] : spawn.args;
-    const client = this.opts.factory({ cwd: spawn.cwd, args });
+    const client = this.opts.factory({ cwd: spawn.cwd, args, env: spawn.env });
     const handle: Handle = { convId, client, lastActivityAt: Date.now(), dead: false };
     this.handles.set(convId, handle);
     this.status(convId, "spawning");

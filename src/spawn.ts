@@ -9,6 +9,8 @@ export interface SpawnConfig {
   systemPrompt?: string;
   skills?: string[];
   tools?: string[] | null;
+  /** Serveurs MCP du preset — transportés via env et enregistrés par l'extension au session_start (ADR-002) */
+  mcpServers?: import("./mcp-env.js").McpServerEntry[];
 }
 
 export function modelArg(c: SpawnConfig): string {

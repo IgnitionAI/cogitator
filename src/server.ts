@@ -19,6 +19,7 @@ import {
   setConversationModel, setConversationSession, setConversationStatus, setConversationTitle,
 } from "./conversations.js";
 import { PiPool, PoolError, type PiClientFactory } from "./pool.js";
+import { MCP_ENV_VAR, encodeMcpEnv } from "./mcp-env.js";
 import { buildArgs, type SpawnConfig } from "./spawn.js";
 import {
   browseDir, createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, updateWorkspace,
@@ -115,10 +116,12 @@ export function createApp(opts: AppOptions): Server {
   /** Spawn paresseux : (re)démarre le process pi de la conversation si besoin. */
   async function ensureSpawned(conv: ReturnType<typeof getConversation> & object): Promise<{ sessionFile?: string }> {
     const spawn = JSON.parse(conv.spawn_args || "{}") as SpawnConfig;
+    const mcpEnv = encodeMcpEnv(spawn.mcpServers ?? []);
     const result = await pool.ensure(conv.id, {
       cwd: conv.workspace_dir ?? homedir(),
       args: buildArgs(spawn, tmpDir, conv.id),
       resumeSessionFile: conv.session_file,
+      env: mcpEnv ? { [MCP_ENV_VAR]: mcpEnv } : undefined,
     });
     if (result.sessionFile) setConversationSession(db, conv.id, result.sessionFile);
     return result;
@@ -257,6 +260,7 @@ export function createApp(opts: AppOptions): Server {
         workspace_id?: string; prompt?: string; agent_id?: string;
         provider?: string; model?: string; thinking?: string;
         system_prompt?: string; skills?: string[]; tools?: string[];
+        mcp_servers?: import("./mcp-env.js").McpServerEntry[];
       };
       let spawn: SpawnConfig;
       let agentId: string | null = null;
@@ -275,11 +279,13 @@ export function createApp(opts: AppOptions): Server {
           provider: preset.provider, model: preset.model, thinking: preset.thinking,
           systemPrompt: preset.system_prompt || undefined,
           skills: preset.skills, tools: preset.tools_allowlist,
+          mcpServers: preset.mcp_servers,
         };
       } else if (b.provider && b.model) {
         spawn = {
           provider: b.provider, model: b.model, thinking: b.thinking ?? null,
           systemPrompt: b.system_prompt, skills: b.skills, tools: b.tools,
+          mcpServers: b.mcp_servers,
         };
       } else {
         return sendJson(ctx.res, 400, { error: "agent_id ou (provider + model) requis" });

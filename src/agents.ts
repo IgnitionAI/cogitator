@@ -2,20 +2,13 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Db } from "./db.js";
+import type { McpServerEntry } from "./mcp-env.js";
 import { readCatalog } from "./registry.js";
 import type { Paths } from "./paths.js";
 
 // ---------- Types ----------
 
-export interface McpServerEntry {
-  name: string;
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  cwd?: string;
-  url?: string;
-  headers?: Record<string, string>;
-}
+export type { McpServerEntry } from "./mcp-env.js";
 
 export interface SubagentInput {
   id?: string;

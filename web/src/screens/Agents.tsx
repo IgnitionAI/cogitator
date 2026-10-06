@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { AgentPreset, McpServerEntry, ProviderView, SkillRef, SubagentInput } from "../types";
-import { Empty, ErrorText, Field, Modal } from "../ui";
+import { Badge, Empty, ErrorText, Field, Modal } from "../ui";
 
 const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const PRESET_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls", "subagent", "herdr_spawn_agent", "herdr_message_agent", "todo"];

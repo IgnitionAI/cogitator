@@ -1,13 +1,16 @@
 #!/usr/bin/env node
+import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { getPackageDir, RpcClient } from "@earendil-works/pi-coding-agent";
 import { HOST, PORT } from "./config.js";
+import { CronService } from "./cron.js";
 import { setConversationStatus } from "./conversations.js";
 import { openDb } from "./db.js";
 import { getPaths } from "./paths.js";
 import { PiPool } from "./pool.js";
 import { createApp } from "./server.js";
+import { makeSpawner } from "./spawner.js";
 
 const paths = getPaths();
 mkdirSync(paths.home, { recursive: true });
@@ -22,7 +25,14 @@ const pool = new PiPool({
   callbacks: { onStatus: (convId, status) => setConversationStatus(db, convId, status) },
 });
 
-const server = createApp({ db, dbPath: paths.db, dbVersion: version, paths, pool });
+const events = new EventEmitter();
+const spawner = makeSpawner({ db, pool, paths });
+const cron = new CronService({
+  db, pool, spawner,
+  notify: (event) => events.emit("event", event),
+});
+
+const server = createApp({ db, dbPath: paths.db, dbVersion: version, paths, pool, cron, events });
 
 server.listen(PORT, HOST, () => {
   console.log(`[cogitator] http://${HOST}:${PORT}`);
@@ -42,9 +52,11 @@ server.on("error", (err: NodeJS.ErrnoException) => {
 const sweeper = setInterval(() => {
   pool.sweep().catch(() => undefined);
 }, 60_000);
+cron.start(30_000); // tick cron toutes les 30 s
 
 async function shutdown(): Promise<void> {
   clearInterval(sweeper);
+  cron.stop();
   await pool.dispose();
   server.close();
   db.close();

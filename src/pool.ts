@@ -192,6 +192,25 @@ export class PiPool {
     }
   }
 
+  /** Attend l'événement `agent_settled` d'une conversation (suivi des runs cron). Rejette en timeout. */
+  waitForSettled(convId: string, timeoutMs = 15 * 60_000): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        unsub();
+        reject(new PoolError(`timeout d'attente de fin d'agent (${timeoutMs}ms)`, "settle_timeout"));
+      }, timeoutMs);
+      const unsub = this.onEvent((id, event) => {
+        if (id !== convId) return;
+        const type = (event as { type?: string } | null)?.type;
+        if (type === "agent_settled" || type === "agent_end") {
+          clearTimeout(timer);
+          unsub();
+          resolve();
+        }
+      });
+    });
+  }
+
   /** Test-only : backdate la dernière activité d'une conversation. */
   backdate(convId: string, at: number): void {
     const h = this.handles.get(convId);

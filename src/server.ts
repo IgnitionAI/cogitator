@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -15,10 +16,14 @@ import {
   updateAgent, validateAgent, type AgentInput,
 } from "./agents.js";
 import {
+  CronService, createTask, deleteTask, getTask, listRuns, listTasks, updateTask,
+} from "./cron.js";
+import {
   createConversation, deleteConversation, getConversation, listConversations,
   setConversationModel, setConversationSession, setConversationStatus, setConversationTitle,
 } from "./conversations.js";
 import { PiPool, PoolError, type PiClientFactory } from "./pool.js";
+import { makeSpawner, type Spawner } from "./spawner.js";
 import { MCP_ENV_VAR, encodeMcpEnv } from "./mcp-env.js";
 import { buildArgs, type SpawnConfig } from "./spawn.js";
 import {
@@ -106,25 +111,19 @@ export interface AppOptions {
   dbVersion: number;
   paths: Paths;
   pool: PiPool;
+  cron?: CronService;
+  events?: EventEmitter;
 }
 
 export function createApp(opts: AppOptions): Server {
-  const { db, dbPath, dbVersion, paths, pool } = opts;
-  const tmpDir = join(paths.home, "tmp");
-  mkdirSync(tmpDir, { recursive: true });
+  const { db, dbPath, dbVersion, paths, pool, cron } = opts;
+  const events = opts.events ?? new EventEmitter();
+  events.setMaxListeners(100);
+  const spawner = makeSpawner({ db, pool, paths });
 
   /** Spawn paresseux : (re)démarre le process pi de la conversation si besoin. */
   async function ensureSpawned(conv: ReturnType<typeof getConversation> & object): Promise<{ sessionFile?: string }> {
-    const spawn = JSON.parse(conv.spawn_args || "{}") as SpawnConfig;
-    const mcpEnv = encodeMcpEnv(spawn.mcpServers ?? []);
-    const result = await pool.ensure(conv.id, {
-      cwd: conv.workspace_dir ?? homedir(),
-      args: buildArgs(spawn, tmpDir, conv.id),
-      resumeSessionFile: conv.session_file,
-      env: mcpEnv ? { [MCP_ENV_VAR]: mcpEnv } : undefined,
-    });
-    if (result.sessionFile) setConversationSession(db, conv.id, result.sessionFile);
-    return result;
+    return spawner.ensure(conv as Parameters<Spawner["ensure"]>[0]);
   }
 
   // Fan-out des événements pi vers les abonnés SSE par conversation
@@ -358,6 +357,51 @@ export function createApp(opts: AppOptions): Server {
       await pool.evict(conv.id);
       deleteConversation(db, conv.id);
       sendJson(ctx.res, 200, { ok: true }); // le .jsonl pi survit sur disque (I5)
+    }],
+
+    // Schedules (M5)
+    ["GET", "/api/schedules", (ctx) => {
+      sendJson(ctx.res, 200, { schedules: listTasks(db) });
+    }],
+    ["POST", "/api/schedules", (ctx) => {
+      const b = (ctx.body ?? {}) as Parameters<typeof createTask>[1];
+      const { task, error } = createTask(db, b);
+      if (error) return sendJson(ctx.res, 400, { error });
+      sendJson(ctx.res, 201, { schedule: task });
+    }],
+    ["PUT", "/api/schedules/:id", (ctx) => {
+      const task = updateTask(db, ctx.params.id!, (ctx.body ?? {}) as Parameters<typeof updateTask>[2]);
+      if (!task) return sendJson(ctx.res, 400, { error: "schedule introuvable ou expression cron invalide" });
+      sendJson(ctx.res, 200, { schedule: task });
+    }],
+    ["DELETE", "/api/schedules/:id", (ctx) => {
+      if (!deleteTask(db, ctx.params.id!)) return sendJson(ctx.res, 404, { error: "schedule introuvable" });
+      sendJson(ctx.res, 200, { ok: true });
+    }],
+    ["POST", "/api/schedules/:id/run", (ctx) => {
+      if (!cron) return sendJson(ctx.res, 503, { error: "cron indisponible" });
+      const task = getTask(db, ctx.params.id!);
+      if (!task) return sendJson(ctx.res, 404, { error: "schedule introuvable" });
+      // fire-and-forget : le run est tracé et observable via /runs + /events
+      void cron.fireNow(task.id).catch(() => undefined);
+      sendJson(ctx.res, 202, { ok: true });
+    }],
+    ["GET", "/api/schedules/:id/runs", (ctx) => {
+      const limit = Number(ctx.query.get("limit") ?? 50);
+      sendJson(ctx.res, 200, { runs: listRuns(db, ctx.params.id!, Number.isFinite(limit) ? limit : 50) });
+    }],
+
+    // Events global (SSE)
+    ["GET", "/api/events", (ctx) => {
+      const res = ctx.res;
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      const listener = (event: unknown) => res.write(`data: ${JSON.stringify(event)}\n\n`);
+      events.on("event", listener);
+      ctx.req.on("close", () => events.off("event", listener));
     }],
   ];
 

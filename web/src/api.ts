@@ -65,8 +65,13 @@ export const api = {
   runs: (id: string) => req<{ runs: CronRun[] }>("GET", `/api/schedules/${id}/runs`),
 };
 
-/** SSE avec reconnexion naïve ; onChange reçoit chaque événement parsé. */
-export function openEvents(url: string, onEvent: (e: never) => void, onClose?: () => void): () => void {
+/** SSE avec reconnexion native (le navigateur réessaie seul) ; onOpen à chaque (re)connexion
+ *  pour réconcilier l'historique et combler les événements manqués pendant une coupure. */
+export function openEvents(
+  url: string,
+  onEvent: (e: never) => void,
+  opts?: { onOpen?: () => void; onClose?: () => void },
+): () => void {
   const source = new EventSource(url);
   source.onmessage = (msg) => {
     try {
@@ -75,9 +80,12 @@ export function openEvents(url: string, onEvent: (e: never) => void, onClose?: (
       /* événement non-JSON : ignoré */
     }
   };
-  source.onerror = () => {
+  source.onopen = () => opts?.onOpen?.();
+  // NE PAS fermer sur error : le navigateur rétablit la connexion tout seul
+  source.onerror = () => undefined;
+  return () => {
+    source.onerror = null;
     source.close();
-    onClose?.();
+    opts?.onClose?.();
   };
-  return () => source.close();
 }

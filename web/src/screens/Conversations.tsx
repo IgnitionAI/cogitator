@@ -35,6 +35,7 @@ function applyEvent(prev: ChatItem[], ev: SseEvent, st: StreamState): ChatItem[]
   switch (ev.type) {
     case "turn_start":
       st.assistantIndex = null;
+      st.toolByContent = {}; // contentIndex est par message : on évite les collisions entre tours
       return prev;
     case "message_update": {
       if (!ame) return prev;
@@ -62,10 +63,13 @@ function applyEvent(prev: ChatItem[], ev: SseEvent, st: StreamState): ChatItem[]
           return prev;
       }
     }
-    case "agent_end":
+    case "agent_end": {
       st.assistantIndex = null;
       st.streaming = false;
-      return [...prev, { kind: "status", text: "— tour terminé —" }];
+      // purge des bulles assistant restées vides (messages à toolcalls seuls, text_start sans texte)
+      const cleaned = prev.filter((p) => p.kind !== "assistant" || p.text.trim() !== "");
+      return [...cleaned, { kind: "status", text: "— tour terminé —" }];
+    }
     default:
       return prev;
   }
@@ -256,7 +260,11 @@ function ChatView(props: {
           loadHistory(false); // réconcilie : thinking + args/résultats des outils du tour
         }
       },
-      () => setClosed(true),
+      {
+        // à chaque (re)connexion : combler le trou d'événements via l'historique
+        onOpen: () => loadHistory(false),
+        onClose: () => setClosed(true),
+      },
     );
     return () => {
       clearTimeout(refetch);

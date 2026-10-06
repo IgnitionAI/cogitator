@@ -389,6 +389,29 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
   animation: msg-in 0.2s var(--ease-out-expo);
 }
 
+/* markdown */
+.md > *:first-child { margin-top: 0; }
+.md > *:last-child { margin-bottom: 0; }
+.md-p { margin: 6px 0; }
+.md-h2 { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; margin: 12px 0 4px; }
+.md-h3 { font-size: 13.5px; font-weight: 600; margin: 10px 0 3px; color: var(--fg); }
+.md-list { margin: 6px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 2px; }
+.md-list li { line-height: 1.5; }
+.md-code {
+  background: rgba(127, 127, 140, 0.18); border-radius: 4px;
+  padding: 1px 5px; font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.msg-user .md-code { background: rgba(255, 255, 255, 0.22); }
+.md-pre {
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 9px 12px; margin: 8px 0; overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; line-height: 1.55;
+}
+.md-link { color: var(--accent-hover); }
+.msg-user .md-link { color: #fff; text-decoration: underline; }
+
 /* caret de stream SSE */
 .caret {
   display: inline-block; width: 8px; height: 15px;

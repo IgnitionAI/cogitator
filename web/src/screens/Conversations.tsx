@@ -5,6 +5,7 @@ import type {
 } from "../types";
 import { Badge, Empty, ErrorText, Field, Modal, statusColor } from "../ui";
 import { FileDiffModal, FileRow } from "../FileViews";
+import { Markdown } from "../markdown";
 
 
 type ChatItem =
@@ -392,7 +393,7 @@ export function ChatView(props: {
                   <span className="tool-meta">{m.text.length.toLocaleString()} caractères</span>
                   <span className={`chevron ${expanded.has(i) ? "open" : ""}`}>▸</span>
                 </button>
-                {expanded.has(i) ? <div className="skill-body">{m.text}</div> : null}
+                {expanded.has(i) ? <div className="skill-body"><Markdown text={m.text} /></div> : null}
                 {m.rest ? <div className="msg msg-user skill-rest">{m.rest}</div> : null}
               </div>
             );
@@ -439,7 +440,7 @@ export function ChatView(props: {
           const isLastAssistant = m.kind === "assistant" && i === timeline.length - 1;
           return (
             <div key={i} className={`msg msg-${m.kind}`}>
-              {m.text}
+              <Markdown text={m.text} />
               {isLastAssistant && streaming ? <span className="caret" /> : null}
             </div>
           );

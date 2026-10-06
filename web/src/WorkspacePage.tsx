@@ -4,6 +4,7 @@ import { BoardPanel } from "./Board";
 import { FileRow, TreePanel } from "./FileViews";
 import type { AgentPreset, Conversation, FeedEvent, FileChange, Workspace } from "./types";
 import { Badge, Empty, statusColor } from "./ui";
+import { ChatView } from "./screens/Conversations";
 
 const TABS = [
   { id: "board", label: "🗂 Board" },
@@ -11,6 +12,7 @@ const TABS = [
   { id: "feed", label: "🕒 Feed" },
   { id: "files", label: "🌳 Fichiers" },
   { id: "conversations", label: "💬 Conversations" },
+  { id: "pm", label: "🤖 Chef de Projet" },
 ] as const;
 
 export default function WorkspacePage(props: {
@@ -26,6 +28,28 @@ export default function WorkspacePage(props: {
   const [feed, setFeed] = useState<FeedEvent[]>([]);
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [diffFor, setDiffFor] = useState<{ convId: string; path: string } | null>(null);
+  const [pmConv, setPmConv] = useState<Conversation | null>(null);
+
+  // conversation dédiée au Chef de Projet : réutilise la première existante, sinon la crée
+  const openPm = useCallback(() => {
+    if (pmConv) return;
+    const chef = props.agents.find((a) => a.slug === "chef-de-projet");
+    if (!chef) return;
+    api.conversations(workspace.id).then((r) => {
+      const existing = r.conversations.find((c) => c.agent_id === chef.id);
+      if (existing) {
+        setPmConv(existing);
+        return;
+      }
+      api.createConversation({ workspace_id: workspace.id, agent_id: chef.id })
+        .then((res) => setPmConv(res.conversation))
+        .catch(() => undefined);
+    }).catch(() => undefined);
+  }, [pmConv, props.agents, workspace.id]);
+
+  useEffect(() => {
+    if (tab === "pm") openPm();
+  }, [tab, openPm]);
 
   const refresh = useCallback(() => {
     api.workspaceActivity(workspace.id).then(setActivity).catch(() => undefined);
@@ -107,6 +131,21 @@ export default function WorkspacePage(props: {
       ) : null}
 
       {tab === "files" ? <TreePanel workspaceId={workspace.id} modifiedPaths={modified} /> : null}
+
+      {tab === "pm" ? (
+        pmConv ? (
+          <div className="tab-chat">
+            <ChatView
+              conversation={pmConv}
+              onClose={() => setTab("board")}
+              onDeleted={() => { setPmConv(null); setTab("board"); }}
+              toast={props.toast}
+            />
+          </div>
+        ) : (
+          <Empty>Préparation de la conversation avec le Chef de Projet…</Empty>
+        )
+      ) : null}
 
       {tab === "conversations" ? (
         convs.length > 0 ? (

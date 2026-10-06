@@ -225,7 +225,7 @@ export default function Conversations({ toast, initialOpenId, onConsumeInitial }
   );
 }
 
-function ChatView(props: {
+export function ChatView(props: {
   conversation: Conversation;
   onClose: () => void;
   onDeleted: () => void;

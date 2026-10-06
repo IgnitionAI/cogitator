@@ -461,6 +461,9 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 .ws-tab:hover { color: var(--fg); }
 .ws-tab.active { color: var(--fg); border-bottom-color: var(--accent); }
 
+.tab-chat { height: calc(100vh - 210px); min-height: 420px; }
+.tab-chat .chat { height: 100%; }
+
 /* board kanban */
 .board { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
 .board-col { width: 208px; flex-shrink: 0; }

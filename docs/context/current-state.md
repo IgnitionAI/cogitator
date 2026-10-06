@@ -8,6 +8,7 @@ Date : 2026-10-06
 
 - **M0** : serveur HTTP natif (health + placeholder), schéma SQLite v1, extension pi `/cogitator` (spawn détaché). Vérifié : critères de sortie + checklist items 1, 10.
 - **M1** : read model pi (providers + statut auth via `pi auth check`, skills scannés, `mcp.json`), CRUD providers (models.json/auth.json atomiques + backup), CRUD AgentPresets + validation, Apply → définitions herdr `noo-*.md` (O1/O2), détection pi-mcp-adapter dans health. 13 tests au vert ; E2E live validé (création d'un preset openai/gpt-5.4 + subagent deepseek, validate 0 erreur, `.md` correct, cleanup propre). Checklist items 5, 6 verts.
+- **M2** : `PiPool` (spawn paresseux via factory injectable, cap 8 avec éviction du plus vieux non-streaming via `getState().isStreaming`, idle-recycle 10 min, `--session` pour reprise), matérialisation flags en **forme espace** (pi rejette `--flag=valeur`), routes conversations complètes (CRUD, messages, stop→abort, switch modèle, SSE par conversation), snapshot figé `spawn_args` (O6), migration v2 (session_file nullable + spawn_args, FK off pendant migration). 23 tests au vert ; **E2E live : vrai process pi (deepseek-flash) spawné par l'API, 2 messages, réponses exactes streamées en SSE** (`agent_start → message_update → agent_settled`). Checklist items 1, 2, 8, 9 verts.
 
 Prochain : M2 (PiProcessPool + conversations).
 

@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { createApp } from "../src/server.js";
 import { getPaths } from "../src/paths.js";
+import { PiPool } from "../src/pool.js";
 
 let home: string;
 let db: Database.Database;
@@ -24,7 +25,13 @@ before(async () => {
     CREATE TABLE cron_task (id TEXT PRIMARY KEY);
     CREATE TABLE cron_run (id TEXT PRIMARY KEY);
   `);
-  server = createApp({ db, dbPath: join(home, "cogitator.db"), dbVersion: 1, paths: getPaths() });
+  server = createApp({
+    db,
+    dbPath: join(home, "cogitator.db"),
+    dbVersion: 2,
+    paths: getPaths(),
+    pool: new PiPool({ factory: () => ({ start: async () => {}, stop: async () => {}, onEvent: () => () => {}, getState: async () => ({}), prompt: async () => ({}), abort: async () => {}, setModel: async () => ({}) }) }),
+  });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -43,7 +50,7 @@ test("GET /api/health répond le contrat", async () => {
   assert.equal(typeof body.version, "string");
   assert.ok("pi_version" in body);
   assert.equal(body.sessions_active, 0);
-  assert.equal(body.db.version, 1);
+  assert.equal(body.db.version, 2);
   assert.equal(body.db.path, join(home, "cogitator.db"));
 });
 

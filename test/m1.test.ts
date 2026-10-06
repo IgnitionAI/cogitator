@@ -41,7 +41,9 @@ let base: string;
 
 before(async () => {
   ({ db } = openDb(join(home, "cogitator.db")));
-  server = createApp({ db, dbPath: join(home, "cogitator.db"), dbVersion: 1, paths: getPaths() });
+  const { PiPool } = await import("../src/pool.js");
+const pool = new PiPool({ factory: () => ({ start: async () => {}, stop: async () => {}, onEvent: () => () => {}, getState: async () => ({}), prompt: async () => ({}), abort: async () => {}, setModel: async () => ({}) }) });
+server = createApp({ db, dbPath: join(home, "cogitator.db"), dbVersion: 2, paths: getPaths(), pool });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });

@@ -1,6 +1,8 @@
 import Database from "better-sqlite3";
 
-const SCHEMA_V1 = `
+// Schéma courant (v2) — conversation.session_file devient nullable et un snapshot
+// spawn_args (JSON du SpawnConfig figé, O6) est ajouté.
+const SCHEMA_V2 = `
 CREATE TABLE IF NOT EXISTS agent_preset (
   id TEXT PRIMARY KEY,
   slug TEXT NOT NULL UNIQUE,
@@ -45,9 +47,10 @@ CREATE TABLE IF NOT EXISTS conversation (
   provider TEXT NOT NULL,
   model TEXT NOT NULL,
   thinking TEXT,
-  session_file TEXT NOT NULL UNIQUE,
+  session_file TEXT UNIQUE,
+  spawn_args TEXT NOT NULL DEFAULT '{}',
   title TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'spawning',
+  status TEXT NOT NULL DEFAULT 'idle',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -78,6 +81,28 @@ CREATE TABLE IF NOT EXISTS cron_run (
 );
 `;
 
+// v1 → v2 : rebuild de conversation (SQLite ne permet pas de lever un NOT NULL)
+const MIGRATE_V1_TO_V2 = `
+CREATE TABLE conversation_v2 (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT REFERENCES workspace(id) ON DELETE SET NULL,
+  agent_id TEXT REFERENCES agent_preset(id) ON DELETE SET NULL,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  thinking TEXT,
+  session_file TEXT UNIQUE,
+  spawn_args TEXT NOT NULL DEFAULT '{}',
+  title TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'idle',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+INSERT INTO conversation_v2 (id, workspace_id, agent_id, provider, model, thinking, session_file, title, status, created_at, updated_at)
+  SELECT id, workspace_id, agent_id, provider, model, thinking, session_file, title, status, created_at, updated_at FROM conversation;
+DROP TABLE conversation;
+ALTER TABLE conversation_v2 RENAME TO conversation;
+`;
+
 export type Db = Database.Database;
 
 export function openDb(dbPath: string): { db: Db; version: number } {
@@ -86,8 +111,16 @@ export function openDb(dbPath: string): { db: Db; version: number } {
   db.pragma("foreign_keys = ON");
   const version = db.pragma("user_version", { simple: true }) as number;
   if (version < 1) {
-    db.exec(SCHEMA_V1);
-    db.pragma("user_version = 1");
+    db.exec(SCHEMA_V2);
+    db.pragma("user_version = 2");
+    return { db, version: 2 };
   }
-  return { db, version: 1 };
+  if (version < 2) {
+    // FK OFF pendant la migration (pratique SQLite standard ; les parents peuvent être créés plus tard)
+    db.pragma("foreign_keys = OFF");
+    db.exec(MIGRATE_V1_TO_V2);
+    db.pragma("foreign_keys = ON");
+    db.pragma("user_version = 2");
+  }
+  return { db, version: 2 };
 }

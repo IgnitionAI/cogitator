@@ -1,4 +1,7 @@
 import { execFile } from "node:child_process";
+import { mkdirSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from "node:http";
 import type { Db } from "./db.js";
 import { packageVersion, piVersion } from "./pi.js";
@@ -11,6 +14,12 @@ import {
   applyAgent, createAgent, deleteAgent, getAgent, listAgents, unapplyAgent,
   updateAgent, validateAgent, type AgentInput,
 } from "./agents.js";
+import {
+  createConversation, deleteConversation, getConversation, listConversations,
+  setConversationModel, setConversationSession, setConversationStatus, setConversationTitle,
+} from "./conversations.js";
+import { PiPool, PoolError, type PiClientFactory } from "./pool.js";
+import { buildArgs, type SpawnConfig } from "./spawn.js";
 
 const INDEX_HTML = `<!doctype html>
 <html lang="fr">
@@ -92,10 +101,31 @@ export interface AppOptions {
   dbPath: string;
   dbVersion: number;
   paths: Paths;
+  pool: PiPool;
 }
 
 export function createApp(opts: AppOptions): Server {
-  const { db, dbPath, dbVersion, paths } = opts;
+  const { db, dbPath, dbVersion, paths, pool } = opts;
+  const tmpDir = join(paths.home, "tmp");
+  mkdirSync(tmpDir, { recursive: true });
+
+  /** Spawn paresseux : (re)démarre le process pi de la conversation si besoin. */
+  async function ensureSpawned(conv: ReturnType<typeof getConversation> & object): Promise<{ sessionFile?: string }> {
+    const spawn = JSON.parse(conv.spawn_args || "{}") as SpawnConfig;
+    const result = await pool.ensure(conv.id, {
+      cwd: conv.workspace_dir ?? homedir(),
+      args: buildArgs(spawn, tmpDir, conv.id),
+      resumeSessionFile: conv.session_file,
+    });
+    if (result.sessionFile) setConversationSession(db, conv.id, result.sessionFile);
+    return result;
+  }
+
+  // Fan-out des événements pi vers les abonnés SSE par conversation
+  const sseSubs = new Map<string, Set<(event: unknown) => void>>();
+  pool.onEvent((convId, event) => {
+    for (const l of sseSubs.get(convId) ?? []) l(event);
+  });
 
   const routes: Route[] = [
     ["GET", "/api/health", (ctx) => {
@@ -103,7 +133,7 @@ export function createApp(opts: AppOptions): Server {
         ok: true,
         version: packageVersion(),
         pi_version: piVersion(),
-        sessions_active: 0, // pool en M2
+        sessions_active: pool.size,
         mcp_adapter_detected: mcpAdapterDetected(paths),
         db: { path: dbPath, version: dbVersion },
       });
@@ -178,6 +208,110 @@ export function createApp(opts: AppOptions): Server {
       if (!preset) return sendJson(ctx.res, 404, { error: "agent introuvable" });
       const result = await validateAgent(paths, preset, checkAuthReadyFor);
       sendJson(ctx.res, 200, result);
+    }],
+
+    // Conversations (M2)
+    ["GET", "/api/conversations", (ctx) => {
+      const workspaceId = ctx.query.get("workspace_id");
+      sendJson(ctx.res, 200, { conversations: listConversations(db, workspaceId ?? undefined) });
+    }],
+    ["POST", "/api/conversations", async (ctx) => {
+      const b = (ctx.body ?? {}) as {
+        workspace_id?: string; prompt?: string; agent_id?: string;
+        provider?: string; model?: string; thinking?: string;
+        system_prompt?: string; skills?: string[]; tools?: string[];
+      };
+      let spawn: SpawnConfig;
+      let agentId: string | null = null;
+      if (b.agent_id) {
+        const preset = getAgent(db, b.agent_id);
+        if (!preset) return sendJson(ctx.res, 404, { error: "agent introuvable" });
+        agentId = preset.id;
+        spawn = {
+          provider: preset.provider, model: preset.model, thinking: preset.thinking,
+          systemPrompt: preset.system_prompt || undefined,
+          skills: preset.skills, tools: preset.tools_allowlist,
+        };
+      } else if (b.provider && b.model) {
+        spawn = {
+          provider: b.provider, model: b.model, thinking: b.thinking ?? null,
+          systemPrompt: b.system_prompt, skills: b.skills, tools: b.tools,
+        };
+      } else {
+        return sendJson(ctx.res, 400, { error: "agent_id ou (provider + model) requis" });
+      }
+      if (b.workspace_id) {
+        const ws = db.prepare("SELECT id FROM workspace WHERE id = ?").get(b.workspace_id);
+        if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      }
+      let conv = createConversation(db, { workspaceId: b.workspace_id ?? null, agentId, spawn });
+      if (b.prompt?.trim()) {
+        await ensureSpawned(conv);
+        await pool.prompt(conv.id, b.prompt.trim());
+        setConversationTitle(db, conv.id, b.prompt.trim());
+        conv = getConversation(db, conv.id)!;
+      }
+      sendJson(ctx.res, 201, { conversation: conv });
+    }],
+    ["GET", "/api/conversations/:id", (ctx) => {
+      const conv = getConversation(db, ctx.params.id!);
+      if (!conv) return sendJson(ctx.res, 404, { error: "conversation introuvable" });
+      sendJson(ctx.res, 200, { conversation: conv, live: pool.isLive(conv.id) });
+    }],
+    ["GET", "/api/conversations/:id/events", async (ctx) => {
+      const conv = getConversation(db, ctx.params.id!);
+      if (!conv) return sendJson(ctx.res, 404, { error: "conversation introuvable" });
+      const spawned = await ensureSpawned(conv);
+      const res = ctx.res;
+      res.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+      });
+      res.write(`data: ${JSON.stringify({ type: "session", sessionFile: spawned.sessionFile ?? conv.session_file })}\n\n`);
+      const listener = (event: unknown) => {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      };
+      let subs = sseSubs.get(conv.id);
+      if (!subs) sseSubs.set(conv.id, (subs = new Set()));
+      subs.add(listener);
+      ctx.req.on("close", () => {
+        subs.delete(listener);
+      });
+    }],
+    ["POST", "/api/conversations/:id/messages", async (ctx) => {
+      const conv = getConversation(db, ctx.params.id!);
+      if (!conv) return sendJson(ctx.res, 404, { error: "conversation introuvable" });
+      const b = (ctx.body ?? {}) as { text?: string; images?: unknown[] };
+      const text = (b.text ?? "").trim();
+      if (!text && !b.images?.length) return sendJson(ctx.res, 400, { error: "text ou images requis" });
+      await ensureSpawned(conv);
+      await pool.prompt(conv.id, text, b.images);
+      if (text) setConversationTitle(db, conv.id, text);
+      sendJson(ctx.res, 200, { ok: true });
+    }],
+    ["POST", "/api/conversations/:id/stop", async (ctx) => {
+      const conv = getConversation(db, ctx.params.id!);
+      if (!conv) return sendJson(ctx.res, 404, { error: "conversation introuvable" });
+      await pool.abort(conv.id);
+      sendJson(ctx.res, 200, { ok: true });
+    }],
+    ["POST", "/api/conversations/:id/model", async (ctx) => {
+      const conv = getConversation(db, ctx.params.id!);
+      if (!conv) return sendJson(ctx.res, 404, { error: "conversation introuvable" });
+      const b = (ctx.body ?? {}) as { provider?: string; id?: string };
+      if (!b.provider || !b.id) return sendJson(ctx.res, 400, { error: "provider et id requis" });
+      await pool.setModel(conv.id, b.provider, b.id);
+      const spawn = { ...(JSON.parse(conv.spawn_args || "{}") as SpawnConfig), provider: b.provider, model: b.id };
+      setConversationModel(db, conv.id, b.provider, b.id, spawn);
+      sendJson(ctx.res, 200, { ok: true });
+    }],
+    ["DELETE", "/api/conversations/:id", async (ctx) => {
+      const conv = getConversation(db, ctx.params.id!);
+      if (!conv) return sendJson(ctx.res, 404, { error: "conversation introuvable" });
+      await pool.evict(conv.id);
+      deleteConversation(db, conv.id);
+      sendJson(ctx.res, 200, { ok: true }); // le .jsonl pi survit sur disque (I5)
     }],
   ];
 

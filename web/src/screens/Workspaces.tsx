@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { AgentPreset, FeedEvent, FileChange, Workspace } from "../types";
 import { Empty, ErrorText, Field, Modal } from "../ui";
-import { FileDiffModal, FileRow } from "../FileViews";
+import { FileDiffModal, FileRow, FileTreeModal } from "../FileViews";
 
 interface WorkspaceActivity {
   files: FileChange[];
@@ -24,6 +24,7 @@ export default function Workspaces({ toast }: { toast: (t: string, err?: boolean
   const [feedFor, setFeedFor] = useState<string | null>(null);
   const [feed, setFeed] = useState<FeedEvent[]>([]);
   const [diffFor, setDiffFor] = useState<{ convId: string; path: string } | null>(null);
+  const [treeFor, setTreeFor] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -91,6 +92,9 @@ export default function Workspaces({ toast }: { toast: (t: string, err?: boolean
                 >
                   🕒 Feed
                 </button>{" "}
+                <button className="btn btn-sm" onClick={() => setTreeFor(w.id)} title="Arborescence read-only">
+                  🌳 Arborescence
+                </button>{" "}
                 <button
                   className="btn btn-sm btn-danger"
                   onClick={() => {
@@ -153,6 +157,14 @@ export default function Workspaces({ toast }: { toast: (t: string, err?: boolean
       ) : null}
       {diffFor ? (
         <FileDiffModal conversationId={diffFor.convId} path={diffFor.path} onClose={() => setDiffFor(null)} />
+      ) : null}
+      {treeFor ? (
+        <FileTreeModal
+          workspaceId={treeFor}
+          workspaceName={workspaces.find((w) => w.id === treeFor)?.name ?? ""}
+          modifiedPaths={new Set((activity[treeFor]?.files ?? []).map((f) => f.path))}
+          onClose={() => setTreeFor(null)}
+        />
       ) : null}
     </>
   );

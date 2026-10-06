@@ -66,6 +66,12 @@ export const api = {
     req<{ path: string; operations: FileEvent[] }>("GET", `/api/conversations/${id}/file?path=${encodeURIComponent(path)}`),
   workspaceFeed: (id: string) =>
     req<{ events: FeedEvent[]; conversations: number }>("GET", `/api/workspaces/${id}/feed`),
+  workspaceTree: (id: string) =>
+    req<{ root: string; tree: import("./FileViews").TreeNode[] }>("GET", `/api/workspaces/${id}/tree`),
+  workspaceFile: (id: string, path: string) =>
+    req<{ file: { path: string; name: string; size: number; content: string; truncated: boolean } }>(
+      "GET", `/api/workspaces/${id}/file?path=${encodeURIComponent(path)}`,
+    ),
 
   schedules: () => req<{ schedules: CronTask[] }>("GET", "/api/schedules"),
   createSchedule: (b: unknown) => req<{ schedule: CronTask }>("POST", "/api/schedules", b),

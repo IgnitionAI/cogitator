@@ -416,6 +416,37 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 .diff-old { background: rgba(235, 87, 87, 0.07); color: #e8a1a1; }
 .diff-new { background: rgba(76, 183, 130, 0.07); color: #9fd8bb; }
 
+/* tree (arborescence workspace) */
+.tree-panes { display: flex; gap: 0; height: 60vh; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.tree-nav { width: 300px; flex-shrink: 0; overflow: auto; background: var(--surface); border-right: 1px solid var(--border); padding: 6px 4px; }
+.tree-row {
+  display: flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: var(--radius);
+  cursor: pointer; font-size: 12.5px;
+  transition: 0.1s ease; transition-property: background-color;
+}
+.tree-row:hover { background: var(--raised); }
+.tree-row.selected { background: var(--raised); }
+.tree-row.modified .tree-name { color: var(--fg); }
+.tree-icon { width: 12px; color: var(--subtle); font-size: 10px; flex-shrink: 0; }
+.tree-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.tree-name.dir { color: var(--fg); font-weight: 500; }
+.tree-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+.tree-size { color: var(--subtle); font-size: 10.5px; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.tree-viewer { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tree-viewer-head {
+  padding: 8px 12px; font-size: 11.5px; color: var(--subtle);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tree-content {
+  flex: 1; margin: 0; padding: 12px 14px; overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; line-height: 1.6; color: var(--muted);
+  white-space: pre;
+}
+.chevron.afford { margin-left: 2px; }
+
 /* feed */
 .feed-day { color: var(--subtle); font-size: 11.5px; font-weight: 600; margin: 14px 0 6px; text-transform: capitalize; }
 .feed-row {

@@ -26,6 +26,7 @@ import { PiPool } from "./pool.js";
 import { makeSpawner, type Spawner } from "./spawner.js";
 import { readHistory, readEntries } from "./history.js";
 import { readFileChanges, readFileEvents, readFileDetail } from "./file-changes.js";
+import { workspaceTree, readWorkspaceFile } from "./workspace-files.js";
 import { importSkills } from "./skills-import.js";
 import {
   agentInputSchema, conversationCreateSchema, messageSchema, modelSwitchSchema,
@@ -312,7 +313,21 @@ export function createApp(opts: AppOptions): Server {
       sendJson(ctx.res, 200, result);
     }],
 
-    // Activité dev agrégée d'un workspace (toutes les conversations)
+    // Arborescence du workspace (read-only)
+    ["GET", "/api/workspaces/:id/tree", (ctx) => {
+      const ws = getWorkspace(db, ctx.params.id!);
+      if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      sendJson(ctx.res, 200, { root: ws.dir, tree: workspaceTree(ws.dir) });
+    }],
+    ["GET", "/api/workspaces/:id/file", (ctx) => {
+      const ws = getWorkspace(db, ctx.params.id!);
+      if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      const path = ctx.query.get("path");
+      if (!path) return sendJson(ctx.res, 400, { error: "path requis" });
+      const { file, error } = readWorkspaceFile(ws.dir, path);
+      if (error) return sendJson(ctx.res, 400, { error });
+      sendJson(ctx.res, 200, { file });
+    }],
     ["GET", "/api/workspaces/:id/activity", (ctx) => {
       const ws = getWorkspace(db, ctx.params.id!);
       if (!ws) return sendJson(ctx.res, 404, { error: "workspace introuvable" });

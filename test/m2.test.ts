@@ -75,7 +75,7 @@ before(async () => {
     idleMs: 1_000,
     callbacks: { onStatus: (id, s) => setConversationStatus(db, id, s) },
   });
-  server = createApp({ db, dbPath: join(home, "cogitator.db"), dbVersion: 2, paths: getPaths(), pool });
+  server = createApp({ db, dbPath: join(home, "cogitator.db"), dbVersion: 3, paths: getPaths(), pool });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -232,13 +232,14 @@ test("migration v1 → v2 : session_file devient nullable + spawn_args", () => {
     thinking TEXT, session_file TEXT NOT NULL UNIQUE, title TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'spawning',
     created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+  CREATE TABLE agent_preset (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL);
   INSERT INTO conversation (id, provider, model, session_file) VALUES ('legacy-1', 'openai', 'gpt-4', '/s.jsonl');
   `);
   legacy.pragma("user_version = 1");
   legacy.close();
 
   const { db: migrated, version } = openDb(v1db);
-  assert.equal(version, 2);
+  assert.equal(version, 3);
   const row = migrated.prepare("SELECT * FROM conversation WHERE id = 'legacy-1'").get() as { session_file: string; spawn_args: string };
   assert.equal(row.session_file, "/s.jsonl");
   assert.equal(row.spawn_args, "{}");

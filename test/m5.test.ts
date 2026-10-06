@@ -89,7 +89,7 @@ before(async () => {
     runTimeoutMs: 5_000,
   });
   const events = new EventEmitter();
-  server = createApp({ db, dbPath: join(home, "cogitator.db"), dbVersion: 2, paths: getPaths(), pool, cron, events });
+  server = createApp({ db, dbPath: join(home, "cogitator.db"), dbVersion: 3, paths: getPaths(), pool, cron, events });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });

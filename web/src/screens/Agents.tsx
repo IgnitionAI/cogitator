@@ -31,14 +31,17 @@ export default function Agents({ toast }: { toast: (t: string, err?: boolean) =>
         <div className="cards">
           {agents.map((a) => (
             <div key={a.id} className="card" style={{ cursor: "default" }}>
-              <h4>{a.name}</h4>
+              <h4>{a.name} {a.is_default ? <Badge color="#9a6700">★ défaut</Badge> : null}</h4>
               <div className="meta">
                 <span className="mono">{a.provider}/{a.model}{a.thinking ? `:${a.thinking}` : ""}</span>
                 <span>{a.skills.length} skill(s) · {a.mcp_servers.length} MCP · {a.subagents?.length ?? 0} subagent(s)</span>
                 {a.description ? <span>{a.description.slice(0, 90)}</span> : null}
               </div>
               <div className="actions">
-                <button className="btn btn-sm" onClick={() => setEditing(a)}>Éditer</button>
+                <button className="btn btn-sm" onClick={() => setEditing(a)}>Éditer</button>{" "}
+                {!a.is_default ? (
+                  <button className="btn btn-sm" onClick={() => api.setDefaultAgent(a.id).then(refresh).catch((e: Error) => toast(e.message, true))}>Définir défaut</button>
+                ) : null}{" "}
                 <button
                   className="btn btn-sm btn-danger"
                   onClick={() => {

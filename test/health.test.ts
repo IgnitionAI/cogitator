@@ -28,7 +28,7 @@ before(async () => {
   server = createApp({
     db,
     dbPath: join(home, "cogitator.db"),
-    dbVersion: 2,
+    dbVersion: 3,
     paths: getPaths(),
     pool: new PiPool({ factory: () => ({ start: async () => {}, stop: async () => {}, onEvent: () => () => {}, getState: async () => ({}), prompt: async () => ({}), abort: async () => {}, setModel: async () => ({}) }) }),
   });
@@ -50,7 +50,7 @@ test("GET /api/health répond le contrat", async () => {
   assert.equal(typeof body.version, "string");
   assert.ok("pi_version" in body);
   assert.equal(body.sessions_active, 0);
-  assert.equal(body.db.version, 2);
+  assert.equal(body.db.version, 3);
   assert.equal(body.db.path, join(home, "cogitator.db"));
 });
 

@@ -14,7 +14,7 @@ import {
 } from "./registry.js";
 import {
   applyAgent, createAgent, deleteAgent, getAgent, listAgents, unapplyAgent,
-  updateAgent, validateAgent, type AgentInput,
+  updateAgent, validateAgent, getDefaultAgentId, setDefaultAgent, type AgentInput,
 } from "./agents.js";
 import {
   CronService, createTask, deleteTask, getTask, listRuns, listTasks, updateTask,
@@ -247,6 +247,10 @@ export function createApp(opts: AppOptions): Server {
       const result = await validateAgent(paths, preset, checkAuthReadyFor);
       sendJson(ctx.res, 200, result);
     }],
+    ["POST", "/api/agents/:id/default", (ctx) => {
+      if (!setDefaultAgent(db, ctx.params.id!)) return sendJson(ctx.res, 404, { error: "agent introuvable" });
+      sendJson(ctx.res, 200, { ok: true });
+    }],
 
     // Workspaces (M3)
     ["GET", "/api/workspaces", (ctx) => {
@@ -303,6 +307,11 @@ export function createApp(opts: AppOptions): Server {
         if (!b.agent_id && !b.provider) agentId = ws.default_agent_id;
       }
       if (b.agent_id) agentId = b.agent_id;
+      if (!agentId && !b.provider) {
+        // repli : agent par défaut global (le Majordome si seedé)
+        agentId = getDefaultAgentId(db);
+        if (!agentId) return sendJson(ctx.res, 400, { error: "aucun agent par défaut — précise agent_id ou provider+model" });
+      }
       if (agentId) {
         const preset = getAgent(db, agentId);
         if (!preset) return sendJson(ctx.res, 404, { error: "agent introuvable" });

@@ -40,6 +40,7 @@ export interface AgentPreset extends AgentInput {
   slug: string;
   created_at: string;
   updated_at: string;
+  is_default?: number;
   subagents: Array<SubagentInput & { id: string }>;
 }
 
@@ -65,7 +66,7 @@ const SUB_NAME = /^[a-z][a-z0-9_-]*$/;
 interface PresetRow {
   id: string; slug: string; name: string; description: string; provider: string; model: string;
   thinking: string | null; system_prompt: string; skills: string; tools_allowlist: string | null;
-  mcp_servers: string; created_at: string; updated_at: string;
+  mcp_servers: string; created_at: string; updated_at: string; is_default: number;
 }
 
 interface SubRow {
@@ -88,6 +89,7 @@ function rowToPreset(row: PresetRow, subs: SubRow[]): AgentPreset {
     mcp_servers: JSON.parse(row.mcp_servers || "[]"),
     created_at: row.created_at,
     updated_at: row.updated_at,
+    is_default: row.is_default,
     subagents: subs.map((s) => ({
       id: s.id,
       name: s.name,
@@ -105,12 +107,28 @@ function rowToPreset(row: PresetRow, subs: SubRow[]): AgentPreset {
 // ---------- CRUD ----------
 
 export function listAgents(db: Db): Array<Omit<AgentPreset, "system_prompt" | "subagents">> {
-  const rows = db.prepare("SELECT * FROM agent_preset ORDER BY name").all() as unknown as PresetRow[];
+  const rows = db.prepare("SELECT * FROM agent_preset ORDER BY is_default DESC, name").all() as unknown as PresetRow[];
   return rows.map((r) => {
     const p = rowToPreset(r, []);
     const { system_prompt: _sp, subagents: _sa, ...rest } = p;
     return rest;
   });
+}
+
+export function getDefaultAgentId(db: Db): string | null {
+  const row = db.prepare("SELECT id FROM agent_preset WHERE is_default = 1 LIMIT 1").get() as { id: string } | undefined;
+  return row?.id ?? null;
+}
+
+/** Définit l'agent par défaut global (un seul — transaction). */
+export function setDefaultAgent(db: Db, id: string): boolean {
+  const existing = getAgent(db, id);
+  if (!existing) return false;
+  db.transaction(() => {
+    db.prepare("UPDATE agent_preset SET is_default = 0").run();
+    db.prepare("UPDATE agent_preset SET is_default = 1 WHERE id = ?").run(id);
+  })();
+  return true;
 }
 
 export function getAgent(db: Db, id: string): AgentPreset | null {

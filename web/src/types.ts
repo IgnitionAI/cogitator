@@ -50,6 +50,7 @@ export interface AgentPreset {
   mcp_servers: McpServerEntry[];
   created_at: string;
   updated_at: string;
+  is_default?: number;
   subagents: Array<SubagentInput & { id: string }>;
 }
 

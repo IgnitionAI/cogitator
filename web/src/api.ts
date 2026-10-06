@@ -29,6 +29,7 @@ export const api = {
   updateAgent: (id: string, b: unknown) => req<{ agent: AgentPreset }>("PUT", `/api/agents/${id}`, b),
   deleteAgent: (id: string) => req<{ ok: true }>("DELETE", `/api/agents/${id}`),
   validateAgent: (id: string) => req<{ errors: string[]; warnings: string[] }>("POST", `/api/agents/${id}/validate`),
+  setDefaultAgent: (id: string) => req<{ ok: true }>("POST", `/api/agents/${id}/default`),
 
   workspaces: () => req<{ workspaces: Workspace[] }>("GET", "/api/workspaces"),
   createWorkspace: (b: unknown) => req<{ workspace: Workspace }>("POST", "/api/workspaces", b),

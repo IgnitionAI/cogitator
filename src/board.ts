@@ -197,22 +197,27 @@ async function ensureOpenState(wsDir: string, number: number, status: string): P
 
 const labelsEnsured = new Set<string>();
 
-/** Crée les labels status:/priority: sur le repo (idempotent, une fois par workspace et par process). */
-async function ensureLabels(wsDir: string): Promise<void> {
-  if (labelsEnsured.has(wsDir)) return;
-  const all = [
+/** Crée les labels manquants sur le repo (idempotent). Les labels système ne sont recréés
+ *  qu'une fois par workspace et par process ; les labels carte sont assurés à chaque écriture. */
+async function ensureLabels(wsDir: string, cardLabels: string[] = []): Promise<void> {
+  const system = [
     ...STATUSES.map((s) => `status:${s}`),
     ...PRIORITIES.map((p) => `priority:${p}`),
   ];
-  for (const name of all) {
-    await gh(wsDir, ["label", "create", name, "--force", "--color", "5e6ad2"], 10_000);
+  if (!labelsEnsured.has(wsDir)) {
+    for (const name of system) {
+      await gh(wsDir, ["label", "create", name, "--force", "--color", "5e6ad2"], 10_000);
+    }
+    labelsEnsured.add(wsDir);
   }
-  labelsEnsured.add(wsDir);
+  for (const name of cardLabels) {
+    await gh(wsDir, ["label", "create", name, "--force", "--color", "8a8f98"], 10_000);
+  }
 }
 
 export async function createCardGh(wsDir: string, write: CardWrite): Promise<{ card: BoardCard } | { error: string }> {
   // gh issue create n'a pas --json : l'URL de la nouvelle issue est imprimée sur stdout
-  await ensureLabels(wsDir);
+  await ensureLabels(wsDir, write.labels ?? []);
   const r = await gh(wsDir, [
     "issue", "create", "--title", write.title,
     "--body", write.description ?? "",
@@ -268,7 +273,7 @@ export async function updateCardGh(wsDir: string, number: number, write: Partial
   const args = ["issue", "edit", String(number), "--title", next.title, "--body", next.description];
   for (const l of add) args.push("--add-label", l);
   for (const l of remove) args.push("--remove-label", l);
-  await ensureLabels(wsDir);
+  await ensureLabels(wsDir, next.labels);
   const r = await gh(wsDir, args);
   if (!r.ok) return { error: `gh issue edit a échoué : ${r.stderr || r.stdout}`.slice(0, 300) };
   await ensureOpenState(wsDir, number, next.status);

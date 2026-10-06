@@ -1,0 +1,18 @@
+{
+  "version": 2,
+  "extras": {
+    "1": {
+      "conversation_ids": [],
+      "blocks": [],
+      "blocked_by": [],
+      "comments": [
+        {
+          "id": "1791323392558-akqxeb",
+          "author": "user",
+          "text": "Commentaire E2E Cogitator",
+          "at": "2026-10-06T21:49:52.558Z"
+        }
+      ]
+    }
+  }
+}

@@ -154,7 +154,7 @@ function ImportSkillsModal(props: { onClose: () => void; toast: (t: string, err?
 
   return (
     <Modal title="Importer des skills" onClose={props.onClose}>
-      <Field label="Source" hint="Repo GitHub (https://github.com/owner/repo) ou chemin local d'un dossier contenant des SKILL.md">
+      <Field label="Source" hint="Repo GitHub (IgnitionAI/skills), chemin local, ou commande CLI : npx aiblueprint-cli@latest skills update">
         <input value={source} onChange={(e) => setSource(e.target.value)} placeholder="IgnitionAI/skills" />
       </Field>
       <label style={{ display: "flex", gap: 8, marginBottom: 14, fontSize: 13 }}>

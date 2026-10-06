@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readFileSync
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 
-const { scanSkillDirs, importFromDir, importFromGitHub, parseGitHubRepo, sanitizeSkillName, importSkills } = await import("../src/skills-import.js");
+const { scanSkillDirs, importFromDir, importFromGitHub, parseGitHubRepo, sanitizeSkillName, importSkills, runSkillCommand } = await import("../src/skills-import.js");
 
 const home = mkdtempSync(join(tmpdir(), "cog-skillimp-"));
 
@@ -86,6 +86,20 @@ test("importSkills : source inconnue → erreur propre", async () => {
   const r = await importSkills("/chemin/qui/nexiste/pas", join(home, "x"));
   assert.ok(r.error);
   assert.equal(r.imported.length, 0);
+});
+
+test("runSkillCommand : garde npx/npm uniquement", async () => {
+  const refused = await runSkillCommand("rm -rf /", [join(home, "x")]);
+  assert.match(refused.error ?? "", /seuls npx et npm/);
+});
+
+test("runSkillCommand : npm --version s'exécute, aucun skill nouveau → rapport avec sortie", async () => {
+  const empty = join(home, "empty-skills");
+  mkdirSync(empty, { recursive: true });
+  const r = await runSkillCommand("npm --version", [empty], 30_000);
+  assert.equal(r.imported.length, 0);
+  assert.ok(r.error);
+  assert.match(r.error, /sortie:/);
 });
 
 function readSkill(dest: string, name: string): string {

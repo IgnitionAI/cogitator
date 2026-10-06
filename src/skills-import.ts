@@ -106,8 +106,11 @@ export async function importFromGitHub(source: string, destRoot: string, overwri
   }
 }
 
-/** Point d'entrée unique : URL GitHub ou chemin local. */
+/** Point d'entrée unique : URL GitHub, chemin local, ou commande npx/npm. */
 export function importSkills(source: string, destRoot: string, overwrite = false): Promise<ImportResult> {
+  if (/^npx\s|^npm\s/.test(source.trim())) {
+    return runSkillCommand(source.trim(), [destRoot]);
+  }
   if (/^(https?:\/\/github\.com\/|git@github\.com:|[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?$)/.test(source.trim()) && !existsSync(source)) {
     return importFromGitHub(source, destRoot, overwrite);
   }
@@ -115,6 +118,48 @@ export function importSkills(source: string, destRoot: string, overwrite = false
     return Promise.resolve(importFromDir(source, destRoot, overwrite));
   }
   return Promise.resolve({ imported: [], skipped: [], error: `source non reconnue: ${source}` });
+}
+
+/**
+ * Exécute un CLI d'installation de skills (npx/npm) et rapporte les skills apparus.
+ * Sécurité : npx/npm uniquement (pas de shell), timeout 3 min, args par découpage simple
+ * (pas de quotes — limitation assumée, ponytail: découper avec un vrai shell-quote si besoin).
+ */
+export async function runSkillCommand(cmd: string, destRoots: string[], timeoutMs = 180_000): Promise<ImportResult> {
+  const tokens = cmd.split(/\s+/).filter(Boolean);
+  const bin = tokens[0];
+  if (bin !== "npx" && bin !== "npm") {
+    return { imported: [], skipped: [], error: "seuls npx et npm sont autorisés comme commande d'import" };
+  }
+  const snapshot = new Set<string>();
+  for (const root of destRoots) {
+    for (const dir of scanSkillDirs(root)) snapshot.add(sanitizeSkillName(basename(dir)));
+  }
+
+  try {
+    const { stdout, stderr } = await new Promise<{ stdout: string; stderr: string }>((resolve) => {
+      execFile(bin, tokens.slice(1), { timeout: timeoutMs, maxBuffer: 5 * 1024 * 1024 }, (err, out, serr) => {
+        // certains CLI renvoient un code non nul tout en ayant installé : on garde la sortie
+        resolve({ stdout: String(out), stderr: String(serr) });
+        void err;
+      });
+    });
+    const imported: string[] = [];
+    for (const root of destRoots) {
+      for (const dir of scanSkillDirs(root)) {
+        const name = sanitizeSkillName(basename(dir));
+        if (!snapshot.has(name)) imported.push(name);
+      }
+    }
+    const result: ImportResult = { imported: [...new Set(imported)], skipped: [] };
+    if (result.imported.length === 0) {
+      const tail = (stderr || stdout).trim().split("\n").slice(-3).join(" | ");
+      result.error = `commande exécutée mais aucun skill nouveau détecté${tail ? ` — sortie: ${tail}` : ""}`;
+    }
+    return result;
+  } catch (err) {
+    return { imported: [], skipped: [], error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /** Vérif qu'un SKILL.md a un frontmatter minimal (name + description) — signalé, pas bloquant. */

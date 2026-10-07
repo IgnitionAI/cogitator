@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { readJson, atomicWriteJson } from "./json-files.js";
+import { CARD_PRIORITIES, CARD_STATUSES } from "./schemas.js";
 
 /**
  * Board kanban — réplique des GitHub Issues du repo (source de vérité = GitHub).
@@ -56,8 +57,17 @@ interface SidecarFile {
   extras: Record<string, SidecarExtras>; // clé = numéro d'issue
 }
 
-const STATUSES = ["backlog", "todo", "in_progress", "done", "canceled"] as const;
-const PRIORITIES = ["urgent", "high", "medium", "low"] as const;
+const STATUSES = CARD_STATUSES;
+const PRIORITIES = CARD_PRIORITIES;
+
+/** Statuts/priorités viennent des schémas zod : les predicats gardent le narrowing côté TS. */
+function isStatus(value: string): value is (typeof STATUSES)[number] {
+  return (STATUSES as readonly string[]).includes(value);
+}
+
+function isPriority(value: string): value is (typeof PRIORITIES)[number] {
+  return (PRIORITIES as readonly string[]).includes(value);
+}
 
 export function boardPath(wsDir: string): string {
   return join(wsDir, "cogitator.board.json");
@@ -65,12 +75,29 @@ export function boardPath(wsDir: string): string {
 
 // ---------- gh ----------
 
-function gh(wsDir: string, args: string[], timeoutMs = 20_000): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+const GH_TIMEOUT_MS = 20_000;
+const GH_QUICK_TIMEOUT_MS = 10_000;
+const GH_MAX_BUFFER = 8 * 1024 * 1024;
+const GH_ERROR_MAX = 300;
+const GH_ISSUE_LIMIT = 200;
+
+interface GhResult {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+}
+
+function gh(wsDir: string, args: string[], timeoutMs = GH_TIMEOUT_MS): Promise<GhResult> {
   return new Promise((resolve) => {
-    execFile("gh", args, { cwd: wsDir, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile("gh", args, { cwd: wsDir, timeout: timeoutMs, maxBuffer: GH_MAX_BUFFER }, (err, stdout, stderr) => {
       resolve({ ok: !err, stdout: String(stdout), stderr: String(stderr).trim() });
     });
   });
+}
+
+/** Erreur gh homogène et tronquée (les sorties gh peuvent être longues). */
+function ghError(action: string, r: GhResult): { error: string } {
+  return { error: `${action}: ${r.stderr || r.stdout}`.slice(0, GH_ERROR_MAX) };
 }
 
 interface GhIssue {
@@ -86,10 +113,10 @@ interface GhIssue {
 
 async function listIssues(wsDir: string): Promise<{ issues: GhIssue[] } | { error: string }> {
   const r = await gh(wsDir, [
-    "issue", "list", "--state", "all", "--limit", "200",
+    "issue", "list", "--state", "all", "--limit", String(GH_ISSUE_LIMIT),
     "--json", "number,title,body,state,labels,url,createdAt,updatedAt",
   ]);
-  if (!r.ok) return { error: `gh inaccessible ou repo sans remote : ${r.stderr || r.stdout}`.slice(0, 300) };
+  if (!r.ok) return { error: `gh inaccessible ou repo sans remote : ${r.stderr || r.stdout}`.slice(0, GH_ERROR_MAX) };
   try {
     return { issues: JSON.parse(r.stdout) as GhIssue[] };
   } catch {
@@ -104,19 +131,21 @@ export function statusFromIssue(issue: GhIssue): string {
     return issue.labels.some((l) => l.name === "status:canceled") ? "canceled" : "done";
   }
   const found = issue.labels.find((l) => l.name.startsWith("status:"))?.name.slice("status:".length);
-  return found && (STATUSES as readonly string[]).includes(found) ? found : "todo";
+  return found && isStatus(found) ? found : "todo";
 }
 
 export function priorityFromIssue(issue: GhIssue): string {
   const found = issue.labels.find((l) => l.name.startsWith("priority:"))?.name.slice("priority:".length);
-  return found && (PRIORITIES as readonly string[]).includes(found) ? found : "medium";
+  return found && isPriority(found) ? found : "medium";
 }
+
+const USER_LABELS_MAX = 8;
 
 function userLabels(issue: GhIssue): string[] {
   return issue.labels
     .map((l) => l.name)
     .filter((n) => !n.startsWith("status:") && !n.startsWith("priority:"))
-    .slice(0, 8);
+    .slice(0, USER_LABELS_MAX);
 }
 
 function mergeCard(issue: GhIssue, extras: SidecarExtras | undefined): BoardCard {
@@ -152,20 +181,18 @@ function saveSidecar(wsDir: string, sidecar: SidecarFile): void {
   atomicWriteJson(boardPath(wsDir), sidecar);
 }
 
+/** Extras Cogitator d'une carte (clé = numéro d'issue). */
+function readExtras(wsDir: string, number: number): SidecarExtras | undefined {
+  return readSidecar(wsDir).extras[String(number)];
+}
+
 // ---------- API publique ----------
 
-/** Liste les cartes = issues GitHub + extras sidecar. Migre les anciennes cartes locales au passage. */
+/** Liste les cartes = issues GitHub + extras sidecar. */
 export async function listCards(wsDir: string): Promise<{ cards: BoardCard[] } | { error: string }> {
   const listed = await listIssues(wsDir);
   if ("error" in listed) return { error: listed.error };
   const sidecar = readSidecar(wsDir);
-  const known = new Set(listed.issues.map((i) => i.number));
-  // migration : les extras orphelins (issue inexistante) → création d'issue avec les infos du sidecar
-  for (const [key, extras] of Object.entries(sidecar.extras)) {
-    const n = Number(key);
-    if (known.has(n) || !extras.comments && !extras.conversation_ids) continue;
-    if (!Number.isInteger(n)) continue;
-  }
   const cards = listed.issues.map((i) => mergeCard(i, sidecar.extras[String(i.number)]));
   cards.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   return { cards };
@@ -197,23 +224,25 @@ async function ensureOpenState(wsDir: string, number: number, status: string): P
   }
 }
 
-const labelsEnsured = new Set<string>();
+const LABEL_COLOR_SYSTEM = "5e6ad2";
+const LABEL_COLOR_USER = "8a8f98";
+const LABELS_ENSURED = new Set<string>();
 
 /** Crée les labels manquants sur le repo (idempotent). Les labels système ne sont recréés
  *  qu'une fois par workspace et par process ; les labels carte sont assurés à chaque écriture. */
 async function ensureLabels(wsDir: string, cardLabels: string[] = []): Promise<void> {
-  const system = [
-    ...STATUSES.map((s) => `status:${s}`),
-    ...PRIORITIES.map((p) => `priority:${p}`),
-  ];
-  if (!labelsEnsured.has(wsDir)) {
+  if (!LABELS_ENSURED.has(wsDir)) {
+    const system = [
+      ...STATUSES.map((s) => `status:${s}`),
+      ...PRIORITIES.map((p) => `priority:${p}`),
+    ];
     for (const name of system) {
-      await gh(wsDir, ["label", "create", name, "--force", "--color", "5e6ad2"], 10_000);
+      await gh(wsDir, ["label", "create", name, "--force", "--color", LABEL_COLOR_SYSTEM], GH_QUICK_TIMEOUT_MS);
     }
-    labelsEnsured.add(wsDir);
+    LABELS_ENSURED.add(wsDir);
   }
   for (const name of cardLabels) {
-    await gh(wsDir, ["label", "create", name, "--force", "--color", "8a8f98"], 10_000);
+    await gh(wsDir, ["label", "create", name, "--force", "--color", LABEL_COLOR_USER], GH_QUICK_TIMEOUT_MS);
   }
 }
 
@@ -225,9 +254,9 @@ export async function createCardGh(wsDir: string, write: CardWrite): Promise<{ c
     "--body", write.description ?? "",
     ...targetLabels(write).flatMap((l) => ["--label", l]),
   ]);
-  if (!r.ok) return { error: `gh issue create a échoué : ${r.stderr || r.stdout}`.slice(0, 300) };
+  if (!r.ok) return ghError("gh issue create a échoué", r);
   const urlMatch = r.stdout.trim().match(/\/issues\/(\d+)/);
-  if (!urlMatch) return { error: `URL d'issue introuvable dans la sortie gh : ${r.stdout.slice(0, 200)}` };
+  if (!urlMatch) return { error: `URL d'issue introuvable dans la sortie gh : ${r.stdout.slice(0, GH_ERROR_MAX)}` };
   const number = Number(urlMatch[1]);
   const now = new Date().toISOString();
   const issue: GhIssue = {
@@ -258,7 +287,7 @@ export async function updateCardGh(wsDir: string, number: number, write: Partial
   const issue = listed.issues.find((i) => i.number === number);
   if (!issue) return { error: `issue #${number} introuvable` };
 
-  const current = mergeCard(issue, readSidecar(wsDir).extras[String(number)]);
+  const current = mergeCard(issue, readExtras(wsDir, number));
   const next: { title: string; description: string; status: string; priority: string; labels: string[] } = {
     title: write.title ?? current.title,
     description: write.description ?? current.description,
@@ -278,7 +307,7 @@ export async function updateCardGh(wsDir: string, number: number, write: Partial
   for (const l of remove) args.push("--remove-label", l);
   await ensureLabels(wsDir, next.labels);
   const r = await gh(wsDir, args);
-  if (!r.ok) return { error: `gh issue edit a échoué : ${r.stderr || r.stdout}`.slice(0, 300) };
+  if (!r.ok) return ghError("gh issue edit a échoué", r);
   await ensureOpenState(wsDir, number, next.status);
 
   // extras sidecar
@@ -293,41 +322,44 @@ export async function updateCardGh(wsDir: string, number: number, write: Partial
 
   const relisted = await listIssues(wsDir);
   if ("error" in relisted) return { error: relisted.error };
-  const updated = relisted.issues.find((i) => i.number === number)!;
+  const updated = relisted.issues.find((i) => i.number === number);
+  if (!updated) return { error: `issue #${number} introuvable` };
   return { card: mergeCard(updated, sidecar.extras[String(number)]) };
 }
 
 export async function moveCardGh(wsDir: string, number: number, status: string): Promise<{ card: BoardCard } | { error: string }> {
-  if (!(STATUSES as readonly string[]).includes(status)) return { error: `statut invalide: ${status}` };
+  if (!isStatus(status)) return { error: `statut invalide: ${status}` };
   const listed = await listIssues(wsDir);
   if ("error" in listed) return { error: listed.error };
   const issue = listed.issues.find((i) => i.number === number);
   if (!issue) return { error: `issue #${number} introuvable` };
-  const current = mergeCard(issue, readSidecar(wsDir).extras[String(number)]);
+  const current = mergeCard(issue, readExtras(wsDir, number));
   return updateCardGh(wsDir, number, { status, priority: current.priority, labels: current.labels });
 }
+
+const COMMENTS_MAX = 100;
 
 export async function addCommentGh(wsDir: string, number: number, text: string, author = "user"): Promise<{ card: BoardCard } | { error: string }> {
   // commentaire GitHub (visible par tous) + copie locale dans le sidecar pour l'UI
   const r = await gh(wsDir, ["issue", "comment", String(number), "--body", `_${author}_ (via Cogitator) :\n${text}`]);
-  if (!r.ok) return { error: `gh issue comment a échoué : ${r.stderr || r.stdout}`.slice(0, 300) };
+  if (!r.ok) return ghError("gh issue comment a échoué", r);
   const sidecar = readSidecar(wsDir);
   const extras = sidecar.extras[String(number)] ?? {};
-  const comments = extras.comments ?? [];
-  comments.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, author, text, at: new Date().toISOString() });
-  extras.comments = comments.slice(-100);
+  const comment: BoardComment = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, author, text, at: new Date().toISOString() };
+  extras.comments = [...(extras.comments ?? []), comment].slice(-COMMENTS_MAX);
   sidecar.extras[String(number)] = extras;
   saveSidecar(wsDir, sidecar);
   const listed = await listIssues(wsDir);
   if ("error" in listed) return { error: listed.error };
-  const issue = listed.issues.find((i) => i.number === number)!;
+  const issue = listed.issues.find((i) => i.number === number);
+  if (!issue) return { error: `issue #${number} introuvable` };
   return { card: mergeCard(issue, extras) };
 }
 
 /** "Suppression" = fermeture de l'issue (GitHub ne supprime pas) + nettoyage du sidecar et des relations. */
 export async function closeCardGh(wsDir: string, number: number): Promise<{ ok: true } | { error: string }> {
   const r = await gh(wsDir, ["issue", "close", String(number), "--comment", "Fermé via Cogitator"]);
-  if (!r.ok) return { error: `gh issue close a échoué : ${r.stderr || r.stdout}`.slice(0, 300) };
+  if (!r.ok) return ghError("gh issue close a échoué", r);
   const sidecar = readSidecar(wsDir);
   delete sidecar.extras[String(number)];
   for (const extras of Object.values(sidecar.extras)) {

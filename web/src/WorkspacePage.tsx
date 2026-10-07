@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { BoardPanel } from "./Board";
 import { FileRow, TreePanel } from "./FileViews";
-import type { AgentPreset, Conversation, FeedEvent, FileChange, Workspace } from "./types";
+import type { AgentPreset, BoardCard, Conversation, FeedEvent, FileChange, Workspace } from "./types";
 import { Badge, Empty, statusColor } from "./ui";
 import { ChatView } from "./screens/Conversations";
 
@@ -12,6 +12,7 @@ const TABS = [
   { id: "feed", label: "🕒 Feed" },
   { id: "files", label: "🌳 Fichiers" },
   { id: "conversations", label: "💬 Conversations" },
+  { id: "team", label: "👥 Équipe" },
   { id: "pm", label: "🤖 Chef de Projet" },
 ] as const;
 
@@ -29,6 +30,12 @@ export default function WorkspacePage(props: {
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [diffFor, setDiffFor] = useState<{ convId: string; path: string } | null>(null);
   const [pmConv, setPmConv] = useState<Conversation | null>(null);
+  const [cards, setCards] = useState<BoardCard[]>([]);
+
+  const refreshBoard = useCallback(() => {
+    api.board(workspace.id).then((r) => setCards(r.cards)).catch(() => undefined);
+  }, [workspace.id]);
+  useEffect(refreshBoard, [refreshBoard]);
 
   // conversation dédiée au Chef de Projet : réutilise la première existante, sinon la crée
   const openPm = useCallback(() => {
@@ -153,6 +160,19 @@ export default function WorkspacePage(props: {
 
       {tab === "files" ? <TreePanel workspaceId={workspace.id} modifiedPaths={modified} /> : null}
 
+      {tab === "team" ? (
+        <TeamTab
+          agents={props.agents}
+          cards={cards}
+          conversations={convs}
+          onTalk={(agent) => {
+            api.createConversation({ workspace_id: workspace.id, agent_id: agent.id })
+              .then((r) => props.onOpenConversation(r.conversation.id))
+              .catch(() => props.toast("Création de la conversation impossible", true));
+          }}
+        />
+      ) : null}
+
       {tab === "pm" ? (
         pmConv ? (
           <div className="tab-chat">
@@ -189,6 +209,80 @@ export default function WorkspacePage(props: {
 }
 
 import { FileDiffModal } from "./FileViews";
+
 function DiffLoader(props: { conversationId: string; path: string; onClose: () => void }) {
   return <FileDiffModal {...props} />;
+}
+
+/** Qui est sur le projet et qui fait quoi : par agent, cartes assignées (par colonne) + conversations. */
+function TeamTab(props: {
+  agents: AgentPreset[];
+  cards: BoardCard[];
+  conversations: Conversation[];
+  onTalk: (agent: AgentPreset) => void;
+}) {
+  const members = props.agents
+    .map((a) => ({
+      agent: a,
+      assigned: props.cards.filter((c) => c.assignee_agent_id === a.id),
+      convs: props.conversations.filter((c) => c.agent_id === a.id),
+    }))
+    .filter((m) => m.assigned.length > 0 || m.convs.length > 0);
+
+  if (members.length === 0) {
+    return <Empty>Personne sur ce projet pour l'instant — assigne des agents aux cartes du board ou lance une conversation.</Empty>;
+  }
+
+  const COLS: Array<{ id: string; label: string }> = [
+    { id: "in_progress", label: "En cours" },
+    { id: "todo", label: "À faire" },
+    { id: "backlog", label: "Backlog" },
+    { id: "done", label: "Terminé" },
+  ];
+
+  return (
+    <div className="cards" style={{ marginTop: 4 }}>
+      {members.map(({ agent, assigned, convs }) => {
+        const active = assigned.filter((c) => c.status === "in_progress" || c.status === "todo");
+        const lastActivity = Math.max(
+          ...assigned.map((c) => Date.parse(c.updated_at) || 0),
+          ...convs.map((c) => Date.parse(c.updated_at) || 0),
+          0,
+        );
+        return (
+          <div key={agent.id} className="card" style={{ cursor: "default" }}>
+            <h4>
+              {agent.name}{" "}
+              <span className="muted mono" style={{ fontSize: 11 }}>{agent.provider}/{agent.model}</span>
+            </h4>
+            <div className="meta">
+              <span className="team-stats">
+                {COLS.map((col) => {
+                  const n = assigned.filter((c) => c.status === col.id).length;
+                  return n > 0 ? <span key={col.id} className="team-stat">{col.label} : <strong>{n}</strong></span> : null;
+                })}
+                {convs.length > 0 ? <span className="team-stat">💬 {convs.length}</span> : null}
+              </span>
+              {active.length > 0 ? (
+                <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  {active.slice(0, 4).map((c) => (
+                    <a key={c.id} className="team-ticket mono" href={c.url} target="_blank" rel="noreferrer" title={c.title}>
+                      #{c.number} {c.title.slice(0, 42)}{c.title.length > 42 ? "…" : ""}
+                    </a>
+                  ))}
+                  {active.length > 4 ? <span className="muted">+{active.length - 4} autre(s)…</span> : null}
+                </span>
+              ) : (
+                <span className="muted">Aucun ticket actif</span>
+              )}
+              {lastActivity > 0 ? <span className="muted">activité : {new Date(lastActivity).toLocaleString()}</span> : null}
+            </div>
+            <div className="actions">
+              <button className="btn btn-sm" onClick={() => props.onTalk(agent)}>💬 Lui parler</button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }

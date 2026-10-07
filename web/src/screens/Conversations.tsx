@@ -3,9 +3,10 @@ import { api, openEvents } from "../api";
 import type {
   AgentPreset, Conversation, FileChange, HistoryEntry, ImageContentInput, ProviderView, SkillRef, SseEvent, Workspace,
 } from "../types";
-import { Badge, Empty, ErrorText, Field, Modal, statusColor } from "../ui";
+import { Badge, Empty, ErrorText, Field, IconBtn, Modal, PageHead, Skeleton, Spinner, statusColor } from "../ui";
 import { FileDiffModal, FileRow } from "../FileViews";
 import { Markdown } from "../markdown";
+import { Icon } from "../icons";
 
 
 type ChatItem =
@@ -156,9 +157,10 @@ export default function Conversations({ toast, initialOpenId, onConsumeInitial }
   }, [initialOpenId, onConsumeInitial]);
   const [showNew, setShowNew] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
 
   const refresh = useCallback(() => {
-    api.conversations().then((r) => setConversations(r.conversations)).catch((e: Error) => setError(e.message));
+    api.conversations().then((r) => setConversations(r.conversations)).catch((e: Error) => setError(e.message)).finally(() => setReady(true));
   }, []);
 
   useEffect(() => {
@@ -169,12 +171,9 @@ export default function Conversations({ toast, initialOpenId, onConsumeInitial }
 
   const open = conversations.find((c) => c.id === openId);
 
-  return (
-    <>
-      <h2>Conversations</h2>
-      <div className="sub">{conversations.length} session(s) · {conversations.filter((c) => c.status === "active").length} active(s)</div>
-      <ErrorText error={error} />
-      {open ? (
+  if (open) {
+    return (
+      <>
         <ChatView
           key={open.id}
           conversation={open}
@@ -182,44 +181,62 @@ export default function Conversations({ toast, initialOpenId, onConsumeInitial }
           onDeleted={() => { setOpenId(null); refresh(); }}
           toast={toast}
         />
+        {showNew ? <NewConversationModal onClose={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); setOpenId(id); refresh(); }} toast={toast} /> : null}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <PageHead
+        title="Conversations"
+        sub={`${conversations.length} session${conversations.length === 1 ? "" : "s"} · ${conversations.filter((c) => c.status === "active").length} active${conversations.filter((c) => c.status === "active").length === 1 ? "" : "s"}`}
+        actions={
+          <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)}>
+            <Icon name="plus" /> Nouvelle conversation
+          </button>
+        }
+      />
+      <ErrorText error={error} />
+      {!ready ? (
+        <Skeleton />
+      ) : conversations.length === 0 ? (
+        <Empty
+          title="Aucune conversation"
+          action={
+            <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)}>
+              <Icon name="plus" /> Nouvelle conversation
+            </button>
+          }
+        >
+          Crée-en une avec un agent, ou en provider libre.
+        </Empty>
       ) : (
-        <>
-          <div className="toolbar">
-            <button className="btn btn-primary" onClick={() => setShowNew(true)}>+ Nouvelle conversation</button>
-          </div>
-          {conversations.length === 0 ? (
-            <Empty>Aucune conversation — crée-en une avec un agent ou un provider libre.</Empty>
-          ) : (
-            <div className="cards">
-              {conversations.map((c) => (
-                <div key={c.id} className="card" onClick={() => setOpenId(c.id)}>
-                  <h4>{c.title || "(sans titre)"}</h4>
-                  <div className="meta">
-                    <span className="mono">{c.provider}/{c.model}{c.thinking ? `:${c.thinking}` : ""}</span>
-                    <span>
-                      <Badge color={statusColor(c.status)}>{c.status}</Badge>{" "}
-                      {c.workspace_dir ? <span className="muted">{c.workspace_dir.split("/").pop()}</span> : <span className="muted">libre</span>}
-                    </span>
-                  </div>
-                  <div className="actions">
-                    <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setOpenId(c.id); }}>Ouvrir</button>
-                    <button
-                      className="btn btn-sm btn-danger"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (confirm("Fermer cette conversation ? Le .jsonl pi est conservé.")) {
-                          api.deleteConversation(c.id).then(refresh).catch((err: Error) => toast(err.message, true));
-                        }
-                      }}
-                    >
-                      Suppr.
-                    </button>
-                  </div>
-                </div>
-              ))}
+        <div className="list">
+          {conversations.map((c) => (
+            <div key={c.id} className="list-row">
+              <button type="button" className="list-main" onClick={() => setOpenId(c.id)}>
+                <span className="list-title">{c.title || "Sans titre"}</span>
+                <span className="list-meta">
+                  <span className="mono">{c.provider}/{c.model}{c.thinking ? `:${c.thinking}` : ""}</span>
+                  <span>{c.workspace_dir ? c.workspace_dir.split("/").pop() : "libre"}</span>
+                </span>
+              </button>
+              <Badge color={statusColor(c.status)}>{c.status}</Badge>
+              <IconBtn
+                name="trash"
+                label="Fermer la conversation"
+                danger
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm("Fermer cette conversation ? Le fichier .jsonl pi est conservé.")) {
+                    api.deleteConversation(c.id).then(refresh).catch((err: Error) => toast(err.message, true));
+                  }
+                }}
+              />
             </div>
-          )}
-        </>
+          ))}
+        </div>
       )}
       {showNew ? <NewConversationModal onClose={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); setOpenId(id); refresh(); }} toast={toast} /> : null}
     </>
@@ -347,39 +364,44 @@ export function ChatView(props: {
   return (
     <div className="chat">
       <div className="chat-head">
-        <button className="btn btn-sm" onClick={props.onClose}>← Retour</button>
-        <h2>{conversation.title || "(sans titre)"}</h2>
+        <button type="button" className="btn btn-sm" onClick={props.onClose}>
+          <Icon name="back" /> Retour
+        </button>
+        <h1>{conversation.title || "Sans titre"}</h1>
         <span className="muted mono">{conversation.provider}/{conversation.model}</span>
         <Badge color={statusColor(conversation.status)}>{conversation.status}</Badge>
         <button
+          type="button"
           className={`btn btn-sm ${filesPanel ? "btn-primary" : ""}`}
           onClick={() => { setFilesPanel((v) => !v); refreshFiles(); }}
+          aria-pressed={filesPanel}
           title="Fichiers modifiés dans cette conversation"
         >
-          📄 Fichiers{files.length > 0 ? ` (${files.length})` : ""}
+          <Icon name="files" /> Fichiers{files.length > 0 ? ` (${files.length})` : ""}
         </button>
         <div style={{ flex: 1 }} />
         {busy ? (
-          <button className="btn btn-sm btn-danger" onClick={() => api.stopConversation(conversation.id).catch(() => undefined)}>■ Stop</button>
+          <button type="button" className="btn btn-sm btn-danger" onClick={() => api.stopConversation(conversation.id).catch(() => undefined)}>
+            <Icon name="stop" /> Stop
+          </button>
         ) : null}
-        <button
-          className="btn btn-sm btn-danger"
+        <IconBtn
+          name="trash"
+          label="Supprimer la conversation"
+          danger
           onClick={() => {
             if (confirm("Supprimer cette conversation ?")) {
               api.deleteConversation(conversation.id).then(props.onDeleted).catch((e: Error) => props.toast(e.message, true));
             }
           }}
-        >
-          Suppr.
-        </button>
+        />
       </div>
       <div className="chat-body">
       <div className="chat-main">
       <div className="chat-scroll" ref={scrollRef}>
         {timeline.length === 0 ? (
-        <Empty>
-          {closed ? "Session prête — envoie un message." : "En attente d'événements…"}
-          <div style={{ marginTop: 6, fontSize: 12 }}>Astuce : le menu 🧩 charge un skill, ou tape <code>/skill:nom</code> directement.</div>
+        <Empty title={closed ? "Session prête" : "En attente d'événements"}>
+          Envoie un message. Le menu Skills charge un skill, ou tape <code>/skill:nom</code>.
         </Empty>
       ) : null}
         {timeline.map((m, i) => {
@@ -387,8 +409,8 @@ export function ChatView(props: {
           if (m.kind === "skill") {
             return (
               <div key={i} className="skill-card">
-                <button className="skill-head" onClick={() => toggle(expanded, setExpanded, i)}>
-                  <span className="skill-pill">🧩</span>
+                <button type="button" className="skill-head" onClick={() => toggle(expanded, setExpanded, i)}>
+                  <span className="skill-pill"><Icon name="spark" size={14} /></span>
                   <span className="skill-name">{m.name}</span>
                   <span className="tool-meta">{m.text.length.toLocaleString()} caractères</span>
                   <span className={`chevron ${expanded.has(i) ? "open" : ""}`}>▸</span>
@@ -401,7 +423,7 @@ export function ChatView(props: {
           if (m.kind === "thinking") {
             return (
               <div key={i} className="msg-thinking">
-                <button className="thinking-head" onClick={() => toggle(openThinking, setOpenThinking, i)}>
+                <button type="button" className="thinking-head" onClick={() => toggle(openThinking, setOpenThinking, i)}>
                   <span className={`chevron ${openThinking.has(i) ? "open" : ""}`}>▸</span>
                   Réflexion · {m.text.length.toLocaleString()} caractères
                 </button>
@@ -412,7 +434,7 @@ export function ChatView(props: {
           if (m.kind === "tool") {
             return (
               <div key={i} className={`tool-chip ${m.state} ${m.isError ? "error" : ""}`}>
-                <button className="tool-head" onClick={() => toggle(expanded, setExpanded, i)}>
+                <button type="button" className="tool-head" onClick={() => toggle(expanded, setExpanded, i)}>
                   <span className={`tool-dot ${m.state}`} />
                   <span className="tool-name">{m.text}</span>
                   {m.result !== undefined ? (
@@ -446,20 +468,14 @@ export function ChatView(props: {
           );
         })}
         {images.length > 0 ? (
-          <div className="msg msg-user" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="msg msg-user thumbs">
             {images.map((img, i) => (
-              <span key={i} style={{ position: "relative" }}>
-                <img src={`data:${img.mimeType};base64,${img.data}`} style={{ maxWidth: 120, maxHeight: 120, borderRadius: 6 }} />
-                <button
-                  className="btn btn-sm btn-ghost"
-                  style={{ position: "absolute", top: -8, right: -8, background: "var(--bg-3)", borderRadius: "50%" }}
-                  onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
-                >
-                  ✕
-                </button>
+              <span key={i} className="thumb">
+                <img src={`data:${img.mimeType};base64,${img.data}`} alt={`Pièce jointe ${i + 1}`} />
+                <IconBtn name="close" label={`Retirer l'image ${i + 1}`} onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))} />
               </span>
             ))}
-            <span className="muted" style={{ fontSize: 12, alignSelf: "center" }}>{images.length} image(s) à envoyer</span>
+            <span className="muted" style={{ fontSize: 12 }}>{images.length} image(s) à envoyer</span>
           </div>
         ) : null}
       </div>
@@ -475,7 +491,7 @@ export function ChatView(props: {
             e.target.value = "";
           }}
         />
-        <button className="btn" onClick={() => fileRef.current?.click()} title="Joindre une image">📎</button>
+        <IconBtn name="paperclip" label="Joindre une image" onClick={() => fileRef.current?.click()} />
         <select
           value=""
           onChange={(e) => {
@@ -483,10 +499,11 @@ export function ChatView(props: {
             setInput((v) => `/skill:${e.target.value} ${v}`.trimEnd() + " ");
             taRef.current?.focus();
           }}
-          title="Charger un skill (/skill:name — expandé par pi dans la session)"
+          title="Charger un skill (/skill:name, expandé par pi dans la session)"
+          aria-label="Charger un skill"
           style={{ width: 150, flexShrink: 0 }}
         >
-          <option value="">🧩 Skills…</option>
+          <option value="">Skills…</option>
           {skills.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
         </select>
         <textarea
@@ -508,8 +525,8 @@ export function ChatView(props: {
             }
           }}
         />
-        <button className="btn btn-primary" onClick={() => void send()} disabled={busy || (!input.trim() && images.length === 0)}>
-          Envoyer
+        <button type="button" className="btn btn-primary" onClick={() => void send()} disabled={busy || (!input.trim() && images.length === 0)}>
+          {busy ? <Spinner /> : <Icon name="send" />} Envoyer
         </button>
       </div>
       </div>
@@ -520,7 +537,7 @@ export function ChatView(props: {
             <span className="muted">{files.length}</span>
           </div>
           {files.length === 0 ? (
-            <div className="muted" style={{ padding: 12, fontSize: 12.5 }}>Aucun fichier modifié pour l'instant.</div>
+            <Empty>Aucun fichier modifié pour l'instant.</Empty>
           ) : (
             <div className="chat-side-list">
               {files.map((f) => (
@@ -639,8 +656,8 @@ function NewConversationModal(props: {
         <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Premier message…" />
       </Field>
       <div className="toolbar">
-        <button className="btn btn-primary" onClick={() => void create()} disabled={busy}>
-          {busy ? "Création…" : "Créer"}
+        <button type="button" className="btn btn-primary" onClick={() => void create()} disabled={busy}>
+          {busy ? <><Spinner /> Création…</> : "Créer"}
         </button>
       </div>
     </Modal>

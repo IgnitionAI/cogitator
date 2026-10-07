@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Db } from "./db.js";
-import type { AgentInput, McpServerEntry, SubagentInput } from "./schemas.js";
+import { SUBAGENT_NAME, THINKING_LEVELS, type AgentInput, type McpServerEntry, type SubagentInput } from "./schemas.js";
 import { readCatalog } from "./registry.js";
 import type { Paths } from "./paths.js";
 
@@ -32,8 +32,6 @@ export function slugify(text: string): string {
   );
 }
 
-const SUB_NAME = /^[a-z][a-z0-9_-]*$/;
-
 // ---------- Mapping lignes SQLite ----------
 
 interface PresetRow {
@@ -47,9 +45,22 @@ interface SubRow {
   thinking: string | null; system_prompt: string; skills: string; mcp_servers: string;
 }
 
+const THINKING_SET = new Set<string>(THINKING_LEVELS);
+
 /** Narrowing à la frontière DB : valeur invalide → null (la validation métier est dans validateAgent). */
 function parseThinking(value: string | null): AgentPreset["thinking"] {
-  return THINKING_LEVELS.has(value ?? "") ? (value as AgentPreset["thinking"]) : null;
+  return value !== null && THINKING_SET.has(value) ? (value as AgentPreset["thinking"]) : null;
+}
+
+/** Colonnes JSON des lignes SQLite : toute valeur illisible retombe sur un défaut sûr. */
+function parseJsonArray<T>(raw: string | null, fallback: T[]): T[] {
+  if (!raw) return fallback;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function rowToPreset(row: PresetRow, subs: SubRow[]): AgentPreset {
@@ -62,9 +73,9 @@ function rowToPreset(row: PresetRow, subs: SubRow[]): AgentPreset {
     model: row.model,
     thinking: parseThinking(row.thinking),
     system_prompt: row.system_prompt,
-    skills: JSON.parse(row.skills || "[]") as string[],
-    tools_allowlist: row.tools_allowlist ? (JSON.parse(row.tools_allowlist) as string[]) : null,
-    mcp_servers: JSON.parse(row.mcp_servers || "[]") as McpServerEntry[],
+    skills: parseJsonArray<string>(row.skills, []),
+    tools_allowlist: row.tools_allowlist ? parseJsonArray<string>(row.tools_allowlist, []) : null,
+    mcp_servers: parseJsonArray<McpServerEntry>(row.mcp_servers, []),
     created_at: row.created_at,
     updated_at: row.updated_at,
     is_default: row.is_default,
@@ -76,21 +87,20 @@ function rowToPreset(row: PresetRow, subs: SubRow[]): AgentPreset {
       model: s.model,
       thinking: parseThinking(s.thinking),
       system_prompt: s.system_prompt,
-      skills: JSON.parse(s.skills || "[]") as string[],
-      mcp_servers: JSON.parse(s.mcp_servers || "[]") as McpServerEntry[],
+      skills: parseJsonArray<string>(s.skills, []),
+      mcp_servers: parseJsonArray<McpServerEntry>(s.mcp_servers, []),
     })),
   };
 }
 
 // ---------- CRUD ----------
 
-export function listAgents(db: Db): Array<Omit<AgentPreset, "system_prompt" | "subagents">> {
+/** Presets complets, subagents inclus : l'UI édite ces objets tels quels (un preset tronqué
+ *  écraserait le prompt de scope et les subagents au save). */
+export function listAgents(db: Db): AgentPreset[] {
   const rows = db.prepare("SELECT * FROM agent_preset ORDER BY is_default DESC, name").all() as unknown as PresetRow[];
-  return rows.map((r) => {
-    const p = rowToPreset(r, []);
-    const { system_prompt: _sp, subagents: _sa, ...rest } = p;
-    return rest;
-  });
+  const subsFor = db.prepare("SELECT * FROM subagent_setup WHERE agent_id = ? ORDER BY name");
+  return rows.map((r) => rowToPreset(r, subsFor.all(r.id) as unknown as SubRow[]));
 }
 
 export function getDefaultAgentId(db: Db): string | null {
@@ -189,8 +199,6 @@ export interface ValidationResult {
   warnings: string[];
 }
 
-const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
-
 export async function validateAgent(paths: Paths, preset: AgentInput, checkAuth: AuthChecker): Promise<ValidationResult> {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -207,7 +215,7 @@ export async function validateAgent(paths: Paths, preset: AgentInput, checkAuth:
 
   if (!preset.name.trim()) errors.push("name requis");
   checkModel("agent", preset.provider, preset.model);
-  if (preset.thinking && !THINKING_LEVELS.has(preset.thinking)) errors.push(`thinking invalide: ${preset.thinking}`);
+  if (preset.thinking && !THINKING_SET.has(preset.thinking)) errors.push(`thinking invalide: ${preset.thinking}`);
   for (const skill of preset.skills ?? []) {
     const p = skill.startsWith("~") ? join(process.env.HOME ?? "~", skill.slice(1)) : skill;
     if (!existsSync(p)) errors.push(`skill introuvable: ${skill}`);
@@ -222,7 +230,7 @@ export async function validateAgent(paths: Paths, preset: AgentInput, checkAuth:
 
   const seen = new Set<string>();
   for (const sub of preset.subagents ?? []) {
-    if (!SUB_NAME.test(sub.name)) errors.push(`subagent: nom invalide ${sub.name} (minuscules, chiffres, -, _)`);
+    if (!SUBAGENT_NAME.test(sub.name)) errors.push(`subagent: nom invalide ${sub.name} (minuscules, chiffres, -, _)`);
     if (seen.has(sub.name)) errors.push(`subagent: nom dupliqué ${sub.name}`);
     seen.add(sub.name);
     checkModel(`subagent ${sub.name}`, sub.provider, sub.model);

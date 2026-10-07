@@ -8,16 +8,17 @@ import Providers from "./screens/Providers";
 import Cron from "./screens/Cron";
 import Settings from "./screens/Settings";
 import WorkspacePage from "./WorkspacePage";
-import type { Workspace } from "./types";
+import type { AgentPreset, Workspace } from "./types";
+import { Icon, type IconName } from "./icons";
 
-const NAV = [
-  { id: "conversations", icon: "💬", label: "Conversations" },
-  { id: "workspaces", icon: "🗂", label: "Workspaces" },
-  { id: "agents", icon: "🤖", label: "Agents" },
-  { id: "providers", icon: "🔌", label: "Providers" },
-  { id: "cron", icon: "⏰", label: "Cron" },
-  { id: "settings", icon: "⚙️", label: "Settings" },
-] as const;
+const NAV: Array<{ id: string; icon: IconName; label: string }> = [
+  { id: "conversations", icon: "chat", label: "Conversations" },
+  { id: "workspaces", icon: "folder", label: "Workspaces" },
+  { id: "agents", icon: "bot", label: "Agents" },
+  { id: "providers", icon: "plug", label: "Providers" },
+  { id: "cron", icon: "clock", label: "Cron" },
+  { id: "settings", icon: "settings", label: "Settings" },
+];
 
 export interface Toast {
   id: number;
@@ -40,16 +41,17 @@ export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [toasts, toast] = useToasts();
   const [openWorkspace, setOpenWorkspace] = useState<Workspace | null>(null);
-  const [agents, setAgents] = useState<import("./types").AgentPreset[]>([]);
+  const [agents, setAgents] = useState<AgentPreset[]>([]);
   const [pendingConv, setPendingConv] = useState<string | null>(null);
+  const [navOpen, setNavOpen] = useState(false);
 
   useEffect(() => {
     api.health().then(setHealth).catch(() => undefined);
-    api.agents().then((r) => setAgents(r.agents as import("./types").AgentPreset[])).catch(() => undefined);
+    api.agents().then((r) => setAgents(r.agents as AgentPreset[])).catch(() => undefined);
     const close = openEvents("/api/events", (e) => {
       const ev = e as { type?: string; name?: string; status?: string; error?: string };
       if (ev.type === "cron_run_finished") {
-        toast(`${ev.name} : run ${ev.status}${ev.error ? ` — ${ev.error}` : ""}`, ev.status !== "ok");
+        toast(`${ev.name} : run ${ev.status}${ev.error ? ` (${ev.error})` : ""}`, ev.status !== "ok");
       }
     });
     return close;
@@ -64,26 +66,47 @@ export default function App() {
     settings: Settings,
   }[screen] ?? Conversations;
 
+  const go = (id: string) => {
+    setScreen(id);
+    setNavOpen(false);
+  };
+
   const commonProps = {
     toast,
     ...(screen === "conversations" ? { initialOpenId: pendingConv, onConsumeInitial: () => setPendingConv(null) } : {}),
-    ...(screen === "workspaces" ? { onOpenWorkspace: (w: Workspace) => { setAgents; setOpenWorkspace(w); } } : {}),
+    ...(screen === "workspaces" ? { onOpenWorkspace: (w: Workspace) => { setOpenWorkspace(w); } } : {}),
   };
 
   return (
-    <>
+    <div className={`app ${navOpen ? "nav-open" : ""}`}>
+      <a className="skip-link" href="#main">Aller au contenu</a>
+      <header className="topbar">
+        <button type="button" className="icon-btn" aria-label="Ouvrir le menu" onClick={() => setNavOpen(true)}>
+          <Icon name="menu" />
+        </button>
+        <span className="brand-inline">Cogitator</span>
+      </header>
+      <div className="nav-scrim" onClick={() => setNavOpen(false)} />
       <aside className="sidebar">
         <div className="brand"><span className="mark" />Cogita<em>tor</em></div>
-        {NAV.map((n) => (
-          <button key={n.id} className={`nav-item ${screen === n.id ? "active" : ""}`} onClick={() => setScreen(n.id)}>
-            <span>{n.icon}</span> {n.label}
-          </button>
-        ))}
+        <nav aria-label="Principal">
+          {NAV.map((n) => (
+            <button
+              key={n.id}
+              type="button"
+              className={`nav-item ${screen === n.id && !openWorkspace ? "active" : ""}`}
+              aria-current={screen === n.id && !openWorkspace ? "page" : undefined}
+              onClick={() => { setOpenWorkspace(null); go(n.id); }}
+            >
+              <Icon name={n.icon} /> {n.label}
+            </button>
+          ))}
+        </nav>
         <div className="foot">
           {health ? `v${health.version} · pi ${health.pi_version ?? "?"}` : "…"}
         </div>
       </aside>
-      <main className="main">
+      <main id="main" className="main">
         {openWorkspace ? (
           <WorkspacePage
             workspace={openWorkspace}
@@ -96,11 +119,14 @@ export default function App() {
           <Screen {...commonProps} />
         )}
       </main>
-      <div className="toasts">
+      <div className="toasts" role="status" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast ${t.err ? "err" : ""}`}>{t.text}</div>
+          <div key={t.id} className={`toast ${t.err ? "err" : ""}`}>
+            <Icon name={t.err ? "warning" : "check"} size={14} />
+            <span>{t.text}</span>
+          </div>
         ))}
       </div>
-    </>
+    </div>
   );
 }

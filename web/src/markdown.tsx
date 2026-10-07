@@ -33,6 +33,11 @@ function renderInline(text: string, keyBase: string): ReactNode[] {
   return out;
 }
 
+function splitRow(line: string): string[] {
+  // découpe simple : pas de gestion des pipes échappés (\|) — ponytail: suffisant pour l'output d'agents
+  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|");
+}
+
 export function Markdown(props: { text: string }) {
   const lines = props.text.split("\n");
   const blocks: ReactNode[] = [];
@@ -86,10 +91,39 @@ export function Markdown(props: { text: string }) {
       continue;
     }
 
+    // tableau markdown (lignes | consécutives, ligne séparatrice |---|)
+    if (line.trim().startsWith("|")) {
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i]!.trim().startsWith("|")) {
+        rows.push(splitRow(lines[i]!));
+        i++;
+      }
+      const isSep = (cells: string[]) => cells.every((c) => /^:?-{2,}:?$/.test(c.trim()));
+      if (rows.length >= 2 && isSep(rows[1]!)) rows.splice(1, 1);
+      const [head, ...body] = rows;
+      if (head) {
+        blocks.push(
+          <div key={key++} className="md-table-wrap">
+            <table className="md-table">
+              <thead>
+                <tr>{head.map((c, j) => <th key={j}>{renderInline(c.trim(), `t${key}h${j}`)}</th>)}</tr>
+              </thead>
+              <tbody>
+                {body.map((r, ri) => (
+                  <tr key={ri}>{r.map((c, ci) => <td key={ci}>{renderInline(c.trim(), `t${key}b${ri}-${ci}`)}</td>)}</tr>
+                ))}
+              </tbody>
+            </table>
+          </div>,
+        );
+      }
+      continue;
+    }
+
     // paragraphe (lignes consécutives non vides)
     const buf: string[] = [line];
     i++;
-    while (i < lines.length && lines[i]!.trim() !== "" && !/^(#{1,4}\s|\s*([-*•]|\d+\.)\s|```)/.test(lines[i]!)) {
+    while (i < lines.length && lines[i]!.trim() !== "" && !/^(#{1,4}\s|\s*([-_*•]|\d+\.)\s|```|\s*\|)/.test(lines[i]!)) {
       buf.push(lines[i]!);
       i++;
     }

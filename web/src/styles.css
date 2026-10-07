@@ -411,6 +411,10 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 }
 .md-link { color: var(--accent-hover); }
 .msg-user .md-link { color: #fff; text-decoration: underline; }
+.md-table-wrap { overflow-x: auto; margin: 8px 0; }
+.md-table { width: 100%; font-size: 12.5px; }
+.md-table th { font-weight: 600; color: var(--muted); font-size: 12px; }
+.msg-user .md-table th { color: rgba(255,255,255,.85); }
 
 /* caret de stream SSE */
 .caret {

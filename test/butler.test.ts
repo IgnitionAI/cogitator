@@ -84,7 +84,8 @@ test("seed : Majordome (défaut) + Chef de Projet + Architecte de Skills, MCP co
   const chefRow = db.prepare("SELECT id FROM agent_preset WHERE slug = 'chef-de-projet'").get() as { id: string };
   const chef = getAgent(db, chefRow.id)!;
   assert.equal(chef.is_default ?? 0, 0); // pas l'agent par défaut
-  assert.match(chef.system_prompt, /cogitator\.board\.json/);
+  assert.match(chef.system_prompt, /GitHub Issues/);
+  assert.match(chef.system_prompt, /to-tickets/); // méthodes AI Blueprint câblées
   assert.match(chef.system_prompt, /Chef de Projet/);
 
   const archRow = db.prepare("SELECT id FROM agent_preset WHERE slug = 'architecte-de-skills'").get() as { id: string };

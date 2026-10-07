@@ -17,6 +17,10 @@ const paths = getPaths();
 mkdirSync(paths.home, { recursive: true });
 const { db, version } = openDb(paths.db);
 
+/** Cadences du service (bornes nommées : un chiffre nu ici est une décision, pas un détail). */
+const SWEEP_INTERVAL_MS = 60_000;
+const CRON_TICK_MS = 30_000;
+
 // Seed des agents par défaut : Majordome (opérateur) + Chef de Projet (PM)
 {
   const seeded = seedDefaultAgents(db, paths);
@@ -60,8 +64,8 @@ server.on("error", (err: NodeJS.ErrnoException) => {
 // Recyclage idle toutes les minutes
 const sweeper = setInterval(() => {
   pool.sweep().catch(() => undefined);
-}, 60_000);
-cron.start(30_000); // tick cron toutes les 30 s
+}, SWEEP_INTERVAL_MS);
+cron.start(CRON_TICK_MS);
 
 async function shutdown(): Promise<void> {
   clearInterval(sweeper);

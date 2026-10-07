@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { AgentPreset, McpServerEntry, ProviderView, SkillRef, SubagentInput } from "../types";
-import { Badge, Empty, ErrorText, Field, Modal } from "../ui";
+import { Badge, Empty, ErrorText, Field, Modal, PageHead } from "../ui";
+import { Icon } from "../icons";
 
 const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
@@ -21,15 +22,21 @@ export default function Agents({ toast }: { toast: (t: string, err?: boolean) =>
 
   return (
     <>
-      <h2>Agents</h2>
-      <div className="sub">Un agent = provider + modèle + thinking + skills + MCP + prompt de scope + subagents.</div>
+      <PageHead
+        title="Agents"
+        sub="Un agent = provider + modèle + thinking + skills + MCP + prompt de scope + subagents."
+        actions={
+          <>
+            <button type="button" className="btn" onClick={() => setShowImport(true)}><Icon name="download" /> Importer des skills</button>
+            <button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> Nouvel agent</button>
+          </>
+        }
+      />
       <ErrorText error={error} />
-      <div className="toolbar">
-        <button className="btn btn-primary" onClick={() => setEditing("new")}>+ Nouvel agent</button>
-        <button className="btn" onClick={() => setShowImport(true)}>⤓ Importer des skills</button>
-      </div>
       {agents.length === 0 ? (
-        <Empty>Aucun agent — crée un preset pour matérialiser des configs complètes en flags pi.</Empty>
+        <Empty title="Aucun agent" action={<button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> Nouvel agent</button>}>
+          Crée un preset pour matérialiser une config complète en flags pi.
+        </Empty>
       ) : (
         <div className="cards">
           {agents.map((a) => (

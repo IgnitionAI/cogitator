@@ -9,8 +9,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { BASE_URL } from "./config.js";
+import { packageVersion } from "./pi.js";
+import { CARD_PRIORITIES, CARD_STATUSES, thinkingSchema } from "./schemas.js";
 
-const BASE = process.env.COGITATOR_URL ?? "http://127.0.0.1:5320";
+const BASE = BASE_URL;
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -25,19 +28,19 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 const server = new McpServer({
   name: "cogitator",
-  version: "0.1.0",
+  version: packageVersion(),
 });
 
+/** Enveloppe un outil : résultat JSON en texte, erreur remontée à l'agent (jamais d'exception brute). */
 function addTool(
   name: string,
   description: string,
-  inputSchema: Record<string, z.ZodTypeAny>,
+  inputSchema: Record<string, z.ZodType>,
   fn: (args: Record<string, unknown>) => Promise<unknown>,
 ): void {
   server.registerTool(name, { description, inputSchema }, async (args) => {
     try {
-      const result = await fn(args as Record<string, unknown>);
-      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+      return { content: [{ type: "text", text: JSON.stringify(await fn(args), null, 2) }] };
     } catch (err) {
       return { content: [{ type: "text", text: `Erreur: ${err instanceof Error ? err.message : String(err)}` }], isError: true };
     }
@@ -58,7 +61,7 @@ addTool("cogitator_create_agent", "Crée un agent (preset) : provider+modèle+th
     provider: z.string().describe("ex: openai, deepseek, kimi-coding"),
     model: z.string().describe("id du modèle dans le provider"),
     description: z.string().optional(),
-    thinking: z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).optional(),
+    thinking: thinkingSchema.optional(),
     system_prompt: z.string().optional().describe("Prompt de scope de l'agent"),
     skills: z.array(z.string()).optional().describe("Chemins absolus de skills"),
     tools: z.array(z.string()).optional().describe("Allowlist d'outils (absent = tous)"),
@@ -72,7 +75,7 @@ addTool("cogitator_update_agent", "Modifie un agent existant (mêmes champs que 
     provider: z.string(),
     model: z.string(),
     description: z.string().optional(),
-    thinking: z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]).nullable().optional(),
+    thinking: thinkingSchema.nullable().optional(),
     system_prompt: z.string().optional(),
     skills: z.array(z.string()).optional(),
     tools: z.array(z.string()).nullable().optional(),
@@ -193,8 +196,8 @@ addTool("cogitator_board_create_card", "Crée une carte sur le board : titre, de
     workspace_id: z.string(),
     title: z.string(),
     description: z.string().optional(),
-    status: z.enum(["backlog", "todo", "in_progress", "done", "canceled"]).optional(),
-    priority: z.enum(["urgent", "high", "medium", "low"]).optional(),
+    status: z.enum(CARD_STATUSES).optional(),
+    priority: z.enum(CARD_PRIORITIES).optional(),
     labels: z.array(z.string()).optional(),
     assignee_agent_id: z.string().nullable().optional(),
     conversation_ids: z.array(z.string()).optional(),
@@ -207,8 +210,8 @@ addTool("cogitator_board_update_card", "Met à jour une carte (mêmes champs que
     card_id: z.string(),
     title: z.string().optional(),
     description: z.string().optional(),
-    status: z.enum(["backlog", "todo", "in_progress", "done", "canceled"]).optional(),
-    priority: z.enum(["urgent", "high", "medium", "low"]).optional(),
+    status: z.enum(CARD_STATUSES).optional(),
+    priority: z.enum(CARD_PRIORITIES).optional(),
     labels: z.array(z.string()).optional(),
     assignee_agent_id: z.string().nullable().optional(),
     conversation_ids: z.array(z.string()).optional(),
@@ -224,7 +227,7 @@ addTool("cogitator_board_move", "Déplace une carte vers une colonne (statut).",
   {
     workspace_id: z.string(),
     card_id: z.string(),
-    status: z.enum(["backlog", "todo", "in_progress", "done", "canceled"]),
+    status: z.enum(CARD_STATUSES),
   },
   (a) => call("POST", `/api/workspaces/${a.workspace_id}/board/cards/${a.card_id}/move`, { status: a.status }));
 

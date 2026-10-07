@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { extname, join, normalize, resolve, sep } from "node:path";
+import { extname, basename, join, normalize, resolve, sep } from "node:path";
 
 export interface TreeNode {
   name: string;
@@ -14,10 +14,13 @@ const MAX_DEPTH = 5;
 const MAX_NODES = 500;
 const MAX_FILE_CHARS = 400_000;
 
-let nodeCount = 0;
+/** Compteur de nœuds partagé par la récursion (l'arborescence est construite en synchrone). */
+interface NodeBudget {
+  count: number;
+}
 
-function buildTree(dir: string, depth: number): TreeNode[] {
-  if (depth > MAX_DEPTH || nodeCount > MAX_NODES) return [];
+function buildTree(dir: string, depth: number, budget: NodeBudget): TreeNode[] {
+  if (depth > MAX_DEPTH || budget.count > MAX_NODES) return [];
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
@@ -26,16 +29,15 @@ function buildTree(dir: string, depth: number): TreeNode[] {
   }
   const nodes: TreeNode[] = [];
   for (const e of entries) {
-    if (nodeCount > MAX_NODES) break;
+    if (budget.count > MAX_NODES) break;
     if (e.name.startsWith(".") && e.name !== ".env.example") continue;
     const path = join(dir, e.name);
     if (e.isDirectory()) {
       if (SKIP_DIRS.has(e.name)) continue;
-      nodeCount += 1;
-      const children = buildTree(path, depth + 1);
-      nodes.push({ name: e.name, path, type: "dir", children });
+      budget.count += 1;
+      nodes.push({ name: e.name, path, type: "dir", children: buildTree(path, depth + 1, budget) });
     } else if (e.isFile()) {
-      nodeCount += 1;
+      budget.count += 1;
       let size = 0;
       try {
         size = statSync(path).size;
@@ -51,8 +53,7 @@ function buildTree(dir: string, depth: number): TreeNode[] {
 
 /** Arborescence du workspace (read-only, profondeur et volume plafonnés). */
 export function workspaceTree(rootDir: string): TreeNode[] {
-  nodeCount = 0;
-  return buildTree(rootDir, 0);
+  return buildTree(rootDir, 0, { count: 0 });
 }
 
 const TEXT_EXT = new Set([
@@ -102,5 +103,5 @@ export function readWorkspaceFile(rootDir: string, requested: string): { file?: 
   }
   const truncated = content.length > MAX_FILE_CHARS;
   if (truncated) content = content.slice(0, MAX_FILE_CHARS);
-  return { file: { path: target, name: target.split("/").pop() ?? target, size: stat.size, content, truncated } };
+  return { file: { path: target, name: basename(target), size: stat.size, content, truncated } };
 }

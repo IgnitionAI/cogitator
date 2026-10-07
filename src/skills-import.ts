@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
@@ -8,6 +8,14 @@ export interface ImportResult {
   skipped: string[];
   error?: string;
 }
+
+/** Bornes de l'exploration et des transferts (une source hostile ne doit pas saturer le disque). */
+const SCAN_MAX_DEPTH = 2;
+const SCAN_MAX_SKILLS = 50;
+const ARCHIVE_MAX_BYTES = 20 * 1024 * 1024;
+const CLI_MAX_BUFFER = 5 * 1024 * 1024;
+const CLI_TIMEOUT_MS = 180_000;
+const CLI_OUTPUT_TAIL_LINES = 3;
 
 /** Nom de dossier sûr pour un skill (kebab-case, pas de traversal). */
 export function sanitizeSkillName(name: string): string {
@@ -20,7 +28,7 @@ export function sanitizeSkillName(name: string): string {
  * node_modules/.git/cachés exclus). Les sous-dossiers d'un dossier-skill ne sont pas remontés.
  */
 export function scanSkillDirs(root: string, depth = 0, found: string[] = []): string[] {
-  if (depth > 2 || found.length > 50) return found;
+  if (depth > SCAN_MAX_DEPTH || found.length > SCAN_MAX_SKILLS) return found;
   let entries;
   try {
     entries = readdirSync(root, { withFileTypes: true });
@@ -87,7 +95,7 @@ export async function importFromGitHub(source: string, destRoot: string, overwri
       }
     }
     if (!archive) return { imported: [], skipped: [], error: `repo introuvable ou privé: ${repo.owner}/${repo.repo}` };
-    if (archive.length > 20 * 1024 * 1024) return { imported: [], skipped: [], error: "tarball > 20 Mo — refusé" };
+    if (archive.length > ARCHIVE_MAX_BYTES) return { imported: [], skipped: [], error: "tarball > 20 Mo — refusé" };
 
     const tgz = join(tmp, "repo.tar.gz");
     writeFileSync(tgz, archive);
@@ -125,7 +133,7 @@ export function importSkills(source: string, destRoot: string, overwrite = false
  * Sécurité : npx/npm uniquement (pas de shell), timeout 3 min, args par découpage simple
  * (pas de quotes — limitation assumée, ponytail: découper avec un vrai shell-quote si besoin).
  */
-export async function runSkillCommand(cmd: string, destRoots: string[], timeoutMs = 180_000): Promise<ImportResult> {
+export async function runSkillCommand(cmd: string, destRoots: string[], timeoutMs = CLI_TIMEOUT_MS): Promise<ImportResult> {
   const tokens = cmd.split(/\s+/).filter(Boolean);
   const bin = tokens[0];
   if (bin !== "npx" && bin !== "npm") {
@@ -138,10 +146,9 @@ export async function runSkillCommand(cmd: string, destRoots: string[], timeoutM
 
   try {
     const { stdout, stderr } = await new Promise<{ stdout: string; stderr: string }>((resolve) => {
-      execFile(bin, tokens.slice(1), { timeout: timeoutMs, maxBuffer: 5 * 1024 * 1024 }, (err, out, serr) => {
-        // certains CLI renvoient un code non nul tout en ayant installé : on garde la sortie
+      // certains CLI renvoient un code non nul tout en ayant installé : on garde la sortie
+      execFile(bin, tokens.slice(1), { timeout: timeoutMs, maxBuffer: CLI_MAX_BUFFER }, (_err, out, serr) => {
         resolve({ stdout: String(out), stderr: String(serr) });
-        void err;
       });
     });
     const imported: string[] = [];
@@ -153,24 +160,11 @@ export async function runSkillCommand(cmd: string, destRoots: string[], timeoutM
     }
     const result: ImportResult = { imported: [...new Set(imported)], skipped: [] };
     if (result.imported.length === 0) {
-      const tail = (stderr || stdout).trim().split("\n").slice(-3).join(" | ");
+      const tail = (stderr || stdout).trim().split("\n").slice(-CLI_OUTPUT_TAIL_LINES).join(" | ");
       result.error = `commande exécutée mais aucun skill nouveau détecté${tail ? ` — sortie: ${tail}` : ""}`;
     }
     return result;
   } catch (err) {
     return { imported: [], skipped: [], error: err instanceof Error ? err.message : String(err) };
   }
-}
-
-/** Vérif qu'un SKILL.md a un frontmatter minimal (name + description) — signalé, pas bloquant. */
-export function skillWarnings(dir: string): string[] {
-  const warnings: string[] = [];
-  const file = join(dir, "SKILL.md");
-  if (!existsSync(file)) return [`SKILL.md manquant: ${dir}`];
-  const text = readFileSync(file, "utf8");
-  if (!/^name:\s*\S+/m.test(text)) warnings.push(`${basename(dir)}: frontmatter sans name`);
-  const desc = /^description:\s*(.+)$/m.exec(text)?.[1] ?? "";
-  if (!desc) warnings.push(`${basename(dir)}: frontmatter sans description`);
-  else if (desc.length > 1024) warnings.push(`${basename(dir)}: description > 1024 caractères`);
-  return warnings;
 }

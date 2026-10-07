@@ -5,16 +5,17 @@ import { FileRow, TreePanel } from "./FileViews";
 import type { AgentPreset, BoardCard, Conversation, FeedEvent, FileChange, Workspace } from "./types";
 import { Badge, Empty, statusColor } from "./ui";
 import { ChatView } from "./screens/Conversations";
+import { Icon, type IconName } from "./icons";
 
-const TABS = [
-  { id: "board", label: "🗂 Board" },
-  { id: "activity", label: "📄 Activité" },
-  { id: "feed", label: "🕒 Feed" },
-  { id: "files", label: "🌳 Fichiers" },
-  { id: "conversations", label: "💬 Conversations" },
-  { id: "team", label: "👥 Équipe" },
-  { id: "pm", label: "🤖 Chef de Projet" },
-] as const;
+const TABS: Array<{ id: string; label: string; icon: IconName }> = [
+  { id: "board", label: "Board", icon: "board" },
+  { id: "activity", label: "Activité", icon: "activity" },
+  { id: "feed", label: "Feed", icon: "feed" },
+  { id: "files", label: "Fichiers", icon: "tree" },
+  { id: "conversations", label: "Conversations", icon: "chat" },
+  { id: "team", label: "Équipe", icon: "users" },
+  { id: "pm", label: "Chef de Projet", icon: "bot" },
+];
 
 export default function WorkspacePage(props: {
   workspace: Workspace;
@@ -74,8 +75,8 @@ export default function WorkspacePage(props: {
   return (
     <>
       <div className="ws-head">
-        <button className="btn btn-sm" onClick={props.onBack}>← Workspaces</button>
-        <h2>{workspace.name}</h2>
+        <button type="button" className="btn btn-sm" onClick={props.onBack}><Icon name="back" /> Workspaces</button>
+        <h1>{workspace.name}</h1>
         <span className="muted mono" style={{ fontSize: 12 }}>{workspace.dir}</span>
         {activity && activity.files.length > 0 ? (
           <span className="file-stats" style={{ marginLeft: 12 }}>
@@ -102,13 +103,20 @@ export default function WorkspacePage(props: {
               .catch((e: Error) => props.toast(e.message, true));
           }}
         >
-          ⚙ Setup projet
+          <Icon name="spark" size={14} /> Setup projet
         </button>
       </div>
-      <div className="ws-tabs">
+      <div className="ws-tabs" role="tablist" aria-label="Workspace">
         {TABS.map((t) => (
-          <button key={t.id} className={`ws-tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>
-            {t.label}
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            className={`ws-tab ${tab === t.id ? "active" : ""}`}
+            onClick={() => setTab(t.id)}
+          >
+            <Icon name={t.icon} size={14} /> {t.label}
             {t.id === "conversations" && convs.length > 0 ? ` (${convs.length})` : ""}
           </button>
         ))}

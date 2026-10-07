@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { parseJsonLine, readSessionLines } from "./session-lines.js";
 
 export interface HistoryMessage {
   role: string;
@@ -13,6 +13,8 @@ export type HistoryEntry =
   | { type: "tool"; id: string; name: string; args: string; result?: string; isError?: boolean };
 
 const RESULT_CAP = 4000;
+/** Fenêtre de relecture du transcript (nombre de lignes les plus récentes). */
+const HISTORY_LINES_SCAN = 2000;
 
 function extractText(content: unknown): string {
   if (!Array.isArray(content)) return typeof content === "string" ? content : "";
@@ -38,24 +40,12 @@ function blockIsError(content: unknown): boolean {
 
 /** Parse le .jsonl pi en entrées ordonnées : user / assistant / thinking / tool (avec résultat). */
 export function readEntries(sessionFile: string, limit = 300): HistoryEntry[] {
-  if (!sessionFile || !existsSync(sessionFile)) return [];
-  let lines: string[];
-  try {
-    lines = readFileSync(sessionFile, "utf8").split("\n").filter((l) => l.trim());
-  } catch {
-    return [];
-  }
   const out: HistoryEntry[] = [];
   const pendingTools = new Map<string, number>(); // toolCallId → index dans out
 
-  for (const line of lines.slice(-2000)) {
-    let entry: Record<string, unknown>;
-    try {
-      entry = JSON.parse(line) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
-    if (entry.type !== "message") continue;
+  for (const line of readSessionLines(sessionFile, HISTORY_LINES_SCAN)) {
+    const entry = parseJsonLine(line);
+    if (!entry || entry.type !== "message") continue;
     const msg = entry.message as {
       role?: string;
       content?: unknown;
@@ -98,7 +88,7 @@ export function readEntries(sessionFile: string, limit = 300): HistoryEntry[] {
       if (index !== undefined && out[index]?.type === "tool") {
         const tool = out[index] as Extract<HistoryEntry, { type: "tool" }>;
         tool.result = capped;
-        tool.isError = (entry as { isError?: boolean }).isError === true || blockIsError(content);
+        tool.isError = entry.isError === true || blockIsError(content);
       }
     }
   }

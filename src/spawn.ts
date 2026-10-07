@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { McpServerEntry } from "./mcp-env.js";
 
 /** Config figée de spawn (snapshot d'un preset ou choix ad hoc) — O6 du contrat. */
 export interface SpawnConfig {
@@ -10,7 +11,28 @@ export interface SpawnConfig {
   skills?: string[];
   tools?: string[] | null;
   /** Serveurs MCP du preset — transportés via env et enregistrés par l'extension au session_start (ADR-002) */
-  mcpServers?: import("./mcp-env.js").McpServerEntry[];
+  mcpServers?: McpServerEntry[];
+}
+
+/** Snapshot d'un preset d'agent (type structurel : pas de dépendance vers agents.js). */
+export function spawnConfigFromPreset(preset: {
+  provider: string;
+  model: string;
+  thinking?: string | null;
+  system_prompt?: string;
+  skills?: string[];
+  tools_allowlist?: string[] | null;
+  mcp_servers?: McpServerEntry[];
+}): SpawnConfig {
+  return {
+    provider: preset.provider,
+    model: preset.model,
+    thinking: preset.thinking,
+    systemPrompt: preset.system_prompt || undefined,
+    skills: preset.skills,
+    tools: preset.tools_allowlist,
+    mcpServers: preset.mcp_servers,
+  };
 }
 
 export function modelArg(c: SpawnConfig): string {

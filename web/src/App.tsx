@@ -57,25 +57,27 @@ export default function App() {
     return close;
   }, []);
 
-  const Screen = {
-    conversations: Conversations,
-    workspaces: Workspaces,
-    agents: Agents,
-    providers: Providers,
-    cron: Cron,
-    settings: Settings,
-  }[screen] ?? Conversations;
-
   const go = (id: string) => {
     setScreen(id);
     setNavOpen(false);
   };
 
-  const commonProps = {
-    toast,
-    ...(screen === "conversations" ? { initialOpenId: pendingConv, onConsumeInitial: () => setPendingConv(null) } : {}),
-    ...(screen === "workspaces" ? { onOpenWorkspace: (w: Workspace) => { setOpenWorkspace(w); } } : {}),
-  };
+  const screenNode = (() => {
+    switch (screen) {
+      case "conversations":
+        return <Conversations toast={toast} initialOpenId={pendingConv} onConsumeInitial={() => setPendingConv(null)} />;
+      case "workspaces":
+        return <Workspaces toast={toast} onOpenWorkspace={(w) => setOpenWorkspace(w)} />;
+      case "agents":
+        return <Agents toast={toast} />;
+      case "providers":
+        return <Providers toast={toast} />;
+      case "cron":
+        return <Cron toast={toast} />;
+      default:
+        return <Settings />;
+    }
+  })();
 
   return (
     <div className={`app ${navOpen ? "nav-open" : ""}`}>
@@ -115,9 +117,7 @@ export default function App() {
             onBack={() => setOpenWorkspace(null)}
             onOpenConversation={(id) => { setPendingConv(id); setOpenWorkspace(null); setScreen("conversations"); }}
           />
-        ) : (
-          <Screen {...commonProps} />
-        )}
+        ) : screenNode}
       </main>
       <div className="toasts" role="status" aria-live="polite">
         {toasts.map((t) => (

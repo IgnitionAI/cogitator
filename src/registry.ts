@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readJson, atomicWriteJson } from "./json-files.js";
 import type { Paths } from "./paths.js";
-import type { ProviderUpsert } from "./schemas.js";
+import { MCP_NAME, PROVIDER_ID, type ProviderUpsert } from "./schemas.js";
 
 // ---------- Types ----------
 
@@ -42,6 +42,11 @@ export const API_PROTOCOLS = [
   "amazon-bedrock",
   "radius",
 ] as const;
+
+/** Limite imposée par pi sur la description d'un skill (frontmatter SKILL.md). */
+export const SKILL_DESCRIPTION_MAX = 1024;
+
+const AUTH_CHECK_TIMEOUT_MS = 15_000;
 
 // ---------- Pi catalog (read model) ----------
 
@@ -82,7 +87,7 @@ function checkAuthReady(provider: string): Promise<boolean | null> {
   const cached = authCache.get(provider);
   if (cached && Date.now() - cached.at < AUTH_TTL_MS) return Promise.resolve(cached.ready);
   return new Promise((resolve) => {
-    execFile("pi", ["auth", "check", "--provider", provider, "--json"], { timeout: 15_000 }, (err, stdout) => {
+    execFile("pi", ["auth", "check", "--provider", provider, "--json"], { timeout: AUTH_CHECK_TIMEOUT_MS }, (err, stdout) => {
       let ready: boolean | null = null;
       try {
         ready = JSON.parse(stdout).status === "ready";
@@ -101,40 +106,37 @@ export async function listProviders(paths: Paths): Promise<ProviderView[]> {
   const catalog = readCatalog(paths);
   const auth = readAuth(paths);
   const customs = readJson<ModelsJsonFile>(paths.piModelsJson, {}).providers ?? {};
-  const views: ProviderView[] = [];
-  for (const [id, models] of catalog) {
-    const a = auth[id];
-    views.push({
-      id,
-      source: customs[id] ? "custom" : "builtin",
-      models,
-      auth: { configured: Boolean(a), type: a?.type ?? null, ready: await checkAuthReady(id) },
-    });
-  }
-  for (const id of Object.keys(customs)) {
-    if (catalog.has(id)) continue;
-    const a = auth[id];
-    views.push({
-      id,
-      source: "custom",
-      models: catalog.get(id) ?? [],
-      auth: { configured: Boolean(a), type: a?.type ?? null, ready: await checkAuthReady(id) },
-    });
-  }
+
+  const view = async (id: string, source: ProviderView["source"]): Promise<ProviderView> => ({
+    id,
+    source,
+    models: catalog.get(id) ?? [],
+    auth: { configured: Boolean(auth[id]), type: auth[id]?.type ?? null, ready: await checkAuthReady(id) },
+  });
+
+  const views = await Promise.all([
+    ...[...catalog.keys()].map((id) => view(id, customs[id] ? "custom" : "builtin")),
+    ...Object.keys(customs).filter((id) => !catalog.has(id)).map((id) => view(id, "custom")),
+  ]);
   return views.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 // ---------- Providers (écriture models.json + auth.json, I1/O1 du contrat) ----------
 
-const PROVIDER_ID = /^[a-z][a-z0-9-]*$/;
-
 export type ProviderInput = Omit<ProviderUpsert, "id">;
+
+/** Un protocole API inconnu de pi est refusé (API_PROTOCOLS vient du catalogue pi). */
+function validateProtocol(api: string | undefined): string | null {
+  if (!api) return null;
+  return (API_PROTOCOLS as readonly string[]).includes(api)
+    ? null
+    : `api inconnue: ${api} (protocoles: ${API_PROTOCOLS.join(", ")})`;
+}
 
 export function upsertProvider(paths: Paths, id: string, input: ProviderInput): { error?: string } {
   if (!PROVIDER_ID.test(id)) return { error: `id provider invalide: ${id}` };
-  if (input.api && !(API_PROTOCOLS as readonly string[]).includes(input.api)) {
-    return { error: `api inconnue: ${input.api} (protocoles: ${API_PROTOCOLS.join(", ")})` };
-  }
+  const protocolError = validateProtocol(input.api);
+  if (protocolError) return { error: protocolError };
   const file = readJson<ModelsJsonFile>(paths.piModelsJson, {});
   file.providers ??= {};
   const existing = file.providers[id] ?? {};
@@ -177,12 +179,14 @@ export function listSkills(paths: Paths): SkillRef[] {
       if (!existsSync(file)) continue;
       const text = readFileSync(file, "utf8");
       const name = /^name:\s*(.+)$/m.exec(text)?.[1]?.trim() ?? entry.name;
-      const desc = (() => {
-        const m = /^description:\s*([^\n]+)/m.exec(text);
-        // description sur une ligne ; les descriptions multilignes ne sont pas supportées
-        return m?.[1]?.trim() ?? "";
-      })();
-      out.push({ name, description: desc, path: join(dir, entry.name), descriptionTooLong: desc.length > 1024 });
+      // description sur une ligne ; les descriptions multilignes ne sont pas supportées
+      const description = /^description:\s*([^\n]+)/m.exec(text)?.[1]?.trim() ?? "";
+      out.push({
+        name,
+        description,
+        path: join(dir, entry.name),
+        descriptionTooLong: description.length > SKILL_DESCRIPTION_MAX,
+      });
     }
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
@@ -200,7 +204,7 @@ export function validateMcpConfig(value: unknown): string | null {
     return "shape attendu: { mcpServers: { <name>: { command?, args?, env?, url?, headers? } } }";
   }
   for (const [name, server] of Object.entries(v.mcpServers)) {
-    if (!/^[A-Za-z0-9_-]+$/.test(name)) return `nom de serveur invalide: ${name}`;
+    if (!MCP_NAME.test(name)) return `nom de serveur invalide: ${name}`;
     const s = server as Record<string, unknown>;
     if (!s.command && !s.url) return `serveur ${name}: command ou url requis`;
   }

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { Db } from "./db.js";
+import type { WorkspaceUpdate } from "./schemas.js";
 
 export interface WorkspaceRow {
   id: string;
@@ -36,6 +37,11 @@ export interface WorkspaceInput {
   default_agent_id?: string | null;
 }
 
+/** Un agent par défaut référencé doit exister (FK logique, pas de contrainte SQLite sur celui-ci). */
+function agentExists(db: Db, id: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM agent_preset WHERE id = ?").get(id));
+}
+
 /** Crée un workspace. Invariant (domain model) : le dossier doit exister ; dir unique. */
 export function createWorkspace(db: Db, input: WorkspaceInput): { workspace?: WorkspaceRow; error?: string } {
   if (!existsSync(input.dir)) return { error: `dossier introuvable: ${input.dir}` };
@@ -47,23 +53,22 @@ export function createWorkspace(db: Db, input: WorkspaceInput): { workspace?: Wo
     return { error: `dossier illisible: ${input.dir}` };
   }
   if (getWorkspaceByDir(db, dir)) return { error: `workspace déjà enregistré pour ${dir}` };
-  if (input.default_agent_id && !db.prepare("SELECT 1 FROM agent_preset WHERE id = ?").get(input.default_agent_id)) {
+  if (input.default_agent_id && !agentExists(db, input.default_agent_id)) {
     return { error: `agent par défaut introuvable: ${input.default_agent_id}` };
   }
   const id = randomUUID();
-  const name = input.name?.trim() || dir.split("/").filter(Boolean).pop() || dir;
+  const name = input.name?.trim() || basename(dir) || dir;
   db.prepare("INSERT INTO workspace (id, dir, name, default_agent_id) VALUES (?, ?, ?, ?)").run(
     id, dir, name, input.default_agent_id ?? null,
   );
   return { workspace: getWorkspace(db, id)! };
 }
 
-export function updateWorkspace(db: Db, id: string, input: { name?: string; default_agent_id?: string | null }): WorkspaceRow | null {
+/** Renvoie null si le workspace ou l'agent par défaut visé n'existe pas. */
+export function updateWorkspace(db: Db, id: string, input: WorkspaceUpdate): WorkspaceRow | null {
   const existing = getWorkspace(db, id);
   if (!existing) return null;
-  if (input.default_agent_id && !db.prepare("SELECT 1 FROM agent_preset WHERE id = ?").get(input.default_agent_id)) {
-    return null; // l'route renverra 400
-  }
+  if (input.default_agent_id && !agentExists(db, input.default_agent_id)) return null;
   db.prepare("UPDATE workspace SET name = ?, default_agent_id = ? WHERE id = ?").run(
     input.name?.trim() || existing.name,
     input.default_agent_id === undefined ? existing.default_agent_id : input.default_agent_id,

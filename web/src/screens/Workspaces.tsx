@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { AgentPreset, FeedEvent, FileChange, Workspace } from "../types";
-import { Empty, ErrorText, Field, Modal } from "../ui";
+import { Empty, ErrorText, Field, Modal, PageHead } from "../ui";
+import { Icon } from "../icons";
 import { FileDiffModal, FileRow, FileTreeModal } from "../FileViews";
 import BoardModal from "../Board";
 
@@ -44,18 +45,24 @@ export default function Workspaces({ toast, onOpenWorkspace }: { toast: (t: stri
 
   return (
     <>
-      <h2>Workspaces</h2>
-      <div className="sub">Un dossier = un workspace · les sessions, skills et config projet pi s'y rattachent.</div>
+      <PageHead
+        title="Workspaces"
+        sub="Un dossier = un workspace. Sessions, skills et config projet pi s'y rattachent."
+        actions={
+          <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
+            <Icon name="plus" /> Ajouter un workspace
+          </button>
+        }
+      />
       <ErrorText error={error} />
-      <div className="toolbar">
-        <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Ajouter un workspace</button>
-      </div>
       {workspaces.length === 0 ? (
-        <Empty>Aucun workspace — ajoute un dossier de projet.</Empty>
+        <Empty title="Aucun workspace" action={<button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}><Icon name="plus" /> Ajouter un dossier</button>}>
+          Ajoute un dossier de projet pour y rattacher conversations et board.
+        </Empty>
       ) : (
         <div className="cards">
           {workspaces.map((w) => (
-            <div key={w.id} className="card clickable" onClick={() => onOpenWorkspace?.(w)}>
+            <div key={w.id} className="card">
               <h4>{w.name}</h4>
               <div className="meta">
                 <span className="mono">{w.dir}</span>
@@ -82,24 +89,26 @@ export default function Workspaces({ toast, onOpenWorkspace }: { toast: (t: stri
                 </select>
               </Field>
               <div className="actions">
-                <button className="btn btn-sm" onClick={() => setActivityFor(w.id)}>
-                  📄 Activité{activity[w.id] && activity[w.id]!.files.length > 0 ? ` (${activity[w.id]!.files.length})` : ""}
-                </button>{" "}
+                <button type="button" className="btn btn-sm btn-primary" onClick={() => onOpenWorkspace?.(w)}>Ouvrir</button>
+                <button type="button" className="btn btn-sm" onClick={() => setActivityFor(w.id)}>
+                  <Icon name="activity" size={14} /> Activité{activity[w.id] && activity[w.id]!.files.length > 0 ? ` (${activity[w.id]!.files.length})` : ""}
+                </button>
                 <button
+                  type="button"
                   className="btn btn-sm"
                   onClick={() => {
                     setFeedFor(w.id);
                     api.workspaceFeed(w.id).then((r) => setFeed(r.events)).catch(() => undefined);
                   }}
                 >
-                  🕒 Feed
-                </button>{" "}
-                <button className="btn btn-sm" onClick={() => setTreeFor(w.id)} title="Arborescence read-only">
-                  🌳 Arborescence
-                </button>{" "}
-                <button className="btn btn-sm" onClick={() => setBoardFor(w.id)} title="Board kanban du projet">
-                  🗂 Board
-                </button>{" "}
+                  <Icon name="feed" size={14} /> Feed
+                </button>
+                <button type="button" className="btn btn-sm" onClick={() => setTreeFor(w.id)} title="Arborescence en lecture seule">
+                  <Icon name="tree" size={14} /> Fichiers
+                </button>
+                <button type="button" className="btn btn-sm" onClick={() => setBoardFor(w.id)} title="Board kanban du projet">
+                  <Icon name="board" size={14} /> Board
+                </button>
                 <button
                   className="btn btn-sm btn-danger"
                   onClick={() => {

@@ -42,6 +42,11 @@ export interface PoolCallbacks {
   onStatus?: (convId: string, status: PoolStatus) => void;
 }
 
+/** Bornes par défaut du pool (surchargeables par PoolOptions). */
+const DEFAULT_MAX_PROCESSES = 8;
+const DEFAULT_IDLE_MS = 10 * 60_000;
+const DEFAULT_SETTLE_TIMEOUT_MS = 15 * 60_000;
+
 export interface PoolOptions {
   factory: PiClientFactory;
   callbacks?: PoolCallbacks;
@@ -97,19 +102,7 @@ export class PiPool {
       existing.lastActivityAt = Date.now();
       return {};
     }
-
-    const max = this.opts.max ?? 8;
-    if (this.handles.size >= max) {
-      let evicted = false;
-      const oldestFirst = [...this.handles.values()].sort((a, b) => a.lastActivityAt - b.lastActivityAt);
-      for (const h of oldestFirst) {
-        if (await this.streaming(h)) continue; // jamais de kill d'un travail en cours
-        await this.evict(h.convId);
-        evicted = true;
-        break;
-      }
-      if (!evicted) throw new PoolError("pool plein : toutes les sessions sont actives", "pool_full");
-    }
+    await this.makeRoom();
 
     const args = spawn.resumeSessionFile ? [...spawn.args, "--session", spawn.resumeSessionFile] : spawn.args;
     const client = this.opts.factory({ cwd: spawn.cwd, args, env: spawn.env });
@@ -132,6 +125,19 @@ export class PiPool {
       this.status(convId, "dead");
       throw err instanceof Error ? err : new Error(String(err));
     }
+  }
+
+  /** Libère une place sous le plafond en évincant le plus vieux process non-streaming. */
+  private async makeRoom(): Promise<void> {
+    const max = this.opts.max ?? DEFAULT_MAX_PROCESSES;
+    if (this.handles.size < max) return;
+    const oldestFirst = [...this.handles.values()].sort((a, b) => a.lastActivityAt - b.lastActivityAt);
+    for (const h of oldestFirst) {
+      if (await this.streaming(h)) continue; // jamais de kill d'un travail en cours
+      await this.evict(h.convId);
+      return;
+    }
+    throw new PoolError("pool plein : toutes les sessions sont actives", "pool_full");
   }
 
   private live(convId: string): Handle {
@@ -182,7 +188,7 @@ export class PiPool {
 
   /** Recyclage idle : les process sans activité depuis idleMs et non-streaming sont stoppés. */
   async sweep(now = Date.now()): Promise<void> {
-    const idleMs = this.opts.idleMs ?? 10 * 60_000;
+    const idleMs = this.opts.idleMs ?? DEFAULT_IDLE_MS;
     for (const h of [...this.handles.values()]) {
       if (now - h.lastActivityAt < idleMs) continue;
       if (await this.streaming(h)) {
@@ -194,7 +200,7 @@ export class PiPool {
   }
 
   /** Attend l'événement `agent_settled` d'une conversation (suivi des runs cron). Rejette en timeout. */
-  waitForSettled(convId: string, timeoutMs = 15 * 60_000): Promise<void> {
+  waitForSettled(convId: string, timeoutMs = DEFAULT_SETTLE_TIMEOUT_MS): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         unsub();

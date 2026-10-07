@@ -11,7 +11,7 @@ Motion : **animations.dev** (`animate`) — transitions explicites 100 ms sur le
 | Surface (sidebar, cartes) | `#0f1011` |
 | Raised (hover, inputs, sélection) | `#1a1b1e` |
 | Popover (modales, toasts) | `#1c1d1f` + ombre `0 8px 24px rgba(0,0,0,.5)` (seule ombre) |
-| Encre / mutée / subtile | `#f7f8f8` / `#8a8f98` / `#62666d` |
+| Encre / mutée / subtile | `#f7f8f8` / `#8a8f98` / `#80858d` |
 | Bordures | `#1f2023` (structure), `#2c2e33` (hover/focus) |
 | Accent | `#5e6ad2` (hover `#6e79de`) — actif, liens, focus, bulle utilisateur |
 | Statuts (glyphes) | todo `#e2a336` · progress `#f2994a` · done `#5e6ad2` · urgent `#eb5757` · success `#4cb782` |

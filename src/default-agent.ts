@@ -6,24 +6,38 @@ import type { Db } from "./db.js";
 import { readJson } from "./json-files.js";
 import type { Paths } from "./paths.js";
 
+export const PATH_LOOKUP_DEPTH = 6;
+
 /** Remonte depuis le module jusqu'à la racine du paquet @ignitionai/cogitator. */
 export function findPackageRoot(from = dirname(fileURLToPath(import.meta.url))): string | null {
   let dir = from;
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < PATH_LOOKUP_DEPTH; i++) {
     const pkg = join(dir, "package.json");
-    if (existsSync(pkg)) {
-      try {
-        const name = (readJson<{ name?: string }>(pkg, {}).name ?? "") as string;
-        if (name === "@ignitionai/cogitator") return dir;
-      } catch {
-        /* continue */
-      }
-    }
+    if (existsSync(pkg) && readJson<{ name?: string }>(pkg, {}).name === PACKAGE_NAME) return dir;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
   return null;
+}
+
+const PACKAGE_NAME = "@ignitionai/cogitator";
+
+/** Provider/modèle par défaut de pi (settings.json), utilisés pour seeder les agents fournis. */
+function readPiDefaults(paths: Paths): { provider: string; model: string } {
+  const settings = readJson<{ defaultProvider?: string; defaultModel?: string }>(
+    join(paths.piAgentDir, "settings.json"),
+    {},
+  );
+  return { provider: settings.defaultProvider ?? "openai", model: settings.defaultModel ?? "gpt-5.4" };
+}
+
+/** Serveur MCP embarqué de Cogitator, exposé aux agents seedés (vide si le build manque). */
+function cogitatorMcpServers(): Array<{ name: string; command: string; args: string[] }> {
+  const root = findPackageRoot();
+  const script = root ? join(root, "dist", "src", "mcp-server.js") : null;
+  if (!script || !existsSync(script)) return [];
+  return [{ name: "cogitator", command: "node", args: [script] }];
 }
 
 export const MAJORDOME_PROMPT = `Tu es le Majordome de Cogitator — l'agent opérateur du panneau de contrôle pi.
@@ -70,23 +84,15 @@ Règles : réponds en français, structure en listes courtes. Une carte = une un
 function seedChefDeProjet(db: Db, paths: Paths): { created: boolean; agentId?: string } {
   const existing = db.prepare("SELECT id FROM agent_preset WHERE slug = 'chef-de-projet'").get();
   if (existing) return { created: false };
-  const piSettings = readJson<{ defaultProvider?: string; defaultModel?: string }>(
-    join(paths.piAgentDir, "settings.json"),
-    {},
-  );
-  const root = findPackageRoot();
-  const script = root ? join(root, "dist", "src", "mcp-server.js") : null;
-  const mcpServers = script
-    ? [{ name: "cogitator", command: "node", args: [script] }]
-    : [];
+  const defaults = readPiDefaults(paths);
   const agent = createAgent(db, {
     name: "Chef de Projet",
     description: "Agent de gestion de projet : pilote le board kanban du workspace (cogitator.board.json), suit les cartes, détecte les blocages, relie conversations et activité. Skills complets.",
-    provider: piSettings.defaultProvider ?? "openai",
-    model: piSettings.defaultModel ?? "gpt-5.4",
+    provider: defaults.provider,
+    model: defaults.model,
     system_prompt: CHEF_DE_PROJET_PROMPT,
     skills: [],
-    mcp_servers: mcpServers,
+    mcp_servers: cogitatorMcpServers(),
   });
   return { created: true, agentId: agent.id };
 }
@@ -98,23 +104,15 @@ function seedChefDeProjet(db: Db, paths: Paths): { created: boolean; agentId?: s
 export function seedDefaultAgent(db: Db, paths: Paths): { created: boolean; agentId?: string } {
   const count = db.prepare("SELECT COUNT(*) AS n FROM agent_preset").get() as { n: number };
   if (count.n > 0) return { created: false };
-  const piSettings = readJson<{ defaultProvider?: string; defaultModel?: string }>(
-    join(paths.piAgentDir, "settings.json"),
-    {},
-  );
-  const root = findPackageRoot();
-  const script = root ? join(root, "dist", "src", "mcp-server.js") : null;
-  const mcpServers = script && existsSync(script)
-    ? [{ name: "cogitator", command: "node", args: [script] }]
-    : [];
+  const defaults = readPiDefaults(paths);
   const agent = createAgent(db, {
     name: "Majordome",
     description: "Agent opérateur Cogitator : crée des agents, des crons, gère workspaces et conversations via les outils MCP cogitator_.",
-    provider: piSettings.defaultProvider ?? "openai",
-    model: piSettings.defaultModel ?? "gpt-5.4",
+    provider: defaults.provider,
+    model: defaults.model,
     system_prompt: MAJORDOME_PROMPT,
     skills: [],
-    mcp_servers: mcpServers,
+    mcp_servers: cogitatorMcpServers(),
   });
   db.prepare("UPDATE agent_preset SET is_default = 1 WHERE id = ?").run(agent.id);
   return { created: true, agentId: agent.id };
@@ -136,21 +134,15 @@ Règles : réponds en français. Un skill = une responsabilité. La description 
 function seedArchitecteSkills(db: Db, paths: Paths): { created: boolean; agentId?: string } {
   const existing = db.prepare("SELECT id FROM agent_preset WHERE slug = 'architecte-de-skills'").get();
   if (existing) return { created: false };
-  const piSettings = readJson<{ defaultProvider?: string; defaultModel?: string }>(
-    join(paths.piAgentDir, "settings.json"),
-    {},
-  );
-  const root = findPackageRoot();
-  const script = root ? join(root, "dist", "src", "mcp-server.js") : null;
-  const mcpServers = script ? [{ name: "cogitator", command: "node", args: [script] }] : [];
+  const defaults = readPiDefaults(paths);
   const agent = createAgent(db, {
     name: "Architecte de Skills",
     description: "Expert création de skills (SKILL.md, spec Agent Skills) : conçoit, écrit dans ~/.agents/skills, valide la découverte et la qualité du frontmatter.",
-    provider: piSettings.defaultProvider ?? "openai",
-    model: piSettings.defaultModel ?? "gpt-5.4",
+    provider: defaults.provider,
+    model: defaults.model,
     system_prompt: ARCHITECTE_SKILLS_PROMPT,
     skills: [],
-    mcp_servers: mcpServers,
+    mcp_servers: cogitatorMcpServers(),
   });
   return { created: true, agentId: agent.id };
 }

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { ProviderView } from "../types";
-import { Badge, Empty, ErrorText, Field, Modal } from "../ui";
+import { Badge, Empty, ErrorText, Field, Modal, PageHead } from "../ui";
+import { Icon } from "../icons";
 
 const APIS = [
   "openai-completions", "openai-responses", "openai-codex-responses", "anthropic-messages",
@@ -22,13 +23,18 @@ export default function Providers({ toast }: { toast: (t: string, err?: boolean)
 
   return (
     <>
-      <h2>Providers</h2>
-      <div className="sub">Read model de la config pi (models-store + models.json + auth.json) — écritures atomiques avec backup.</div>
+      <PageHead
+        title="Providers"
+        sub="Config pi (models-store, models.json, auth.json). Écritures atomiques avec backup."
+        actions={<button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}><Icon name="plus" /> Provider custom</button>}
+      />
       <ErrorText error={error} />
-      <div className="toolbar">
-        <button className="btn btn-primary" onClick={() => setShowAdd(true)}>+ Provider custom</button>
-      </div>
-      {providers.length === 0 ? <Empty>Aucun provider détecté.</Empty> : (
+      {providers.length === 0 ? (
+        <Empty title="Aucun provider" action={<button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}><Icon name="plus" /> Provider custom</button>}>
+          Aucun provider détecté dans la config pi.
+        </Empty>
+      ) : (
+        <div className="table-wrap">
         <table>
           <thead>
             <tr><th>Provider</th><th>Source</th><th>Auth</th><th>Prête</th><th>Modèles</th><th></th></tr>
@@ -60,6 +66,7 @@ export default function Providers({ toast }: { toast: (t: string, err?: boolean)
             ))}
           </tbody>
         </table>
+        </div>
       )}
       {showAdd ? <AddProviderModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); refresh(); }} toast={toast} /> : null}
       {keyFor ? <KeyModal providerId={keyFor} onClose={() => setKeyFor(null)} onSaved={() => { setKeyFor(null); refresh(); }} toast={toast} /> : null}

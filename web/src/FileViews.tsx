@@ -15,7 +15,7 @@ export interface TreeNode {
 export function FileRow(props: { f: FileChange; onClick?: () => void }) {
   const { f } = props;
   return (
-    <div className={`file-row ${props.onClick ? "clickable" : ""}`} title={f.path} onClick={props.onClick}>
+    <div className={`file-row ${props.onClick ? "clickable" : ""}`} title={f.path} role={props.onClick ? "button" : undefined} tabIndex={props.onClick ? 0 : undefined} onClick={props.onClick} onKeyDown={props.onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); props.onClick?.(); } } : undefined}>
       <span className={`file-kind ${f.kind}`}>{f.kind === "write" ? "W" : "E"}</span>
       <span className="file-path mono">{f.path.split("/").slice(-2).join("/")}</span>
       <span className="file-stats">
@@ -113,7 +113,8 @@ export function TreePanel(props: {
   const renderNodes = (nodes: TreeNode[], depth: number): React.ReactNode =>
     nodes.map((n) => (
       <div key={n.path}>
-        <div
+        <button
+          type="button"
           className={`tree-row ${selected === n.path ? "selected" : ""} ${props.modifiedPaths?.has(n.path) ? "modified" : ""}`}
           style={{ paddingLeft: 8 + depth * 14 }}
           onClick={() => pick(n)}
@@ -125,7 +126,7 @@ export function TreePanel(props: {
           {n.type === "file" && n.size !== undefined ? (
             <span className="tree-size">{n.size > 1024 ? `${Math.round(n.size / 1024)} Ko` : `${n.size} o`}</span>
           ) : null}
-        </div>
+        </button>
         {n.type === "dir" && open.has(n.path) && n.children ? (
           <div>{renderNodes(n.children, depth + 1)}</div>
         ) : null}

@@ -250,6 +250,7 @@ export function ChatView(props: {
   toast: (t: string, err?: boolean) => void;
 }) {
   const { conversation } = props;
+  const toast = props.toast;
   const [timeline, setTimeline] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
   const [images, setImages] = useState<ImageContentInput[]>([]);
@@ -339,9 +340,9 @@ export function ChatView(props: {
     try {
       await api.sendMessage(conversation.id, text, toSend.length ? toSend : undefined);
       // écho local : le flux SSE de pi ne contient pas les messages utilisateur
-      setTimeline((prev) => [...prev, { kind: "user", text: text || "🖼 image(s) jointe(s)" }]);
+      setTimeline((prev) => [...prev, { kind: "user", text: text || "image(s) jointe(s)" }]);
     } catch (e) {
-      props.toast((e as Error).message, true);
+      toast((e as Error).message, true);
     } finally {
       setBusy(false);
       taRef.current?.focus();
@@ -391,7 +392,7 @@ export function ChatView(props: {
           danger
           onClick={() => {
             if (confirm("Supprimer cette conversation ?")) {
-              api.deleteConversation(conversation.id).then(props.onDeleted).catch((e: Error) => props.toast(e.message, true));
+              api.deleteConversation(conversation.id).then(props.onDeleted).catch((e: Error) => toast(e.message, true));
             }
           }}
         />
@@ -560,6 +561,7 @@ function NewConversationModal(props: {
   onCreated: (id: string) => void;
   toast: (t: string, err?: boolean) => void;
 }) {
+  const toast = props.toast;
   const [agents, setAgents] = useState<AgentPreset[]>([]);
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -603,7 +605,7 @@ function NewConversationModal(props: {
       const r = await api.createConversation(body);
       props.onCreated(r.conversation.id);
     } catch (e) {
-      props.toast((e as Error).message, true);
+      toast((e as Error).message, true);
     } finally {
       setBusy(false);
     }

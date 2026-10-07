@@ -2,6 +2,9 @@ import { randomUUID } from "node:crypto";
 import type { Db } from "./db.js";
 import type { SpawnConfig } from "./spawn.js";
 
+/** Longueur max du titre dérivé d'un message (contrainte d'affichage de l'UI). */
+const TITLE_MAX = 80;
+
 export interface ConversationRow {
   id: string;
   workspace_id: string | null;
@@ -74,7 +77,7 @@ export function setConversationSession(db: Db, id: string, sessionFile: string):
 export function setConversationTitle(db: Db, id: string, title: string): void {
   db.prepare(
     "UPDATE conversation SET title = CASE WHEN title = '' THEN ? ELSE title END, updated_at = datetime('now') WHERE id = ?",
-  ).run(title.slice(0, 80), id);
+  ).run(title.slice(0, TITLE_MAX), id);
 }
 
 export function setConversationModel(db: Db, id: string, provider: string, model: string, spawn: SpawnConfig): void {

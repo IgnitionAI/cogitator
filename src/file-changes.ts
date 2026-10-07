@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { parseJsonLine, readSessionLines } from "./session-lines.js";
 
 export interface FileHunk {
   old: string;
@@ -26,6 +26,11 @@ export interface FileChange {
 }
 
 const TEXT_CAP = 3000;
+/** Fenêtre de relecture du transcript pour les événements fichier. */
+const FILE_EVENTS_LINES_SCAN = 3000;
+
+/** Une opération edit/write reconnue par ses noms d'outils pi. */
+const FILE_TOOLS = new Set(["edit", "write"]);
 
 function cap(s: string): string {
   return s.length > TEXT_CAP ? s.slice(0, TEXT_CAP) + "\n… (tronqué)" : s;
@@ -38,23 +43,11 @@ function countLines(s: string | undefined): number {
 
 /** Parse le .jsonl et retourne les événements edit/write dans l'ordre chronologique. */
 export function readFileEvents(sessionFile: string, limit = 500): FileEvent[] {
-  if (!sessionFile || !existsSync(sessionFile)) return [];
-  let lines: string[];
-  try {
-    lines = readFileSync(sessionFile, "utf8").split("\n").filter((l) => l.trim());
-  } catch {
-    return [];
-  }
   const events: FileEvent[] = [];
 
-  for (const line of lines.slice(-3000)) {
-    let entry: Record<string, unknown>;
-    try {
-      entry = JSON.parse(line) as Record<string, unknown>;
-    } catch {
-      continue;
-    }
-    if (entry.type !== "message") continue;
+  for (const line of readSessionLines(sessionFile, FILE_EVENTS_LINES_SCAN)) {
+    const entry = parseJsonLine(line);
+    if (!entry || entry.type !== "message") continue;
     const msg = entry.message as { role?: string; content?: unknown };
     if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
     const at = typeof entry.timestamp === "string" ? entry.timestamp : "";
@@ -62,7 +55,7 @@ export function readFileEvents(sessionFile: string, limit = 500): FileEvent[] {
     for (const block of msg.content as Array<Record<string, unknown>>) {
       if (block?.type !== "toolCall") continue;
       const name = block.name;
-      if (name !== "edit" && name !== "write") continue;
+      if (typeof name !== "string" || !FILE_TOOLS.has(name)) continue;
       let args: Record<string, unknown> = {};
       try {
         args = typeof block.arguments === "string"
@@ -84,21 +77,35 @@ export function readFileEvents(sessionFile: string, limit = 500): FileEvent[] {
       } else {
         // pi : { path, edits: [{ oldText, newText }] } ; variantes oldString/newString tolérées
         const subs = Array.isArray(args.edits) ? args.edits : [args];
-        const hunks: FileHunk[] = [];
-        let additions = 0;
-        let deletions = 0;
-        for (const sub of subs as Array<Record<string, unknown>>) {
-          const oldText = typeof sub.oldText === "string" ? sub.oldText : typeof sub.oldString === "string" ? sub.oldString : "";
-          const newText = typeof sub.newText === "string" ? sub.newText : typeof sub.newString === "string" ? sub.newString : "";
-          hunks.push({ old: cap(oldText), new: cap(newText) });
-          additions += countLines(newText);
-          deletions += countLines(oldText);
-        }
-        events.push({ path, kind: "edit", at, additions, deletions, hunks });
+        events.push({ path, kind: "edit", at, ...countEditHunks(subs as Array<Record<string, unknown>>) });
       }
     }
   }
   return events.slice(-limit);
+}
+
+/** Additionne les hunks d'une opération edit (additions/deletions par ligne nouvelle/ancienne). */
+function countEditHunks(subs: Array<Record<string, unknown>>): { additions: number; deletions: number; hunks: FileHunk[] } {
+  const hunks: FileHunk[] = [];
+  let additions = 0;
+  let deletions = 0;
+  for (const sub of subs) {
+    const oldText = firstString(sub, "oldText", "oldString");
+    const newText = firstString(sub, "newText", "newString");
+    hunks.push({ old: cap(oldText), new: cap(newText) });
+    additions += countLines(newText);
+    deletions += countLines(oldText);
+  }
+  return { additions, deletions, hunks };
+}
+
+/** Première des clés présentes dont la valeur est une chaîne (variantes de nommage pi). */
+function firstString(source: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === "string") return value;
+  }
+  return "";
 }
 
 /** Agrège les événements par chemin (ordre anti-chronologique via lastAt). */

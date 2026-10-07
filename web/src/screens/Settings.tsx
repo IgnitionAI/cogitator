@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { Health } from "../types";
-import { Badge, Field } from "../ui";
+import { Badge, Field, PageHead } from "../ui";
 
 export default function Settings() {
   const [health, setHealth] = useState<Health | null>(null);
@@ -22,13 +22,12 @@ export default function Settings() {
 
   return (
     <>
-      <h2>Settings</h2>
-      <div className="sub">État du serveur et configuration globale.</div>
+      <PageHead title="Settings" sub="État du serveur et configuration globale." />
 
       {health?.mcp_adapter_detected ? (
-        <div className="warn-banner">
-          ⚠ <code>pi-mcp-adapter</code> est installé — il remplace le support MCP builtin de pi. Les serveurs des presets
-          sont enregistrés via <code>registerMcpServer</code> ; vérifie leur visibilité dans une session.
+        <div className="warn-banner" role="status">
+          <code>pi-mcp-adapter</code> est installé : il remplace le support MCP builtin de pi. Les serveurs des presets
+          sont enregistrés via <code>registerMcpServer</code>. Vérifie leur visibilité dans une session.
         </div>
       ) : null}
 

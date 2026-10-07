@@ -41,7 +41,7 @@ import {
   workspaceCreateSchema, workspaceUpdateSchema, boardCardSchema, boardCommentSchema,
   type BoardCardInput, type ConversationCreate,
 } from "./schemas.js";
-import type { SpawnConfig } from "./spawn.js";
+import { spawnConfigFromPreset, type SpawnConfig } from "./spawn.js";
 import {
   browseDir, createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, updateWorkspace,
   type WorkspaceRow,
@@ -63,7 +63,6 @@ function findWebDist(): string | null {
 }
 
 const MAX_WEB_DIST_LOOKUP = 6;
-const WEB_DIST = findWebDist();
 
 const CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -75,10 +74,11 @@ const CONTENT_TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
-/** Sert le build statique de l'UI ; SPA fallback vers index.html. */
+/** Sert le build statique de l'UI ; SPA fallback vers index.html.
+ *  Le dossier est résolu à chaque requête : un build web peut être (re)généré après le démarrage. */
 function serveStatic(res: ServerResponse, pathname: string): boolean {
-  const root = WEB_DIST;
-  if (!root || !existsSync(root)) return false;
+  const root = findWebDist();
+  if (!root) return false;
   const rel = pathname === "/" ? "index.html" : pathname;
   const file = normalize(join(root, rel));
   if (!file.startsWith(root)) return false; // pas de traversal
@@ -609,14 +609,7 @@ function ticketPrompt(card: BoardCard, extra?: string): string {
   ].join("");
 }
 
-/** Snapshot de spawn d'un preset (O6 du contrat). */
-function spawnConfigFromPreset(preset: AgentPreset): SpawnConfig {
-  return {
-    provider: preset.provider, model: preset.model, thinking: preset.thinking,
-    systemPrompt: preset.system_prompt || undefined,
-    skills: preset.skills, tools: preset.tools_allowlist, mcpServers: preset.mcp_servers,
-  };
-}
+/** Snapshot de spawn d'un preset (O6 du contrat) — partagé avec le cron via spawn.js. */
 
 /** Conversations : création (agent hérité ou provider libre), SSE par session, messages. */
 function conversationRoutes(deps: Deps): Route[] {

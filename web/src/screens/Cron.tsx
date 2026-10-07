@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { AgentPreset, CronRun, CronTask, Workspace } from "../types";
-import { Badge, Empty, ErrorText, Field, Modal, statusColor } from "../ui";
+import { Badge, Empty, ErrorText, Field, IconBtn, Modal, PageHead, statusColor } from "../ui";
+import { Icon } from "../icons";
 
 export default function Cron({ toast }: { toast: (t: string, err?: boolean) => void }) {
   const [tasks, setTasks] = useState<CronTask[]>([]);
@@ -25,15 +26,18 @@ export default function Cron({ toast }: { toast: (t: string, err?: boolean) => v
 
   return (
     <>
-      <h2>Cron</h2>
-      <div className="sub">Tâches planifiées — un prompt tiré contre un agent, à heure fixe. ⚠ Le cron ne tourne que si le serveur Cogitator tourne.</div>
+      <PageHead
+        title="Cron"
+        sub="Tâches planifiées : un prompt tiré contre un agent, à heure fixe. Le cron ne tourne que si le serveur Cogitator tourne."
+        actions={<button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> Nouvelle tâche</button>}
+      />
       <ErrorText error={error} />
-      <div className="toolbar">
-        <button className="btn btn-primary" onClick={() => setEditing("new")}>+ Nouvelle tâche</button>
-      </div>
       {tasks.length === 0 ? (
-        <Empty>Aucune tâche planifiée.</Empty>
+        <Empty title="Aucune tâche" action={<button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> Nouvelle tâche</button>}>
+          Planifie un prompt contre un agent. Le serveur doit rester allumé.
+        </Empty>
       ) : (
+        <div className="table-wrap">
         <table>
           <thead>
             <tr><th>Nom</th><th>Expression</th><th>Agent</th><th>Prochain run</th><th>Dernier run</th><th>Activée</th><th></th></tr>
@@ -57,7 +61,7 @@ export default function Cron({ toast }: { toast: (t: string, err?: boolean) => v
                 <td style={{ whiteSpace: "nowrap" }}>
                   <button className="btn btn-sm" onClick={() => setRunsFor(t.id)}>Runs</button>{" "}
                   <button className="btn btn-sm" onClick={() => setEditing(t)}>Éditer</button>{" "}
-                  <button className="btn btn-sm" onClick={() => api.fireSchedule(t.id).then(() => toast(`Run lancé : ${t.name}`)).catch((e: Error) => toast(e.message, true))}>▶</button>{" "}
+                  <IconBtn name="play" label={`Lancer ${t.name} maintenant`} onClick={() => api.fireSchedule(t.id).then(() => toast(`Run lancé : ${t.name}`)).catch((e: Error) => toast(e.message, true))} />
                   <button
                     className="btn btn-sm btn-danger"
                     onClick={() => { if (confirm(`Supprimer la tâche "${t.name}" (et son historique de runs) ?`)) api.deleteSchedule(t.id).then(refresh).catch((e: Error) => toast(e.message, true)); }}
@@ -69,6 +73,7 @@ export default function Cron({ toast }: { toast: (t: string, err?: boolean) => v
             ))}
           </tbody>
         </table>
+        </div>
       )}
       {runsFor ? <RunsModal task={tasks.find((t) => t.id === runsFor)!} onClose={() => { setRunsFor(null); refresh(); }} /> : null}
       {editing ? (

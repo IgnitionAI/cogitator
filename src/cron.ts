@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { CronExpressionParser } from "cron-parser";
 import type { Db } from "./db.js";
-import { getAgent } from "./agents.js";
-import { createConversation, type ConversationRow } from "./conversations.js";
+import { getAgent, type AgentPreset } from "./agents.js";
+import { createConversation, getConversation, type ConversationRow } from "./conversations.js";
 import type { PiPool } from "./pool.js";
 import type { ScheduleCreate, ScheduleUpdate } from "./schemas.js";
-import type { SpawnConfig } from "./spawn.js";
+import { spawnConfigFromPreset } from "./spawn.js";
 import type { Spawner } from "./spawner.js";
 
 export interface CronTaskRow {
@@ -34,6 +34,13 @@ export interface CronRunRow {
 }
 
 export type CronNotify = (event: Record<string, unknown>) => void;
+
+/** Bornes du service (surchargeables par les options pour les tests). */
+const DEFAULT_RUN_TIMEOUT_MS = 15 * 60_000;
+const DEFAULT_TICK_MS = 30_000;
+/** busy_policy=queue : on attend la fin du run actif, avec garde-fou. */
+const QUEUE_POLL_MS = 2_000;
+const QUEUE_WAIT_MAX_MS = 10 * 60_000;
 
 export interface CronServiceOptions {
   db: Db;
@@ -67,7 +74,7 @@ export function validateCronExpr(expr: string): boolean {
 export function nextAfter(task: CronTaskRow, from = new Date()): Date | null {
   try {
     const base = task.last_run_at ? new Date(task.last_run_at) : new Date(task.created_at);
-    if (isNaN(base.getTime())) return null;
+    if (Number.isNaN(base.getTime())) return null;
     // itérateur positionné sur la dernière exécution ; next() donne l'occurrence suivante
     const it = CronExpressionParser.parse(task.cron_expr, { currentDate: base > from ? from : base });
     return it.next().toDate();
@@ -149,6 +156,34 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** busy_policy : un run 'running' déjà en base (crash, autre instance) bloque le nouveau.
+ *  Renvoie false quand le run courant a été tracé comme `skipped` (il ne doit pas s'exécuter). */
+async function applyBusyPolicy(db: Db, task: CronTaskRow, runId: string): Promise<boolean> {
+  const stale = runningRunFor(db, task.id);
+  if (!stale || stale.id === runId) return true;
+  if (task.busy_policy === "skip") {
+    finishRun(db, runId, "skipped", null, `run ${stale.id} encore actif (policy skip)`);
+    return false;
+  }
+  if (task.busy_policy === "kill") {
+    finishRun(db, stale.id, "killed", null, "supplanté par un nouveau run");
+  }
+  // queue : attendre la fin du run actif (garde-fou : QUEUE_WAIT_MAX_MS)
+  const deadline = Date.now() + QUEUE_WAIT_MAX_MS;
+  while (runningRunFor(db, task.id) && Date.now() < deadline) await sleep(QUEUE_POLL_MS);
+  return true;
+}
+
+/** Dernière session connue de la tâche (output_policy=append_session la reprend). */
+function lastSessionFile(db: Db, taskId: string): string | null {
+  const last = db
+    .prepare(`SELECT session_file FROM cron_run
+              WHERE task_id = ? AND session_file IS NOT NULL
+              ORDER BY started_at DESC LIMIT 1`)
+    .get(taskId) as { session_file: string } | undefined;
+  return last?.session_file ?? null;
+}
+
 // ---------- Service ----------
 
 export class CronService {
@@ -174,7 +209,7 @@ export class CronService {
     }
   }
 
-  start(intervalMs = 30_000): void {
+  start(intervalMs = DEFAULT_TICK_MS): void {
     if (this.timer) return;
     this.timer = setInterval(() => this.tick().catch(() => undefined), intervalMs);
   }
@@ -202,20 +237,7 @@ export class CronService {
 
     let convId: string | null = null;
     try {
-      // busy-guard : un run 'running' en base (ex. crash, autre instance)
-      const stale = runningRunFor(db, taskId);
-      if (stale && stale.id !== runId) {
-        if (task.busy_policy === "skip") {
-          finishRun(db, runId, "skipped", null, `run ${stale.id} encore actif (policy skip)`);
-          return this.getRun(runId);
-        }
-        if (task.busy_policy === "kill") {
-          finishRun(db, stale.id, "killed", null, "supplanté par un nouveau run");
-        }
-        // queue : attendre la fin du run actif (garde fous : 10 min)
-        const deadline = Date.now() + 10 * 60_000;
-        while (runningRunFor(db, taskId) && Date.now() < deadline) await sleep(2_000);
-      }
+      if (!(await applyBusyPolicy(db, task, runId))) return this.getRun(runId);
 
       const preset = task.agent_id ? getAgent(db, task.agent_id) : null;
       if (!preset) {
@@ -223,36 +245,14 @@ export class CronService {
         return this.getRun(runId);
       }
 
-      const spawn: SpawnConfig = {
-        provider: preset.provider, model: preset.model, thinking: preset.thinking,
-        systemPrompt: preset.system_prompt || undefined,
-        skills: preset.skills, tools: preset.tools_allowlist, mcpServers: preset.mcp_servers,
-      };
-
-      // session dédiée : append_session reprend la dernière session de la tâche si connue
-      let resumeFile: string | null = null;
-      if (task.output_policy === "append_session") {
-        const last = db
-          .prepare("SELECT session_file FROM cron_run WHERE task_id = ? AND session_file IS NOT NULL ORDER BY started_at DESC LIMIT 1")
-          .get(taskId) as { session_file: string } | undefined;
-        resumeFile = last?.session_file ?? null;
-      }
-
-      const conv: ConversationRow = createConversation(db, {
-        workspaceId: task.workspace_id, agentId: preset.id, spawn,
-      });
+      const conv = this.createRunConversation(task, preset);
       convId = conv.id;
-      if (resumeFile) {
-        db.prepare("UPDATE conversation SET session_file = ? WHERE id = ?").run(resumeFile, conv.id);
-        conv.session_file = resumeFile;
-      }
-      db.prepare("UPDATE conversation SET title = ? WHERE id = ?").run(`[cron] ${task.name}`, conv.id);
-
       await spawner.ensure(conv);
       // s'abonner AVANT de prompt : un LLM rapide peut settled avant l'abonnement sinon
-      const settled = pool.waitForSettled(conv.id, this.opts.runTimeoutMs ?? 15 * 60_000);
+      const settled = pool.waitForSettled(conv.id, this.opts.runTimeoutMs ?? DEFAULT_RUN_TIMEOUT_MS);
       await pool.prompt(conv.id, task.prompt);
       await settled;
+
       const finalConv = db.prepare("SELECT session_file FROM conversation WHERE id = ?").get(conv.id) as { session_file: string | null };
       finishRun(db, runId, "ok", finalConv.session_file);
       this.opts.notify?.({ type: "cron_run_finished", taskId, runId, name: task.name, status: "ok", sessionFile: finalConv.session_file });
@@ -272,6 +272,20 @@ export class CronService {
       }
       this.firing.delete(taskId);
     }
+  }
+
+  /** Conversation éphémère du run, dans le workspace de la tâche (session reprise si append_session). */
+  private createRunConversation(task: CronTaskRow, preset: AgentPreset): ConversationRow {
+    const { db } = this.opts;
+    const conv = createConversation(db, {
+      workspaceId: task.workspace_id,
+      agentId: preset.id,
+      spawn: spawnConfigFromPreset(preset),
+    });
+    const resumeFile = task.output_policy === "append_session" ? lastSessionFile(db, task.id) : null;
+    if (resumeFile) db.prepare("UPDATE conversation SET session_file = ? WHERE id = ?").run(resumeFile, conv.id);
+    db.prepare("UPDATE conversation SET title = ? WHERE id = ?").run(`[cron] ${task.name}`, conv.id);
+    return getConversation(db, conv.id)!;
   }
 
   private getRun(runId: string): CronRunRow {

@@ -2,18 +2,19 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { BASE_URL } from "../src/config.js";
 import { decodeMcpEnv, MCP_ENV_VAR } from "../src/mcp-env.js";
 
 // I4 : l'entry de l'extension ne démarre RIEN au load — uniquement la commande et
 // l'enregistrement MCP (qui ne fait que déclarer des serveurs, le builtin connecte).
 
-const HOST = "127.0.0.1";
-const PORT = Number(process.env.COGITATOR_PORT ?? 5320);
-const BASE = `http://${HOST}:${PORT}`;
+/** Attente du démarrage du serveur détaché : ~5 s au total. */
+const STARTUP_ATTEMPTS = 50;
+const STARTUP_POLL_MS = 100;
 
 async function isUp(): Promise<boolean> {
   try {
-    const res = await fetch(`${BASE}/api/health`);
+    const res = await fetch(`${BASE_URL}/api/health`);
     return res.ok;
   } catch {
     return false;
@@ -54,13 +55,13 @@ export default function (pi: ExtensionAPI) {
         const here = dirname(fileURLToPath(import.meta.url)); // dist/extensions
         const entry = join(here, "..", "src", "cli.js");
         spawn(process.execPath, [entry], { detached: true, stdio: "ignore" }).unref();
-        for (let i = 0; i < 50; i++) {
+        for (let i = 0; i < STARTUP_ATTEMPTS; i++) {
           if (await isUp()) break;
-          await new Promise((resolve) => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, STARTUP_POLL_MS));
         }
       }
-      openBrowser(BASE);
-      ctx.ui.notify(`Cogitator — ${BASE}`, "info");
+      openBrowser(BASE_URL);
+      ctx.ui.notify(`Cogitator — ${BASE_URL}`, "info");
     },
   });
 }

@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { readJson, atomicWriteJson } from "./json-files.js";
 import { CARD_PRIORITIES, CARD_STATUSES } from "./schemas.js";
@@ -368,11 +367,4 @@ export async function closeCardGh(wsDir: string, number: number): Promise<{ ok: 
   }
   saveSidecar(wsDir, sidecar);
   return { ok: true };
-}
-
-/** Vrai si le repo a un remote (board utilisable). */
-export async function githubAvailable(wsDir: string): Promise<boolean> {
-  if (!existsSync(join(wsDir, ".git"))) return false;
-  const r = await gh(wsDir, ["repo", "view", "--json", "nameWithOwner"], 10_000);
-  return r.ok;
 }

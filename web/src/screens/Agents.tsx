@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
+import { THINKING_LEVELS } from "../types";
 import type { AgentPreset, McpServerEntry, ProviderView, SkillRef, SubagentInput } from "../types";
-import { Badge, Empty, ErrorText, Field, Modal, PageHead } from "../ui";
+import { Badge, Empty, ErrorText, Field, Modal, PageHead, useToast } from "../ui";
 import { Icon } from "../icons";
 
-const THINKING = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
-
-export default function Agents({ toast }: { toast: (t: string, err?: boolean) => void }) {
+export default function Agents() {
+  const toast = useToast();
   const [agents, setAgents] = useState<AgentPreset[]>([]);
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [editing, setEditing] = useState<AgentPreset | "new" | null>(null);
@@ -14,7 +14,7 @@ export default function Agents({ toast }: { toast: (t: string, err?: boolean) =>
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    api.agents().then((r) => setAgents(r.agents as AgentPreset[])).catch((e: Error) => setError(e.message));
+    api.agents().then((r) => setAgents(r.agents)).catch((e: Error) => setError(e.message));
     api.providers().then((r) => setProviders(r.providers)).catch(() => undefined);
   }, []);
 
@@ -50,7 +50,6 @@ export default function Agents({ toast }: { toast: (t: string, err?: boolean) =>
                 agent={a}
                 providers={providers}
                 onChanged={() => { refresh(); toast(`${a.name} : modèle mis à jour`); }}
-                onError={(m) => toast(m, true)}
               />
               <div className="actions">
                 <button className="btn btn-sm" onClick={() => setEditing(a)}>Éditer</button>{" "}
@@ -77,10 +76,10 @@ export default function Agents({ toast }: { toast: (t: string, err?: boolean) =>
           agent={editing === "new" ? null : editing}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); refresh(); }}
-          toast={toast}
+         
         />
       ) : null}
-      {showImport ? <ImportSkillsModal onClose={() => setShowImport(false)} toast={toast} /> : null}
+      {showImport ? <ImportSkillsModal onClose={() => setShowImport(false)} /> : null}
     </>
   );
 }
@@ -89,8 +88,8 @@ function QuickModel(props: {
   agent: AgentPreset;
   providers: ProviderView[];
   onChanged: () => void;
-  onError: (message: string) => void;
 }) {
+  const toast = useToast();
   const { agent, providers } = props;
   const provider = providers.find((p) => p.id === agent.provider);
   const models = provider?.models ?? [];
@@ -105,7 +104,7 @@ function QuickModel(props: {
       });
       props.onChanged();
     } catch (e) {
-      props.onError((e as Error).message);
+      toast((e as Error).message, true);
     }
   };
 
@@ -139,7 +138,8 @@ function QuickModel(props: {
   );
 }
 
-function ImportSkillsModal(props: { onClose: () => void; toast: (t: string, err?: boolean) => void }) {
+function ImportSkillsModal(props: { onClose: () => void }) {
+  const toast = useToast();
   const [source, setSource] = useState("");
   const [overwrite, setOverwrite] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -151,9 +151,9 @@ function ImportSkillsModal(props: { onClose: () => void; toast: (t: string, err?
     try {
       const r = await api.importSkills(source.trim(), overwrite);
       setResult(r);
-      props.toast(`${r.imported.length} skill(s) importé(s)${r.skipped.length ? `, ${r.skipped.length} ignoré(s)` : ""}`);
+      toast(`${r.imported.length} skill(s) importé(s)${r.skipped.length ? `, ${r.skipped.length} ignoré(s)` : ""}`);
     } catch (e) {
-      props.toast((e as Error).message, true);
+      toast((e as Error).message, true);
     } finally {
       setBusy(false);
     }
@@ -183,7 +183,8 @@ function ImportSkillsModal(props: { onClose: () => void; toast: (t: string, err?
   );
 }
 
-function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; onSaved: () => void; toast: (t: string, err?: boolean) => void }) {
+function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [skills, setSkills] = useState<SkillRef[]>([]);
   const [form, setForm] = useState({
@@ -240,11 +241,11 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
       const v = await api.validateAgent(r.agent.id);
       setChecks(v);
       if (v.errors.length === 0) {
-        props.toast(props.agent ? "Agent mis à jour + appliqué (herdr)" : "Agent créé + appliqué (herdr)");
+        toast(props.agent ? "Agent mis à jour + appliqué (herdr)" : "Agent créé + appliqué (herdr)");
         props.onSaved();
       }
     } catch (e) {
-      props.toast((e as Error).message, true);
+      toast((e as Error).message, true);
     } finally {
       setBusy(false);
     }
@@ -270,7 +271,7 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
         <Field label="Thinking">
           <select value={form.thinking} onChange={(e) => set("thinking", e.target.value)}>
             <option value="">(défaut)</option>
-            {THINKING.map((t) => <option key={t} value={t}>{t}</option>)}
+            {THINKING_LEVELS.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </Field>
         <Field label="Tools allowlist (vide = tous)" hint="Séparés par des virgules">
@@ -333,7 +334,7 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
               <input placeholder="description" value={s.description ?? ""} onChange={(e) => patchSub(i, { description: e.target.value })} />
               <select value={s.thinking ?? ""} onChange={(e) => patchSub(i, { thinking: e.target.value || null })}>
                 <option value="">thinking…</option>
-                {THINKING.map((t) => <option key={t} value={t}>{t}</option>)}
+                {THINKING_LEVELS.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
               <button className="btn btn-sm btn-danger" onClick={() => set("subagents", form.subagents.filter((_, j) => j !== i))}>Retirer</button>
             </div>

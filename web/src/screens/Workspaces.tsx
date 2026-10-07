@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { AgentPreset, FeedEvent, FileChange, Workspace } from "../types";
-import { Empty, ErrorText, Field, Modal, PageHead } from "../ui";
+import { Empty, ErrorText, Field, Modal, PageHead, useToast } from "../ui";
 import { Icon } from "../icons";
 import { FileDiffModal, FileRow, FileTreeModal } from "../FileViews";
 import BoardModal from "../Board";
+import { FeedList } from "../FeedList";
 
 interface WorkspaceActivity {
   files: FileChange[];
@@ -18,7 +19,8 @@ interface BrowseResult {
   entries: Array<{ name: string; path: string; type: "dir" | "file" }>;
 }
 
-export default function Workspaces({ toast, onOpenWorkspace }: { toast: (t: string, err?: boolean) => void; onOpenWorkspace?: (w: Workspace) => void }) {
+export default function Workspaces({ onOpenWorkspace }: { onOpenWorkspace?: (w: Workspace) => void }) {
+  const toast = useToast();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [agents, setAgents] = useState<AgentPreset[]>([]);
   const [activity, setActivity] = useState<Record<string, WorkspaceActivity>>({});
@@ -38,7 +40,7 @@ export default function Workspaces({ toast, onOpenWorkspace }: { toast: (t: stri
         api.workspaceActivity(w.id).then((a) => setActivity((prev) => ({ ...prev, [w.id]: a }))).catch(() => undefined);
       }
     }).catch((e: Error) => setError(e.message));
-    api.agents().then((r) => setAgents(r.agents as AgentPreset[])).catch(() => undefined);
+    api.agents().then((r) => setAgents(r.agents)).catch(() => undefined);
   }, []);
 
   useEffect(refresh, [refresh]);
@@ -124,7 +126,7 @@ export default function Workspaces({ toast, onOpenWorkspace }: { toast: (t: stri
           ))}
         </div>
       )}
-      {showAdd ? <AddWorkspaceModal onClose={() => setShowAdd(false)} onAdded={() => { setShowAdd(false); refresh(); }} toast={toast} /> : null}
+      {showAdd ? <AddWorkspaceModal onClose={() => setShowAdd(false)} onAdded={() => { setShowAdd(false); refresh(); }} /> : null}
       {activityFor && activity[activityFor] ? (
         <Modal title={`Activité — ${workspaces.find((w) => w.id === activityFor)?.name ?? ""}`} onClose={() => setActivityFor(null)} wide>
           <div className="file-stats" style={{ marginBottom: 12, fontSize: 13 }}>
@@ -142,31 +144,7 @@ export default function Workspaces({ toast, onOpenWorkspace }: { toast: (t: stri
       {feedFor ? (
         <Modal title={`Feed — ${workspaces.find((w) => w.id === feedFor)?.name ?? ""}`} onClose={() => setFeedFor(null)} wide>
           {feed.length === 0 ? <div className="muted" style={{ padding: 12 }}>Aucune activité enregistrée.</div> : null}
-          {(() => {
-            const days = new Map<string, FeedEvent[]>();
-            for (const e of feed) {
-              const day = new Date(e.at).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
-              const list = days.get(day) ?? [];
-              list.push(e);
-              days.set(day, list);
-            }
-            return [...days.entries()].map(([day, events]) => (
-              <div key={day}>
-                <div className="feed-day">{day}</div>
-                {events.map((e, i) => (
-                  <div key={i} className="feed-row" onClick={() => setDiffFor({ convId: e.conversationId, path: e.path })} title={e.path}>
-                    <span className="feed-time">{new Date(e.at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
-                    <span className="feed-conv">{e.conversationTitle}</span>
-                    <span className="feed-path mono">{e.path.split("/").slice(-2).join("/")}</span>
-                    <span className="file-stats">
-                      {e.additions > 0 ? <span className="add">+{e.additions}</span> : null}
-                      {e.deletions > 0 ? <span className="del">−{e.deletions}</span> : null}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ));
-          })()}
+          <FeedList feed={feed} onOpenEvent={(e) => setDiffFor({ convId: e.conversationId, path: e.path })} />
         </Modal>
       ) : null}
       {diffFor ? (
@@ -178,7 +156,7 @@ export default function Workspaces({ toast, onOpenWorkspace }: { toast: (t: stri
           workspaceName={workspaces.find((w) => w.id === boardFor)?.name ?? ""}
           agents={agents}
           onClose={() => setBoardFor(null)}
-          toast={toast}
+         
         />
       ) : null}
       {treeFor ? (
@@ -193,14 +171,15 @@ export default function Workspaces({ toast, onOpenWorkspace }: { toast: (t: stri
   );
 }
 
-function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void; toast: (t: string, err?: boolean) => void }) {
+function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) {
+  const toast = useToast();
   const [browse, setBrowse] = useState<BrowseResult | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = (path?: string) => {
-    api.browse(path).then(setBrowse).catch((e: Error) => props.toast(e.message, true));
+    api.browse(path).then(setBrowse).catch((e: Error) => toast(e.message, true));
   };
 
   useEffect(() => { load(); }, []);
@@ -212,7 +191,7 @@ function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void; to
       await api.createWorkspace({ dir: selected, name: name.trim() || undefined });
       props.onAdded();
     } catch (e) {
-      props.toast((e as Error).message, true);
+      toast((e as Error).message, true);
     } finally {
       setBusy(false);
     }

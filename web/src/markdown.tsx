@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 /**
  * Mini-rendu markdown (sous-ensemble : headings, gras/italique/code inline,
@@ -132,10 +132,3 @@ export function Markdown(props: { text: string }) {
 
   return <div className="md">{blocks}</div>;
 }
-
-/** Version inline simple (pour une ligne courte, ex. meta). */
-export function InlineMd(props: { text: string }) {
-  return <>{renderInline(props.text, "i")}</>;
-}
-
-void Fragment;

@@ -1,5 +1,9 @@
 // Types miroirs du contrat API — cf. docs/architecture/api-contract.md
 
+/** Niveaux de raisonnement acceptés par pi (miroir de src/schemas.ts). */
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
 export interface ProviderView {
   id: string;
   source: "builtin" | "custom";
@@ -184,6 +188,12 @@ export type HistoryEntry =
 export interface SseEvent {
   type: string;
   sessionFile?: string;
+  /** notifications cron globales (cron_run_started / cron_run_finished) */
+  name?: string;
+  status?: string;
+  error?: string;
+  taskId?: string;
+  runId?: string;
   assistantMessageEvent?: {
     type: string;
     contentIndex?: number;
@@ -191,4 +201,70 @@ export interface SseEvent {
     content?: string;
     toolName?: string;
   };
+}
+
+// ---------- Corps d'écriture (ce que l'UI envoie au serveur) ----------
+
+export interface ProviderWrite {
+  id?: string;
+  baseUrl?: string;
+  api?: string;
+  apiKey?: string;
+  models?: Array<{ id: string }>;
+}
+
+export interface AgentWrite {
+  name: string;
+  description?: string;
+  provider: string;
+  model: string;
+  thinking?: string | null;
+  system_prompt?: string;
+  skills?: string[];
+  tools_allowlist?: string[] | null;
+  mcp_servers?: McpServerEntry[];
+  subagents?: SubagentInput[];
+}
+
+export interface WorkspaceWrite {
+  dir?: string;
+  name?: string;
+  default_agent_id?: string | null;
+}
+
+export interface ConversationWrite {
+  workspace_id?: string;
+  agent_id?: string;
+  provider?: string;
+  model?: string;
+  thinking?: string | null;
+  system_prompt?: string;
+  skills?: string[];
+  tools?: string[];
+  mcp_servers?: McpServerEntry[];
+  prompt?: string;
+}
+
+export interface CardWrite {
+  title?: string;
+  description?: string;
+  status?: string;
+  priority?: string;
+  labels?: string[];
+  assignee_agent_id?: string | null;
+  conversation_ids?: string[];
+  blocks?: string[];
+  blocked_by?: string[];
+}
+
+export interface ScheduleWrite {
+  name?: string;
+  cron_expr?: string;
+  prompt?: string;
+  agent_id?: string;
+  workspace_id?: string;
+  output_policy?: string;
+  busy_policy?: string;
+  catchup?: boolean;
+  enabled?: boolean;
 }

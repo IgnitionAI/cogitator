@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { ProviderView } from "../types";
-import { Badge, Empty, ErrorText, Field, Modal, PageHead } from "../ui";
+import { Badge, Empty, ErrorText, Field, Modal, PageHead, useToast } from "../ui";
 import { Icon } from "../icons";
 
 const APIS = [
@@ -9,7 +9,8 @@ const APIS = [
   "google-generative-ai", "azure-openai-responses", "amazon-bedrock", "radius",
 ];
 
-export default function Providers({ toast }: { toast: (t: string, err?: boolean) => void }) {
+export default function Providers() {
+  const toast = useToast();
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [keyFor, setKeyFor] = useState<string | null>(null);
@@ -68,13 +69,14 @@ export default function Providers({ toast }: { toast: (t: string, err?: boolean)
         </table>
         </div>
       )}
-      {showAdd ? <AddProviderModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); refresh(); }} toast={toast} /> : null}
-      {keyFor ? <KeyModal providerId={keyFor} onClose={() => setKeyFor(null)} onSaved={() => { setKeyFor(null); refresh(); }} toast={toast} /> : null}
+      {showAdd ? <AddProviderModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); refresh(); }} /> : null}
+      {keyFor ? <KeyModal providerId={keyFor} onClose={() => setKeyFor(null)} onSaved={() => { setKeyFor(null); refresh(); }} /> : null}
     </>
   );
 }
 
-function AddProviderModal(props: { onClose: () => void; onSaved: () => void; toast: (t: string, err?: boolean) => void }) {
+function AddProviderModal(props: { onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
   const [id, setId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiProt, setApiProt] = useState("openai-completions");
@@ -92,7 +94,7 @@ function AddProviderModal(props: { onClose: () => void; onSaved: () => void; toa
       });
       props.onSaved();
     } catch (e) {
-      props.toast((e as Error).message, true);
+      toast((e as Error).message, true);
     }
   };
 
@@ -122,7 +124,8 @@ function AddProviderModal(props: { onClose: () => void; onSaved: () => void; toa
   );
 }
 
-function KeyModal(props: { providerId: string; onClose: () => void; onSaved: () => void; toast: (t: string, err?: boolean) => void }) {
+function KeyModal(props: { providerId: string; onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
   const [key, setKey] = useState("");
   return (
     <Modal title={`Clé API — ${props.providerId}`} onClose={props.onClose}>
@@ -136,7 +139,7 @@ function KeyModal(props: { providerId: string; onClose: () => void; onSaved: () 
           onClick={() => {
             api.updateProvider(props.providerId, { apiKey: key.trim() })
               .then(props.onSaved)
-              .catch((e: Error) => props.toast(e.message, true));
+              .catch((e: Error) => toast(e.message, true));
           }}
         >
           Enregistrer

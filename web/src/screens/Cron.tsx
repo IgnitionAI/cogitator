@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { AgentPreset, CronRun, CronTask, Workspace } from "../types";
-import { Badge, Empty, ErrorText, Field, IconBtn, Modal, PageHead, statusColor } from "../ui";
+import { Badge, Empty, ErrorText, Field, IconBtn, Modal, PageHead, statusColor, useToast } from "../ui";
 import { Icon } from "../icons";
 
-export default function Cron({ toast }: { toast: (t: string, err?: boolean) => void }) {
+export default function Cron() {
+  const toast = useToast();
   const [tasks, setTasks] = useState<CronTask[]>([]);
   const [agents, setAgents] = useState<AgentPreset[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -14,7 +15,7 @@ export default function Cron({ toast }: { toast: (t: string, err?: boolean) => v
 
   const refresh = useCallback(() => {
     api.schedules().then((r) => setTasks(r.schedules)).catch((e: Error) => setError(e.message));
-    api.agents().then((r) => setAgents(r.agents as AgentPreset[])).catch(() => undefined);
+    api.agents().then((r) => setAgents(r.agents)).catch(() => undefined);
     api.workspaces().then((r) => setWorkspaces(r.workspaces)).catch(() => undefined);
   }, []);
 
@@ -83,7 +84,7 @@ export default function Cron({ toast }: { toast: (t: string, err?: boolean) => v
           workspaces={workspaces}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); refresh(); }}
-          toast={toast}
+         
         />
       ) : null}
     </>
@@ -128,8 +129,8 @@ function TaskEditor(props: {
   workspaces: Workspace[];
   onClose: () => void;
   onSaved: () => void;
-  toast: (t: string, err?: boolean) => void;
 }) {
+  const toast = useToast();
   const [form, setForm] = useState({
     name: props.task?.name ?? "",
     cron_expr: props.task?.cron_expr ?? "0 9 * * *",
@@ -147,7 +148,7 @@ function TaskEditor(props: {
       else await api.createSchedule(form);
       props.onSaved();
     } catch (e) {
-      props.toast((e as Error).message, true);
+      toast((e as Error).message, true);
     }
   };
 

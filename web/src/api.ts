@@ -1,6 +1,5 @@
 import type {
-  AgentPreset, BoardCard, Conversation, CronRun, CronTask, FeedEvent, FileChange, FileEvent, Health, ImageContentInput, ProviderView, SkillRef, Workspace,
-} from "./types";
+  AgentPreset, BoardCard, Conversation, CronRun, CronTask, FeedEvent, FileChange, FileEvent, Health, ImageContentInput, ProviderView, SkillRef, Workspace, AgentWrite, CardWrite, ConversationWrite, ProviderWrite, ScheduleWrite, SseEvent, WorkspaceWrite } from "./types";
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -17,25 +16,25 @@ export const api = {
   health: () => req<Health>("GET", "/api/health"),
 
   providers: () => req<{ providers: ProviderView[] }>("GET", "/api/providers"),
-  createProvider: (b: unknown) => req<{ ok: true }>("POST", "/api/providers", b),
-  updateProvider: (id: string, b: unknown) => req<{ ok: true }>("PUT", `/api/providers/${id}`, b),
+  createProvider: (b: ProviderWrite) => req<{ ok: true }>("POST", "/api/providers", b),
+  updateProvider: (id: string, b: ProviderWrite) => req<{ ok: true }>("PUT", `/api/providers/${id}`, b),
   deleteProvider: (id: string) => req<{ ok: true }>("DELETE", `/api/providers/${id}`),
 
   skills: () => req<{ skills: SkillRef[] }>("GET", "/api/skills"),
   importSkills: (source: string, overwrite?: boolean) =>
     req<{ imported: string[]; skipped: string[]; dest: string }>("POST", "/api/skills/import", { source, overwrite }),
 
-  agents: () => req<{ agents: Omit<AgentPreset, "system_prompt" | "subagents">[] }>("GET", "/api/agents"),
+  agents: () => req<{ agents: AgentPreset[] }>("GET", "/api/agents"),
   agent: (id: string) => req<{ agent: AgentPreset }>("GET", `/api/agents/${id}`),
-  createAgent: (b: unknown) => req<{ agent: AgentPreset }>("POST", "/api/agents", b),
-  updateAgent: (id: string, b: unknown) => req<{ agent: AgentPreset }>("PUT", `/api/agents/${id}`, b),
+  createAgent: (b: AgentWrite) => req<{ agent: AgentPreset }>("POST", "/api/agents", b),
+  updateAgent: (id: string, b: AgentWrite) => req<{ agent: AgentPreset }>("PUT", `/api/agents/${id}`, b),
   deleteAgent: (id: string) => req<{ ok: true }>("DELETE", `/api/agents/${id}`),
   validateAgent: (id: string) => req<{ errors: string[]; warnings: string[] }>("POST", `/api/agents/${id}/validate`),
   setDefaultAgent: (id: string) => req<{ ok: true }>("POST", `/api/agents/${id}/default`),
 
   workspaces: () => req<{ workspaces: Workspace[] }>("GET", "/api/workspaces"),
-  createWorkspace: (b: unknown) => req<{ workspace: Workspace }>("POST", "/api/workspaces", b),
-  updateWorkspace: (id: string, b: unknown) => req<{ workspace: Workspace }>("PUT", `/api/workspaces/${id}`, b),
+  createWorkspace: (b: WorkspaceWrite) => req<{ workspace: Workspace }>("POST", "/api/workspaces", b),
+  updateWorkspace: (id: string, b: WorkspaceWrite) => req<{ workspace: Workspace }>("PUT", `/api/workspaces/${id}`, b),
   deleteWorkspace: (id: string) => req<{ ok: true }>("DELETE", `/api/workspaces/${id}`),
   browse: (path?: string) =>
     req<{ path: string; parent: string | null; entries: Array<{ name: string; path: string; type: "dir" | "file" }> }>(
@@ -50,7 +49,7 @@ export const api = {
   conversations: (workspaceId?: string) =>
     req<{ conversations: Conversation[] }>("GET", `/api/conversations${workspaceId ? `?workspace_id=${workspaceId}` : ""}`),
   conversation: (id: string) => req<{ conversation: Conversation; live: boolean }>("GET", `/api/conversations/${id}`),
-  createConversation: (b: unknown) => req<{ conversation: Conversation }>("POST", "/api/conversations", b),
+  createConversation: (b: ConversationWrite) => req<{ conversation: Conversation }>("POST", "/api/conversations", b),
   deleteConversation: (id: string) => req<{ ok: true }>("DELETE", `/api/conversations/${id}`),
   sendMessage: (id: string, text: string, images?: ImageContentInput[]) =>
     req<{ ok: true }>("POST", `/api/conversations/${id}/messages`, { text, images }),
@@ -69,10 +68,10 @@ export const api = {
   workspaceTree: (id: string) =>
     req<{ root: string; tree: import("./FileViews").TreeNode[] }>("GET", `/api/workspaces/${id}/tree`),
   board: (id: string) => req<{ cards: BoardCard[] }>("GET", `/api/workspaces/${id}/board`),
-  boardCreateCard: (id: string, b: unknown) => req<{ card: BoardCard }>("POST", `/api/workspaces/${id}/board/cards`, b),
-  boardUpdateCard: (id: string, cardId: string, b: unknown) => req<{ card: BoardCard }>("PUT", `/api/workspaces/${id}/board/cards/${cardId}`, b),
+  boardCreateCard: (id: string, b: CardWrite) => req<{ card: BoardCard }>("POST", `/api/workspaces/${id}/board/cards`, b),
+  boardUpdateCard: (id: string, cardId: string, b: CardWrite) => req<{ card: BoardCard }>("PUT", `/api/workspaces/${id}/board/cards/${cardId}`, b),
   boardMove: (id: string, cardId: string, status: string) => req<{ card: BoardCard }>("POST", `/api/workspaces/${id}/board/cards/${cardId}/move`, { status }),
-  boardComment: (id: string, cardId: string, b: unknown) => req<{ card: BoardCard }>("POST", `/api/workspaces/${id}/board/cards/${cardId}/comments`, b),
+  boardComment: (id: string, cardId: string, b: { text: string; author?: string }) => req<{ card: BoardCard }>("POST", `/api/workspaces/${id}/board/cards/${cardId}/comments`, b),
   boardDeleteCard: (id: string, cardId: string) => req<{ ok: true }>("DELETE", `/api/workspaces/${id}/board/cards/${cardId}`),
   boardStartWork: (id: string, cardId: string) =>
     req<{ conversation: Conversation; card: BoardCard }>("POST", `/api/workspaces/${id}/board/cards/${cardId}/start`),
@@ -86,8 +85,8 @@ export const api = {
     ),
 
   schedules: () => req<{ schedules: CronTask[] }>("GET", "/api/schedules"),
-  createSchedule: (b: unknown) => req<{ schedule: CronTask }>("POST", "/api/schedules", b),
-  updateSchedule: (id: string, b: unknown) => req<{ schedule: CronTask }>("PUT", `/api/schedules/${id}`, b),
+  createSchedule: (b: ScheduleWrite) => req<{ schedule: CronTask }>("POST", "/api/schedules", b),
+  updateSchedule: (id: string, b: ScheduleWrite) => req<{ schedule: CronTask }>("PUT", `/api/schedules/${id}`, b),
   deleteSchedule: (id: string) => req<{ ok: true }>("DELETE", `/api/schedules/${id}`),
   fireSchedule: (id: string) => req<{ ok: true }>("POST", `/api/schedules/${id}/run`),
   runs: (id: string) => req<{ runs: CronRun[] }>("GET", `/api/schedules/${id}/runs`),
@@ -97,13 +96,13 @@ export const api = {
  *  pour réconcilier l'historique et combler les événements manqués pendant une coupure. */
 export function openEvents(
   url: string,
-  onEvent: (e: never) => void,
+  onEvent: (event: SseEvent) => void,
   opts?: { onOpen?: () => void; onClose?: () => void },
 ): () => void {
   const source = new EventSource(url);
   source.onmessage = (msg) => {
     try {
-      onEvent(JSON.parse(msg.data) as never);
+      onEvent(JSON.parse(msg.data) as SseEvent);
     } catch {
       /* événement non-JSON : ignoré */
     }

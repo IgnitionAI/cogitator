@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { BoardPanel } from "./Board";
-import { FileRow, TreePanel } from "./FileViews";
+import { FileDiffModal, FileRow, TreePanel } from "./FileViews";
+import { FeedList } from "./FeedList";
 import type { AgentPreset, BoardCard, Conversation, FeedEvent, FileChange, Workspace } from "./types";
-import { Badge, Empty, statusColor } from "./ui";
+import { Badge, Empty, statusColor, useToast } from "./ui";
 import { ChatView } from "./screens/Conversations";
 import { Icon, type IconName } from "./icons";
 
@@ -20,10 +21,10 @@ const TABS: Array<{ id: string; label: string; icon: IconName }> = [
 export default function WorkspacePage(props: {
   workspace: Workspace;
   agents: AgentPreset[];
-  toast: (t: string, err?: boolean) => void;
   onBack: () => void;
   onOpenConversation: (id: string) => void;
 }) {
+  const toast = useToast();
   const { workspace } = props;
   const [tab, setTab] = useState<string>("board");
   const [activity, setActivity] = useState<{ files: FileChange[]; totals: { additions: number; deletions: number } } | null>(null);
@@ -69,7 +70,7 @@ export default function WorkspacePage(props: {
 
   const modified = new Set((activity?.files ?? []).map((f) => f.path));
   const LazyDiff = diffFor ? (
-    <DiffLoader conversationId={diffFor.convId} path={diffFor.path} onClose={() => setDiffFor(null)} />
+    <FileDiffModal conversationId={diffFor.convId} path={diffFor.path} onClose={() => setDiffFor(null)} />
   ) : null;
 
   return (
@@ -91,7 +92,7 @@ export default function WorkspacePage(props: {
           onClick={() => {
             const majordome = props.agents.find((a) => a.slug === "majordome");
             if (!majordome) {
-              props.toast("Majordome introuvable", true);
+              toast("Majordome introuvable", true);
               return;
             }
             api.createConversation({
@@ -100,7 +101,7 @@ export default function WorkspacePage(props: {
               prompt: "Initialise ce projet : analyse le repo et propose-moi le plan de setup (conventions, protections git, board initial, agents).",
             })
               .then((r) => props.onOpenConversation(r.conversation.id))
-              .catch((e: Error) => props.toast(e.message, true));
+              .catch((e: Error) => toast(e.message, true));
           }}
         >
           <Icon name="spark" size={14} /> Setup projet
@@ -122,7 +123,7 @@ export default function WorkspacePage(props: {
         ))}
       </div>
 
-      {tab === "board" ? <BoardPanel workspaceId={workspace.id} agents={props.agents} toast={props.toast} onOpenConversation={props.onOpenConversation} /> : null}
+      {tab === "board" ? <BoardPanel workspaceId={workspace.id} agents={props.agents} onOpenConversation={props.onOpenConversation} /> : null}
 
       {tab === "activity" ? (
         activity && activity.files.length > 0 ? (
@@ -137,31 +138,7 @@ export default function WorkspacePage(props: {
       {tab === "feed" ? (
         feed.length > 0 ? (
           <div style={{ maxWidth: 860 }}>
-            {(() => {
-              const days = new Map<string, FeedEvent[]>();
-              for (const e of feed) {
-                const day = new Date(e.at).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
-                const list = days.get(day) ?? [];
-                list.push(e);
-                days.set(day, list);
-              }
-              return [...days.entries()].map(([day, events]) => (
-                <div key={day}>
-                  <div className="feed-day">{day}</div>
-                  {events.map((e, i) => (
-                    <div key={i} className="feed-row" onClick={() => setDiffFor({ convId: e.conversationId, path: e.path })} title={e.path}>
-                      <span className="feed-time">{new Date(e.at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</span>
-                      <span className="feed-conv">{e.conversationTitle}</span>
-                      <span className="feed-path mono">{e.path.split("/").slice(-2).join("/")}</span>
-                      <span className="file-stats">
-                        {e.additions > 0 ? <span className="add">+{e.additions}</span> : null}
-                        {e.deletions > 0 ? <span className="del">−{e.deletions}</span> : null}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ));
-            })()}
+            <FeedList feed={feed} onOpenEvent={(e) => setDiffFor({ convId: e.conversationId, path: e.path })} />
           </div>
         ) : <Empty>Aucune activité.</Empty>
       ) : null}
@@ -176,7 +153,7 @@ export default function WorkspacePage(props: {
           onTalk={(agent) => {
             api.createConversation({ workspace_id: workspace.id, agent_id: agent.id })
               .then((r) => props.onOpenConversation(r.conversation.id))
-              .catch(() => props.toast("Création de la conversation impossible", true));
+              .catch(() => toast("Création de la conversation impossible", true));
           }}
         />
       ) : null}
@@ -188,7 +165,7 @@ export default function WorkspacePage(props: {
               conversation={pmConv}
               onClose={() => setTab("board")}
               onDeleted={() => { setPmConv(null); setTab("board"); }}
-              toast={props.toast}
+             
             />
           </div>
         ) : (
@@ -216,11 +193,6 @@ export default function WorkspacePage(props: {
   );
 }
 
-import { FileDiffModal } from "./FileViews";
-
-function DiffLoader(props: { conversationId: string; path: string; onClose: () => void }) {
-  return <FileDiffModal {...props} />;
-}
 
 /** Qui est sur le projet et qui fait quoi : par agent, cartes assignées (par colonne) + conversations. */
 function TeamTab(props: {

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, openEvents } from "../api";
+import { THINKING_LEVELS } from "../types";
 import type {
   AgentPreset, Conversation, FileChange, HistoryEntry, ImageContentInput, ProviderView, SkillRef, SseEvent, Workspace,
-} from "../types";
-import { Badge, Empty, ErrorText, Field, IconBtn, Modal, PageHead, Skeleton, Spinner, statusColor } from "../ui";
+ } from "../types";
+import { Badge, Empty, ErrorText, Field, IconBtn, Modal, PageHead, Skeleton, Spinner, statusColor, useToast } from "../ui";
 import { FileDiffModal, FileRow } from "../FileViews";
 import { Markdown } from "../markdown";
 import { Icon } from "../icons";
@@ -141,11 +142,11 @@ function reconcile(prev: ChatItem[], entries: HistoryEntry[], st: StreamState): 
   return out;
 }
 
-export default function Conversations({ toast, initialOpenId, onConsumeInitial }: {
-  toast: (t: string, err?: boolean) => void;
+export default function Conversations({ initialOpenId, onConsumeInitial }: {
   initialOpenId?: string | null;
   onConsumeInitial?: () => void;
 }) {
+  const toast = useToast();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [openId, setOpenId] = useState<string | null>(initialOpenId ?? null);
 
@@ -179,9 +180,9 @@ export default function Conversations({ toast, initialOpenId, onConsumeInitial }
           conversation={open}
           onClose={() => { setOpenId(null); refresh(); }}
           onDeleted={() => { setOpenId(null); refresh(); }}
-          toast={toast}
+         
         />
-        {showNew ? <NewConversationModal onClose={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); setOpenId(id); refresh(); }} toast={toast} /> : null}
+        {showNew ? <NewConversationModal onClose={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); setOpenId(id); refresh(); }} /> : null}
       </>
     );
   }
@@ -238,7 +239,7 @@ export default function Conversations({ toast, initialOpenId, onConsumeInitial }
           ))}
         </div>
       )}
-      {showNew ? <NewConversationModal onClose={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); setOpenId(id); refresh(); }} toast={toast} /> : null}
+      {showNew ? <NewConversationModal onClose={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); setOpenId(id); refresh(); }} /> : null}
     </>
   );
 }
@@ -247,10 +248,9 @@ export function ChatView(props: {
   conversation: Conversation;
   onClose: () => void;
   onDeleted: () => void;
-  toast: (t: string, err?: boolean) => void;
 }) {
   const { conversation } = props;
-  const toast = props.toast;
+  const toast = useToast();
   const [timeline, setTimeline] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
   const [images, setImages] = useState<ImageContentInput[]>([]);
@@ -559,9 +559,8 @@ export function ChatView(props: {
 function NewConversationModal(props: {
   onClose: () => void;
   onCreated: (id: string) => void;
-  toast: (t: string, err?: boolean) => void;
 }) {
-  const toast = props.toast;
+  const toast = useToast();
   const [agents, setAgents] = useState<AgentPreset[]>([]);
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -576,7 +575,7 @@ function NewConversationModal(props: {
 
   useEffect(() => {
     api.agents().then((r) => {
-      setAgents(r.agents as AgentPreset[]);
+      setAgents(r.agents);
       if (r.agents[0]) setAgentId(r.agents[0].id);
     }).catch(() => undefined);
     api.providers().then((r) => {
@@ -642,7 +641,7 @@ function NewConversationModal(props: {
             <Field label="Thinking (optionnel)">
               <select value={thinking} onChange={(e) => setThinking(e.target.value)}>
                 <option value="">(défaut)</option>
-                {["off", "minimal", "low", "medium", "high", "xhigh", "max"].map((t) => <option key={t} value={t}>{t}</option>)}
+                {THINKING_LEVELS.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </Field>
           ) : null}

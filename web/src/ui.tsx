@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
 
 export function Modal(props: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
@@ -158,4 +158,51 @@ export function Skeleton(props: { rows?: number }) {
       ))}
     </div>
   );
+}
+
+/** Signature de la remontée de message : `toast("…")` ou `toast("…", true)` pour une erreur. */
+export type ToastFn = (text: string, isError?: boolean) => void;
+
+interface ToastEntry {
+  id: number;
+  text: string;
+  isError: boolean;
+}
+
+const ToastContext = createContext<ToastFn | null>(null);
+
+const TOAST_TTL_MS = 5000;
+
+let toastSequence = 0;
+
+/** File de toasts globale : un seul propriétaire (le provider), consommée via useToast(). */
+export function ToastProvider(props: { children: ReactNode }) {
+  const [toasts, setToasts] = useState<ToastEntry[]>([]);
+
+  const toast = useCallback<ToastFn>((text, isError = false) => {
+    const id = ++toastSequence;
+    setToasts((current) => [...current, { id, text, isError }]);
+    setTimeout(() => setToasts((current) => current.filter((t) => t.id !== id)), TOAST_TTL_MS);
+  }, []);
+
+  return (
+    <ToastContext.Provider value={toast}>
+      {props.children}
+      <div className="toasts" role="status" aria-live="polite">
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast ${t.isError ? "err" : ""}`}>
+            <Icon name={t.isError ? "warning" : "check"} size={14} />
+            <span>{t.text}</span>
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+}
+
+/** Remonte un message à l'utilisateur — plus aucun composant ne reçoit `toast` en prop. */
+export function useToast(): ToastFn {
+  const toast = useContext(ToastContext);
+  if (!toast) throw new Error("useToast doit être utilisé sous <ToastProvider>");
+  return toast;
 }

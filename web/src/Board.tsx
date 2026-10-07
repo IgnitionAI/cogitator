@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import type { AgentPreset, BoardCard, Conversation } from "./types";
-import { Field, Modal } from "./ui";
+import { Field, Modal, useToast } from "./ui";
 import { api as apiClient } from "./api";
 
 const COLUMNS: Array<{ id: string; label: string }> = [
@@ -30,18 +30,18 @@ function labelColor(name: string): string {
 export function BoardPanel(props: {
   workspaceId: string;
   agents: AgentPreset[];
-  toast: (t: string, err?: boolean) => void;
   onOpenConversation?: (id: string) => void;
 }) {
+  const toast = useToast();
   const [cards, setCards] = useState<BoardCard[]>([]);
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [detail, setDetail] = useState<BoardCard | null>(null);
   const [showNew, setShowNew] = useState(false);
 
   const refresh = useCallback(() => {
-    api.board(props.workspaceId).then((r) => setCards(r.cards)).catch((e: Error) => props.toast(e.message, true));
+    api.board(props.workspaceId).then((r) => setCards(r.cards)).catch((e: Error) => toast(e.message, true));
     api.conversations(props.workspaceId).then((r) => setConvs(r.conversations)).catch(() => undefined);
-  }, [props.workspaceId, props.toast]);
+  }, [props.workspaceId, toast]);
 
   useEffect(refresh, [refresh]);
 
@@ -102,7 +102,7 @@ export function BoardPanel(props: {
           onClose={() => setDetail(null)}
           onChanged={() => { refresh(); }}
           onDeleted={() => { setDetail(null); refresh(); }}
-          toast={props.toast}
+         
           onOpenConversation={props.onOpenConversation}
         />
       ) : null}
@@ -111,7 +111,7 @@ export function BoardPanel(props: {
           workspaceId={props.workspaceId}
           onClose={() => setShowNew(false)}
           onCreated={() => { setShowNew(false); refresh(); }}
-          toast={props.toast}
+         
         />
       ) : null}
     </>
@@ -123,11 +123,10 @@ export default function BoardModal(props: {
   workspaceName: string;
   agents: AgentPreset[];
   onClose: () => void;
-  toast: (t: string, err?: boolean) => void;
 }) {
   return (
     <Modal title={`Board — ${props.workspaceName}`} onClose={props.onClose} wide>
-      <BoardPanel workspaceId={props.workspaceId} agents={props.agents} toast={props.toast} />
+      <BoardPanel workspaceId={props.workspaceId} agents={props.agents} />
     </Modal>
   );
 }
@@ -136,8 +135,8 @@ function NewCardModal(props: {
   workspaceId: string;
   onClose: () => void;
   onCreated: () => void;
-  toast: (t: string, err?: boolean) => void;
 }) {
+  const toast = useToast();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("medium");
@@ -146,7 +145,7 @@ function NewCardModal(props: {
       await api.boardCreateCard(props.workspaceId, { title: title.trim(), description, priority });
       props.onCreated();
     } catch (e) {
-      props.toast((e as Error).message, true);
+      toast((e as Error).message, true);
     }
   };
   return (
@@ -174,9 +173,9 @@ function CardDetail(props: {
   onClose: () => void;
   onChanged: () => void;
   onDeleted: () => void;
-  toast: (t: string, err?: boolean) => void;
   onOpenConversation?: (id: string) => void;
 }) {
+  const toast = useToast();
   const { card, workspaceId } = props;
   const [form, setForm] = useState({
     title: card.title,
@@ -212,9 +211,9 @@ function CardDetail(props: {
         blocked_by: form.blocked_by,
       });
       props.onChanged();
-      props.toast("Carte mise à jour");
+      toast("Carte mise à jour");
     } catch (e) {
-      props.toast((e as Error).message, true);
+      toast((e as Error).message, true);
     }
   };
 
@@ -226,7 +225,7 @@ function CardDetail(props: {
       setComment("");
       props.onChanged();
     } catch (e) {
-      props.toast((e as Error).message, true);
+      toast((e as Error).message, true);
     }
   };
 
@@ -331,11 +330,11 @@ function CardDetail(props: {
           onClick={() => {
             apiClient.boardStartWork(props.workspaceId, card.id)
               .then((r) => {
-                props.toast(`Agent lancé sur #${r.card.number} — conversation #${r.conversation.id.slice(0, 8)}`);
+                toast(`Agent lancé sur #${r.card.number} — conversation #${r.conversation.id.slice(0, 8)}`);
                 props.onOpenConversation?.(r.conversation.id);
                 props.onChanged();
               })
-              .catch((e: Error) => props.toast(e.message, true));
+              .catch((e: Error) => toast(e.message, true));
           }}
         >
           🚀 Lancer l'agent
@@ -344,7 +343,7 @@ function CardDetail(props: {
           className="btn btn-danger"
           onClick={() => {
             if (confirm("Supprimer cette carte ?")) {
-              api.boardDeleteCard(workspaceId, card.id).then(props.onDeleted).catch((e: Error) => props.toast(e.message, true));
+              api.boardDeleteCard(workspaceId, card.id).then(props.onDeleted).catch((e: Error) => toast(e.message, true));
             }
           }}
         >

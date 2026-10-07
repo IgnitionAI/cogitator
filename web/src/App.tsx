@@ -10,36 +10,23 @@ import Settings from "./screens/Settings";
 import WorkspacePage from "./WorkspacePage";
 import type { AgentPreset, Workspace } from "./types";
 import { Icon, type IconName } from "./icons";
+import { useToast } from "./ui";
 
-const NAV: Array<{ id: string; icon: IconName; label: string }> = [
+const NAV = [
   { id: "conversations", icon: "chat", label: "Conversations" },
   { id: "workspaces", icon: "folder", label: "Workspaces" },
   { id: "agents", icon: "bot", label: "Agents" },
   { id: "providers", icon: "plug", label: "Providers" },
   { id: "cron", icon: "clock", label: "Cron" },
   { id: "settings", icon: "settings", label: "Settings" },
-];
+] as const satisfies ReadonlyArray<{ id: string; icon: IconName; label: string }>;
 
-export interface Toast {
-  id: number;
-  text: string;
-  err?: boolean;
-}
-
-export function useToasts(): [Toast[], (text: string, err?: boolean) => void] {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const push = (text: string, err = false) => {
-    const id = Date.now() + Math.random();
-    setToasts((t) => [...t, { id, text, err }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 5000);
-  };
-  return [toasts, push];
-}
+type ScreenId = (typeof NAV)[number]["id"];
 
 export default function App() {
-  const [screen, setScreen] = useState<string>("conversations");
+  const [screen, setScreen] = useState<ScreenId>("conversations");
   const [health, setHealth] = useState<Health | null>(null);
-  const [toasts, toast] = useToasts();
+  const toast = useToast();
   const [openWorkspace, setOpenWorkspace] = useState<Workspace | null>(null);
   const [agents, setAgents] = useState<AgentPreset[]>([]);
   const [pendingConv, setPendingConv] = useState<string | null>(null);
@@ -47,7 +34,7 @@ export default function App() {
 
   useEffect(() => {
     api.health().then(setHealth).catch(() => undefined);
-    api.agents().then((r) => setAgents(r.agents as AgentPreset[])).catch(() => undefined);
+    api.agents().then((r) => setAgents(r.agents)).catch(() => undefined);
     const close = openEvents("/api/events", (e) => {
       const ev = e as { type?: string; name?: string; status?: string; error?: string };
       if (ev.type === "cron_run_finished") {
@@ -57,7 +44,7 @@ export default function App() {
     return close;
   }, []);
 
-  const go = (id: string) => {
+  const go = (id: ScreenId) => {
     setScreen(id);
     setNavOpen(false);
   };
@@ -65,16 +52,16 @@ export default function App() {
   const screenNode = (() => {
     switch (screen) {
       case "conversations":
-        return <Conversations toast={toast} initialOpenId={pendingConv} onConsumeInitial={() => setPendingConv(null)} />;
+        return <Conversations initialOpenId={pendingConv} onConsumeInitial={() => setPendingConv(null)} />;
       case "workspaces":
-        return <Workspaces toast={toast} onOpenWorkspace={(w) => setOpenWorkspace(w)} />;
+        return <Workspaces onOpenWorkspace={(w) => setOpenWorkspace(w)} />;
       case "agents":
-        return <Agents toast={toast} />;
+        return <Agents />;
       case "providers":
-        return <Providers toast={toast} />;
+        return <Providers />;
       case "cron":
-        return <Cron toast={toast} />;
-      default:
+        return <Cron />;
+      case "settings":
         return <Settings />;
     }
   })();
@@ -113,20 +100,11 @@ export default function App() {
           <WorkspacePage
             workspace={openWorkspace}
             agents={agents}
-            toast={toast}
             onBack={() => setOpenWorkspace(null)}
             onOpenConversation={(id) => { setPendingConv(id); setOpenWorkspace(null); setScreen("conversations"); }}
           />
         ) : screenNode}
       </main>
-      <div className="toasts" role="status" aria-live="polite">
-        {toasts.map((t) => (
-          <div key={t.id} className={`toast ${t.err ? "err" : ""}`}>
-            <Icon name={t.err ? "warning" : "check"} size={14} />
-            <span>{t.text}</span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

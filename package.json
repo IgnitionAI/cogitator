@@ -1,7 +1,7 @@
 {
   "name": "@ignitionai/cogitator",
   "version": "0.1.1",
-  "description": "Cogitator — panneau de contrôle web pour pi : agents composables, workspaces, conversations libres, cron. pi package.",
+  "description": "Cogitator \u2014 panneau de contr\u00f4le web pour pi : agents composables, workspaces, conversations libres, cron. pi package.",
   "type": "module",
   "keywords": [
     "pi-package"
@@ -32,7 +32,8 @@
   "pi": {
     "extensions": [
       "./dist/extensions/index.js"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/web/public/icon.png"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"

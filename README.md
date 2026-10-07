@@ -1,44 +1,53 @@
+<div align="center">
+
+<img src="web/public/icon.png" width="120" alt="Cogitator — engrenage-nébuleuse" />
+
 # Cogitator
 
-**Panneau de contrôle web pour [pi](https://pi.dev)** — l'agent de coding en CLI.
+**Panneau de contrôle web pour [pi](https://pi.dev)** — agents composables, workspaces, kanban GitHub natif, cron.
 
-Cogitator orchestre tes processus pi comme l'Adeptus Mechanicus pilote ses cogitateurs : des agents composables, des workspaces, des conversations libres et un cron — le tout configurable depuis un navigateur, sans quitter l'écosystème pi.
+[![npm version](https://img.shields.io/npm/v/@ignitionai/cogitator)](https://www.npmjs.com/package/@ignitionai/cogitator)
+[![pi package](https://img.shields.io/badge/pi-package-5e6ad2)](https://pi.dev/packages)
+[![license](https://img.shields.io/npm/l/@ignitionai/cogitator)](./LICENSE)
 
-## Ce que Cogitator fait
+</div>
 
-- **Agents composables** : un agent = `provider + modèle + thinking + skills + MCP + prompt de scope + subagents`. Chaque conversation pi est spawnée avec les flags natifs (`--model id:thinking`, `--no-skills --skill …`, `--append-system-prompt`, allowlist d'outils).
-- **Workspaces** : un dossier sur disque = un workspace (aligné sur le modèle cwd-bound de pi), avec agent par défaut.
-- **Conversations libres** : aucun workspace, provider/modèle ou agent choisi à la volée.
-- **Cron** : tâches planifiées qui tirent un prompt contre un agent, résultat append dans une session dédiée, busy-guard anti-chevauchement.
-- **Config pi complète** : providers (codex, claude, kimi…) lus/écrits via `models.json` / `auth.json`, skills scannés depuis les emplacements natifs, MCP user-level (`~/.pi/agent/mcp.json`).
+Cogitator orchestre tes processus pi depuis un navigateur : tu composes des agents (provider + modèle + thinking + skills + MCP + subagents), tu pilotes des workspaces projets, tu dispatch du travail sur un board kanban dont la source de vérité est **GitHub Issues**, et tout le développement est tracé (fichiers modifiés, diffs, feed chronologique).
 
 ## Installation
 
 ```sh
 pi install npm:@ignitionai/cogitator
-# puis dans pi :
+```
+
+Puis dans pi :
+
+```text
 /cogitator          # démarre le serveur détaché et ouvre http://127.0.0.1:5320
 ```
 
-Ou standalone : `npx @ignitionai/cogitator`
+Ou standalone : `npx @ignitionai/cogitator` (Node ≥ 22).
 
-## État du projet
+## Ce que Cogitator fait
 
-✅ **MVP M0→M6 terminé** — serveur + extension + UI web. Voir [`docs/context/plans/active/0001-mvp.md`](docs/context/plans/active/0001-mvp.md) et [`docs/context/current-state.md`](docs/context/current-state.md).
+- **Agents composables** — un preset = provider + modèle + thinking + skills exactes + serveurs MCP + prompt de scope + subagents. Matérialisé en flags natifs pi à chaque spawn (`--model id:thinking`, `--no-skills --skill …`, `--append-system-prompt`).
+- **La trinité seedée** — Majordome (opérateur, agent par défaut), Chef de Projet (board, dispatch, méthodes to-tickets/use-delegate), Architecte de Skills (création de SKILL.md). Skills complets, MCP Cogitator (28 outils).
+- **Workspaces projets** — page dédiée par dossier : board, activité fichiers (+/−), feed chronologique, arborescence read-only, équipe (qui fait quoi), chat Chef de Projet, setup de projet en un clic.
+- **Kanban = GitHub Issues** — chaque carte est une issue (labels `status:`/`priority:`), blocking edges natifs, write-through via `gh`. Zéro sync, une seule vérité, visible sur github.com.
+- **Dispatch** — « 🚀 Lancer l'agent » sur un ticket : conversation spawnée dans le workspace, carte liée (activité cumulée), passage en cours.
+- **Conversations** — streaming SSE avec caret, inspecteur (thinking pliable, toolcalls args/résultat), markdown rendu (tableaux inclus), images (collage), historique, skills via `/skill:nom`.
+- **Cron** — tâches planifiées (busy-guard, catchup), runs tracés, notifications.
+- **Providers & skills** — read model de la config pi (auth par `pi auth check`), écritures atomiques + backup, import de skills (GitHub, local, npx).
 
-## UI web
+## Architecture
 
-6 écrans : **Conversations** (chat streaming SSE, historique, stop, switch modèle), **Workspaces** (file-picker, agent par défaut), **Agents** (éditeur de presets complet + Apply herdr), **Providers** (read model pi + clés), **Cron** (tâches, runs, fire manuel), **Settings** (santé, MCP user-level).
+Specs complètes dans [`docs/`](docs/) : [domain model](docs/architecture/domain-model.md), [blueprint](docs/architecture/blueprint.md), [API contract](docs/architecture/api-contract.md), [ADRs](docs/context/decisions/) (apply-on-spawn, MCP par `registerMcpServer`, board GitHub single-writer…). TypeScript strict partout, zod aux frontières, 69 tests.
 
-Dev UI : `npm run dev:web` (vite sur 5321, proxy API → 5320).
+```text
+Browser (React) → REST + SSE → serveur Node → pool de processus `pi --mode rpc`
+                                    ↕ SQLite ~/.cogitator + fichiers pi natifs
+```
 
-## Documentation
+## Licence
 
-| Document | Contenu |
-|---|---|
-| [Domain Model](docs/architecture/domain-model.md) | Bounded contexts, entités, invariants, diagramme ER |
-| [Blueprint](docs/architecture/blueprint.md) | Composants, process pool, spawn flags, cron, apply |
-| [API Contract](docs/architecture/api-contract.md) | Endpoints REST + SSE |
-| [Décisions (ADRs)](docs/context/decisions/) | Pourquoi ce design (7 ADRs + stack decision record) |
-| [Plan MVP](docs/context/plans/active/0001-mvp.md) | Jalons M0 → M6 |
-| [Context Index](docs/context/README.md) | Index durable du projet |
+MIT — © IgnitionAI

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { api } from "./api";
 import { BoardPanel } from "./Board";
 import { FileDiffModal, FileRow, TreePanel } from "./FileViews";
@@ -34,41 +34,96 @@ export default function WorkspacePage(props: {
   const [pmConv, setPmConv] = useState<Conversation | null>(null);
   const [cards, setCards] = useState<BoardCard[]>([]);
 
-  const refreshBoard = useCallback(() => {
-    api.board(workspace.id).then((r) => setCards(r.cards)).catch(() => undefined);
-  }, [workspace.id]);
-  useEffect(refreshBoard, [refreshBoard]);
+  const tabsId = useId();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [pmLoading, setPmLoading] = useState(false);
+  const [pmError, setPmError] = useState<string | null>(null);
+  const pmPending = useRef(false);
+  const request = useRef(0);
 
-  // conversation dédiée au Chef de Projet : réutilise la première existante, sinon la crée
-  const openPm = useCallback(() => {
-    if (pmConv) return;
-    const chef = props.agents.find((a) => a.slug === "chef-de-projet");
-    if (!chef) return;
-    api.conversations(workspace.id).then((r) => {
-      const existing = r.conversations.find((c) => c.agent_id === chef.id);
-      if (existing) {
-        setPmConv(existing);
-        return;
+  const [headActivity, setHeadActivity] = useState<typeof activity>(null);
+  useEffect(() => {
+    let active = true;
+    setActivity(null);
+    setHeadActivity(null);
+    // Optional header stats must never block the selected tab.
+    api.workspaceActivity(workspace.id)
+      .then((result) => { if (active) setHeadActivity(result); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [workspace.id]);
+
+  const refresh = useCallback(async () => {
+    const current = ++request.current;
+    setLoading(true);
+    setError(null);
+    try {
+      switch (tab) {
+        case "activity": {
+          const result = await api.workspaceActivity(workspace.id);
+          if (current === request.current) setActivity(result);
+          break;
+        }
+        case "feed": {
+          const result = await api.workspaceFeed(workspace.id);
+          if (current === request.current) setFeed(result.events);
+          break;
+        }
+        case "conversations": {
+          const result = await api.conversations(workspace.id);
+          if (current === request.current) setConvs(result.conversations);
+          break;
+        }
+        case "team": {
+          const [boardResult, conversationResult] = await Promise.all([
+            api.board(workspace.id), api.conversations(workspace.id),
+          ]);
+          if (current !== request.current) return;
+          setCards(boardResult.cards);
+          setConvs(conversationResult.conversations);
+          break;
+        }
       }
-      api.createConversation({ workspace_id: workspace.id, agent_id: chef.id })
-        .then((res) => setPmConv(res.conversation))
-        .catch(() => undefined);
-    }).catch(() => undefined);
-  }, [pmConv, props.agents, workspace.id]);
+    } catch (e) {
+      if (current === request.current) setError((e as Error).message);
+    } finally {
+      if (current === request.current) setLoading(false);
+    }
+  }, [workspace.id, tab]);
 
   useEffect(() => {
-    if (tab === "pm") openPm();
-  }, [tab, openPm]);
+    void refresh();
+    return () => { request.current++; };
+  }, [refresh]);
 
-  const refresh = useCallback(() => {
-    api.workspaceActivity(workspace.id).then(setActivity).catch(() => undefined);
-    api.workspaceFeed(workspace.id).then((r) => setFeed(r.events)).catch(() => undefined);
-    api.conversations(workspace.id).then((r) => setConvs(r.conversations)).catch(() => undefined);
-  }, [workspace.id]);
+  const openPm = useCallback(async () => {
+    if (pmConv || pmPending.current) return;
+    const chef = props.agents.find((a) => a.slug === "chef-de-projet");
+    if (!chef) {
+      setPmError("Chef de Projet introuvable. Configure cet agent dans Équipe / Agents, puis réessaie.");
+      return;
+    }
+    pmPending.current = true;
+    setPmLoading(true);
+    setPmError(null);
+    try {
+      const result = await api.conversations(workspace.id);
+      const existing = result.conversations.find((c) => c.agent_id === chef.id);
+      const conversation = existing ?? (await api.createConversation({ workspace_id: workspace.id, agent_id: chef.id })).conversation;
+      setPmConv(conversation);
+    } catch (e) {
+      setPmError((e as Error).message);
+    } finally {
+      pmPending.current = false;
+      setPmLoading(false);
+    }
+  }, [pmConv, props.agents, workspace.id]);
 
-  useEffect(refresh, [refresh]);
+  useEffect(() => { if (tab === "pm") void openPm(); }, [tab, openPm]);
 
-  const modified = new Set((activity?.files ?? []).map((f) => f.path));
+  const stats = activity ?? headActivity;
+  const modified = new Set((stats?.files ?? []).map((f) => f.path));
   const LazyDiff = diffFor ? (
     <FileDiffModal conversationId={diffFor.convId} path={diffFor.path} onClose={() => setDiffFor(null)} />
   ) : null;
@@ -79,10 +134,10 @@ export default function WorkspacePage(props: {
         <button type="button" className="btn btn-sm" onClick={props.onBack}><Icon name="back" /> Workspaces</button>
         <h1>{workspace.name}</h1>
         <span className="muted mono" style={{ fontSize: 12 }}>{workspace.dir}</span>
-        {activity && activity.files.length > 0 ? (
+        {stats && stats.files.length > 0 ? (
           <span className="file-stats" style={{ marginLeft: 12 }}>
-            <span className="add">+{activity.totals.additions}</span>
-            <span className="del">−{activity.totals.deletions}</span>
+            <span className="add">+{stats.totals.additions}</span>
+            <span className="del">−{stats.totals.deletions}</span>
           </span>
         ) : null}
         <div style={{ flex: 1 }} />
@@ -113,7 +168,21 @@ export default function WorkspacePage(props: {
             key={t.id}
             type="button"
             role="tab"
+            id={`${tabsId}-tab-${t.id}`}
             aria-selected={tab === t.id}
+            aria-controls={`${tabsId}-panel-${t.id}`}
+            tabIndex={tab === t.id ? 0 : -1}
+            onKeyDown={(e) => {
+              const index = TABS.findIndex((item) => item.id === t.id);
+              const next = e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1
+                : e.key === "ArrowRight" ? (index + 1) % TABS.length
+                : e.key === "ArrowLeft" ? (index + TABS.length - 1) % TABS.length : null;
+              if (next === null) return;
+              e.preventDefault();
+              const id = TABS[next]!.id;
+              setTab(id);
+              document.getElementById(`${tabsId}-tab-${id}`)?.focus();
+            }}
             className={`ws-tab ${tab === t.id ? "active" : ""}`}
             onClick={() => setTab(t.id)}
           >
@@ -123,9 +192,16 @@ export default function WorkspacePage(props: {
         ))}
       </div>
 
+      {TABS.map((t) => <div key={t.id} id={`${tabsId}-panel-${t.id}`} role="tabpanel" aria-labelledby={`${tabsId}-tab-${t.id}`} hidden={tab !== t.id} tabIndex={0}>
+      {tab === t.id ? <>
+      {["activity", "feed", "team", "conversations"].includes(tab) ? <>
+        <button type="button" className="btn btn-sm" disabled={loading} onClick={refresh}>Actualiser</button>
+        {loading ? <p role="status">Chargement…</p> : null}
+        {error ? <div role="alert" className="error-text">{error} <button type="button" className="btn btn-sm" onClick={refresh}>Réessayer</button></div> : null}
+      </> : null}
       {tab === "board" ? <BoardPanel workspaceId={workspace.id} agents={props.agents} onOpenConversation={props.onOpenConversation} /> : null}
 
-      {tab === "activity" ? (
+      {tab === "activity" && !loading && !error ? (
         activity && activity.files.length > 0 ? (
           <div className="chat-side-list" style={{ maxWidth: 720 }}>
             {activity.files.map((f) => (
@@ -135,7 +211,7 @@ export default function WorkspacePage(props: {
         ) : <Empty>Aucune modification enregistrée sur ce projet.</Empty>
       ) : null}
 
-      {tab === "feed" ? (
+      {tab === "feed" && !loading && !error ? (
         feed.length > 0 ? (
           <div style={{ maxWidth: 860 }}>
             <FeedList feed={feed} onOpenEvent={(e) => setDiffFor({ convId: e.conversationId, path: e.path })} />
@@ -145,7 +221,7 @@ export default function WorkspacePage(props: {
 
       {tab === "files" ? <TreePanel workspaceId={workspace.id} modifiedPaths={modified} /> : null}
 
-      {tab === "team" ? (
+      {tab === "team" && !loading && !error ? (
         <TeamTab
           agents={props.agents}
           cards={cards}
@@ -169,25 +245,30 @@ export default function WorkspacePage(props: {
             />
           </div>
         ) : (
-          <Empty>Préparation de la conversation avec le Chef de Projet…</Empty>
+          <Empty>{pmLoading ? <span role="status">Préparation de la conversation avec le Chef de Projet…</span> : <>
+            <span role="alert">{pmError || "Conversation indisponible."}</span>{" "}
+            <button type="button" className="btn btn-sm" onClick={() => void openPm()}>Réessayer</button>
+          </>}</Empty>
         )
       ) : null}
 
-      {tab === "conversations" ? (
+      {tab === "conversations" && !loading && !error ? (
         convs.length > 0 ? (
           <div className="cards" style={{ marginTop: 4 }}>
             {convs.map((c) => (
-              <div key={c.id} className="card clickable" onClick={() => props.onOpenConversation(c.id)}>
+              <button type="button" key={c.id} className="card clickable" onClick={() => props.onOpenConversation(c.id)}>
                 <h4>{c.title || "(sans titre)"}</h4>
                 <div className="meta">
                   <span className="mono">{c.provider}/{c.model}{c.thinking ? `:${c.thinking}` : ""}</span>
                   <span><Badge color={statusColor(c.status)}>{c.status}</Badge>{" "}<span className="muted">{new Date(c.updated_at).toLocaleString()}</span></span>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         ) : <Empty>Aucune conversation dans ce workspace.</Empty>
       ) : null}
+      </> : null}
+      </div>)}
       {LazyDiff}
     </>
   );

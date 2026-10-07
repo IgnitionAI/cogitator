@@ -131,12 +131,12 @@ export function deleteTask(db: Db, id: string): boolean {
 
 export function listRuns(db: Db, taskId: string, limit = 50): CronRunRow[] {
   return db
-    .prepare("SELECT * FROM cron_run WHERE task_id = ? ORDER BY started_at DESC LIMIT ?")
+    .prepare("SELECT * FROM cron_run WHERE task_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ?")
     .all(taskId, limit) as unknown as CronRunRow[];
 }
 
-function runningRunFor(db: Db, taskId: string): CronRunRow | null {
-  return (db.prepare("SELECT * FROM cron_run WHERE task_id = ? AND status = 'running' ORDER BY started_at DESC LIMIT 1").get(taskId) as CronRunRow | undefined) ?? null;
+function runningRunFor(db: Db, taskId: string, currentRunId: string): CronRunRow | null {
+  return (db.prepare("SELECT * FROM cron_run WHERE task_id = ? AND status = 'running' AND id != ? ORDER BY started_at DESC, rowid DESC LIMIT 1").get(taskId, currentRunId) as CronRunRow | undefined) ?? null;
 }
 
 function createRun(db: Db, taskId: string): string {
@@ -159,8 +159,8 @@ function sleep(ms: number): Promise<void> {
 /** busy_policy : un run 'running' déjà en base (crash, autre instance) bloque le nouveau.
  *  Renvoie false quand le run courant a été tracé comme `skipped` (il ne doit pas s'exécuter). */
 async function applyBusyPolicy(db: Db, task: CronTaskRow, runId: string): Promise<boolean> {
-  const stale = runningRunFor(db, task.id);
-  if (!stale || stale.id === runId) return true;
+  const stale = runningRunFor(db, task.id, runId);
+  if (!stale) return true;
   if (task.busy_policy === "skip") {
     finishRun(db, runId, "skipped", null, `run ${stale.id} encore actif (policy skip)`);
     return false;
@@ -170,7 +170,7 @@ async function applyBusyPolicy(db: Db, task: CronTaskRow, runId: string): Promis
   }
   // queue : attendre la fin du run actif (garde-fou : QUEUE_WAIT_MAX_MS)
   const deadline = Date.now() + QUEUE_WAIT_MAX_MS;
-  while (runningRunFor(db, task.id) && Date.now() < deadline) await sleep(QUEUE_POLL_MS);
+  while (runningRunFor(db, task.id, runId) && Date.now() < deadline) await sleep(QUEUE_POLL_MS);
   return true;
 }
 
@@ -179,7 +179,7 @@ function lastSessionFile(db: Db, taskId: string): string | null {
   const last = db
     .prepare(`SELECT session_file FROM cron_run
               WHERE task_id = ? AND session_file IS NOT NULL
-              ORDER BY started_at DESC LIMIT 1`)
+              ORDER BY started_at DESC, rowid DESC LIMIT 1`)
     .get(taskId) as { session_file: string } | undefined;
   return last?.session_file ?? null;
 }

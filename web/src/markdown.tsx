@@ -1,10 +1,15 @@
-import type { ReactNode } from "react";
+import { createElement, type ReactNode } from "react";
 
 /**
  * Mini-rendu markdown (sous-ensemble : headings, gras/italique/code inline,
  * blocs de code, listes, liens) → éléments React purs. Pas de HTML injecté :
  * tout passe par des text nodes, sûr par construction.
  */
+
+function safeLink(href: string): boolean {
+  try { return ["http:", "https:", "mailto:"].includes(new URL(href, "https://markdown.invalid/").protocol); }
+  catch { return false; }
+}
 
 function renderInline(text: string, keyBase: string): ReactNode[] {
   const out: ReactNode[] = [];
@@ -25,7 +30,9 @@ function renderInline(text: string, keyBase: string): ReactNode[] {
       out.push(<em key={key}>{tok.slice(1, -1)}</em>);
     } else {
       const lm = tok.match(/\[([^\]]+)\]\(([^)\s]+)\)/)!;
-      out.push(<a key={key} className="md-link" href={lm[2]} target="_blank" rel="noreferrer">{lm[1]}</a>);
+      out.push(safeLink(lm[2]!)
+        ? <a key={key} className="md-link" href={lm[2]} target="_blank" rel="noreferrer">{lm[1]}</a>
+        : <span key={key}>{lm[1]}</span>);
     }
     last = m.index + tok.length;
   }
@@ -67,26 +74,30 @@ export function Markdown(props: { text: string }) {
     }
 
     // heading
-    const hm = line.match(/^(#{1,4})\s+(.*)$/);
+    const hm = line.match(/^(#{1,6})\s+(.*)$/);
     if (hm) {
       const level = hm[1]!.length;
       const cls = level <= 2 ? "md-h2" : "md-h3";
-      blocks.push(<div key={key++} className={cls}>{renderInline(hm[2]!, `h${key}`)}</div>);
+      blocks.push(createElement(`h${level}`, { key: key++, className: cls }, renderInline(hm[2]!, `h${key}`)));
       i++;
       continue;
     }
 
     // liste (à puces ou numérotée)
     if (/^\s*([-*•]|\d+\.)\s+/.test(line)) {
+      const ordered = /^\s*\d+\.\s+/.test(line);
+      const listPattern = ordered ? /^\s*\d+\.\s+/ : /^\s*[-*•]\s+/;
+      const List = ordered ? "ol" : "ul";
+      const start = ordered ? Number(line.match(/^\s*(\d+)\./)![1]) : undefined;
       const items: string[] = [];
-      while (i < lines.length && /^\s*([-*•]|\d+\.)\s+/.test(lines[i]!)) {
+      while (i < lines.length && listPattern.test(lines[i]!)) {
         items.push(lines[i]!.replace(/^\s*([-*•]|\d+\.)\s+/, ""));
         i++;
       }
       blocks.push(
-        <ul key={key++} className="md-list">
+        <List key={key++} className="md-list" start={start}>
           {items.map((it, j) => <li key={j}>{renderInline(it, `l${key}-${j}`)}</li>)}
-        </ul>,
+        </List>,
       );
       continue;
     }
@@ -123,7 +134,7 @@ export function Markdown(props: { text: string }) {
     // paragraphe (lignes consécutives non vides)
     const buf: string[] = [line];
     i++;
-    while (i < lines.length && lines[i]!.trim() !== "" && !/^(#{1,4}\s|\s*([-_*•]|\d+\.)\s|```|\s*\|)/.test(lines[i]!)) {
+    while (i < lines.length && lines[i]!.trim() !== "" && !/^(#{1,6}\s|\s*([-_*•]|\d+\.)\s|```|\s*\|)/.test(lines[i]!)) {
       buf.push(lines[i]!);
       i++;
     }

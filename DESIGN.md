@@ -16,7 +16,8 @@ Style: **Linear-grade app shell** (sidebar + lists + chat). Canvas near-black, i
 | `--border` | `#1f2023` | Structure |
 | `--border-strong` | `#2c2e33` | Hover / strong edge |
 | `--accent` | `#5e6ad2` | Primary action, selection, user bubble |
-| `--accent-hover` | `#6e79de` | Primary hover |
+| `--accent-hover` | `#606cd0` | Primary hover (white text ≥4.5:1) |
+| `--accent-text` | `#8792ed` | Links / accent text on dark surfaces |
 | `--todo` | `#e2a336` | Warning / pending |
 | `--progress` | `#f2994a` | In progress |
 | `--urgent` | `#eb5757` | Danger / error |

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import type { FileChange, FileEvent } from "./types";
 import { Modal } from "./ui";
@@ -16,7 +16,7 @@ export function FileRow(props: { f: FileChange; onClick?: () => void }) {
   const { f } = props;
   return (
     <div className={`file-row ${props.onClick ? "clickable" : ""}`} title={f.path} role={props.onClick ? "button" : undefined} tabIndex={props.onClick ? 0 : undefined} onClick={props.onClick} onKeyDown={props.onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); props.onClick?.(); } } : undefined}>
-      <span className={`file-kind ${f.kind}`}>{f.kind === "write" ? "W" : "E"}</span>
+      <span className={`file-kind ${f.kind === "write" ? "W" : "E"}`}>{f.kind === "write" ? "W" : "E"}</span>
       <span className="file-path mono">{f.path.split("/").slice(-2).join("/")}</span>
       <span className="file-stats">
         {f.additions > 0 ? <span className="add">+{f.additions}</span> : null}
@@ -32,24 +32,29 @@ export function FileDiffModal(props: { conversationId: string; path: string; onC
   const [operations, setOperations] = useState<FileEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
+    let active = true;
+    setOperations(null);
+    setError(null);
     api.fileDetail(props.conversationId, props.path)
-      .then((r) => setOperations(r.operations))
-      .catch((e: Error) => setError(e.message));
-  }, [props.conversationId, props.path]);
+      .then((r) => { if (active) setOperations(r.operations); })
+      .catch((e: Error) => { if (active) setError(e.message); });
+    return () => { active = false; };
+  }, [props.conversationId, props.path, retry]);
 
   const shortName = props.path.split("/").slice(-2).join("/");
   return (
     <Modal title={`Diff — ${shortName}`} onClose={props.onClose} wide>
-      {error ? <div className="error-text">{error}</div> : null}
-      {operations === null ? <div className="muted" style={{ padding: 12 }}>Chargement…</div> : null}
+      {error ? <div className="error-text" role="alert">{error} <button type="button" className="btn btn-sm" onClick={() => setRetry((n) => n + 1)}>Réessayer</button></div> : null}
+      {!error && operations === null ? <div className="muted" role="status" style={{ padding: 12 }}>Chargement…</div> : null}
       {operations !== null && operations.length === 0 ? (
         <div className="muted" style={{ padding: 12 }}>Aucune opération trouvée dans cette session.</div>
       ) : null}
       {operations?.map((op, i) => (
         <div key={i} className="diff-op">
           <div className="diff-op-head">
-            <span className={`file-kind ${op.kind}`}>{op.kind === "write" ? "W" : "E"}</span>
+            <span className={`file-kind ${op.kind === "write" ? "W" : "E"}`}>{op.kind === "write" ? "W" : "E"}</span>
             <span className="muted mono">{new Date(op.at).toLocaleTimeString()}</span>
             <span className="file-stats" style={{ marginLeft: "auto" }}>
               {op.additions > 0 ? <span className="add">+{op.additions}</span> : null}
@@ -88,26 +93,52 @@ export function TreePanel(props: {
   const [content, setContent] = useState<{ name: string; content: string; truncated: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    api.workspaceTree(props.workspaceId).then((r) => setTree(r.tree)).catch((e: Error) => setError(e.message));
-  }, [props.workspaceId]);
+  const [treeError, setTreeError] = useState<string | null>(null);
+  const [treeLoading, setTreeLoading] = useState(true);
+  const [fileLoading, setFileLoading] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const fileRequest = useRef(0);
 
-  const pick = (node: TreeNode) => {
-    if (node.type === "dir") {
-      setOpen((prev) => {
-        const next = new Set(prev);
-        if (next.has(node.path)) next.delete(node.path);
-        else next.add(node.path);
-        return next;
-      });
-      return;
-    }
-    setSelected(node.path);
+  useEffect(() => {
+    let active = true;
+    fileRequest.current++;
+    setTreeLoading(true);
+    setTreeError(null);
+    setTree([]);
+    setSelected(null);
+    setContent(null);
+    setError(null);
+    setFileLoading(false);
+    setOpen(new Set());
+    api.workspaceTree(props.workspaceId)
+      .then((r) => { if (active) setTree(r.tree); })
+      .catch((e: Error) => { if (active) setTreeError(e.message); })
+      .finally(() => { if (active) setTreeLoading(false); });
+    return () => { active = false; fileRequest.current++; };
+  }, [props.workspaceId, retry]);
+
+  const loadFile = (path: string) => {
+    const current = ++fileRequest.current;
+    setSelected(path);
     setError(null);
     setContent(null);
-    api.workspaceFile(props.workspaceId, node.path)
-      .then((r) => setContent({ name: r.file.name, content: r.file.content, truncated: r.file.truncated }))
-      .catch((e: Error) => setError(e.message));
+    setFileLoading(true);
+    api.workspaceFile(props.workspaceId, path)
+      .then((r) => {
+        if (current === fileRequest.current) setContent({ name: r.file.name, content: r.file.content, truncated: r.file.truncated });
+      })
+      .catch((e: Error) => { if (current === fileRequest.current) setError(e.message); })
+      .finally(() => { if (current === fileRequest.current) setFileLoading(false); });
+  };
+
+  const pick = (node: TreeNode) => {
+    if (node.type === "file") { loadFile(node.path); return; }
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(node.path)) next.delete(node.path);
+      else next.add(node.path);
+      return next;
+    });
   };
 
   const renderNodes = (nodes: TreeNode[], depth: number): React.ReactNode =>
@@ -119,6 +150,8 @@ export function TreePanel(props: {
           style={{ paddingLeft: 8 + depth * 14 }}
           onClick={() => pick(n)}
           title={n.path}
+          aria-expanded={n.type === "dir" ? open.has(n.path) : undefined}
+          aria-pressed={n.type === "file" ? selected === n.path : undefined}
         >
           <span className="tree-icon">{n.type === "dir" ? (open.has(n.path) ? "▾" : "▸") : ""}</span>
           <span className={`tree-name ${n.type}`}>{n.name}</span>
@@ -135,10 +168,14 @@ export function TreePanel(props: {
 
   return (
       <div className="tree-panes">
-        <div className="tree-nav">{renderNodes(tree, 0)}</div>
+        <div className="tree-nav">
+          <button type="button" className="btn btn-sm" disabled={treeLoading} onClick={() => setRetry((n) => n + 1)}>Actualiser</button>
+          {treeLoading ? <p role="status">Chargement de l’arborescence…</p> : treeError ? <div role="alert" className="error-text">{treeError} <button type="button" className="btn btn-sm" onClick={() => setRetry((n) => n + 1)}>Réessayer</button></div> : tree.length === 0 ? <p className="muted">Dossier vide.</p> : renderNodes(tree, 0)}
+        </div>
         <div className="tree-viewer">
-          {error ? <div className="error-text" style={{ padding: 12 }}>{error}</div> : null}
-          {!error && !content ? (
+          {error ? <div className="error-text" role="alert" style={{ padding: 12 }}>{error} <button type="button" className="btn btn-sm" onClick={() => selected && loadFile(selected)}>Réessayer</button></div> : null}
+          {fileLoading ? <p role="status">Chargement du fichier…</p> : null}
+          {!fileLoading && !error && !content ? (
             <div className="muted" style={{ padding: 14, fontSize: 12.5 }}>
               Clique un fichier pour le lire (read-only). Les points marquent les fichiers modifiés par les agents.
             </div>

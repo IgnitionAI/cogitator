@@ -3,63 +3,35 @@ import { Icon, type IconName } from "./icons";
 
 export function Modal(props: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   const titleId = useId();
-  const panelRef = useRef<HTMLDivElement>(null);
-  const closeRef = useRef<HTMLButtonElement>(null);
-  const prevRef = useRef<HTMLElement | null>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
-    prevRef.current = document.activeElement as HTMLElement;
-    closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        props.onClose();
-        return;
-      }
-      if (e.key !== "Tab" || !panelRef.current) return;
-      const nodes = [...panelRef.current.querySelectorAll<HTMLElement>(
-        "a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex=\"-1\"])",
-      )].filter((el) => !el.hasAttribute("disabled"));
-      if (nodes.length === 0) return;
-      const first = nodes[0]!;
-      const last = nodes[nodes.length - 1]!;
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
-      prevRef.current?.focus();
-    };
-  }, [props.onClose]);
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
 
   return (
-    <div className="modal-backdrop" onClick={props.onClose}>
+    <dialog
+      ref={dialogRef}
+      className="modal-backdrop"
+      aria-labelledby={titleId}
+      onCancel={(e) => { e.preventDefault(); props.onClose(); }}
+      onClick={(e) => { if (e.target === e.currentTarget) props.onClose(); }}
+    >
       <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
         className={`modal ${props.wide ? "modal-wide" : ""}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-head">
           <h2 id={titleId}>{props.title}</h2>
-          <button ref={closeRef} type="button" className="icon-btn" aria-label="Fermer" onClick={props.onClose}>
+          <button type="button" className="icon-btn" aria-label="Fermer" onClick={props.onClose}>
             <Icon name="close" />
           </button>
         </div>
         <div className="modal-body">{props.children}</div>
       </div>
-    </div>
+    </dialog>
   );
 }
 
@@ -99,7 +71,7 @@ export function Empty(props: { title?: string; children: ReactNode; action?: Rea
   return (
     <div className="empty">
       {props.title ? <p className="empty-title">{props.title}</p> : null}
-      <p className="empty-body">{props.children}</p>
+      <div className="empty-body">{props.children}</div>
       {props.action}
     </div>
   );
@@ -149,9 +121,10 @@ export function Spinner() {
 
 export function Skeleton(props: { rows?: number }) {
   return (
-    <div className="list" aria-hidden="true">
+    <div className="list" role="status">
+      <span className="sr-only">Chargement en cours…</span>
       {Array.from({ length: props.rows ?? 4 }, (_, i) => (
-        <div key={i} className="list-row skeleton-row" style={{ "--i": i } as CSSProperties}>
+        <div key={i} className="list-row skeleton-row" aria-hidden="true" style={{ "--i": i } as CSSProperties}>
           <div className="skeleton-line" />
           <div className="skeleton-line short" />
         </div>
@@ -182,7 +155,7 @@ export function ToastProvider(props: { children: ReactNode }) {
   const toast = useCallback<ToastFn>((text, isError = false) => {
     const id = ++toastSequence;
     setToasts((current) => [...current, { id, text, isError }]);
-    setTimeout(() => setToasts((current) => current.filter((t) => t.id !== id)), TOAST_TTL_MS);
+    if (!isError) setTimeout(() => setToasts((current) => current.filter((t) => t.id !== id)), TOAST_TTL_MS);
   }, []);
 
   return (
@@ -193,6 +166,7 @@ export function ToastProvider(props: { children: ReactNode }) {
           <div key={t.id} className={`toast ${t.isError ? "err" : ""}`}>
             <Icon name={t.isError ? "warning" : "check"} size={14} />
             <span>{t.text}</span>
+            <IconBtn name="close" label="Fermer la notification" onClick={() => setToasts((current) => current.filter((entry) => entry.id !== t.id))} />
           </div>
         ))}
       </div>

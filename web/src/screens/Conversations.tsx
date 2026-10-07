@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, openEvents } from "../api";
+import { api, openEvents, type EventConnectionState } from "../api";
 import { THINKING_LEVELS } from "../types";
 import type {
   AgentPreset, Conversation, FileChange, HistoryEntry, ImageContentInput, ProviderView, SkillRef, SseEvent, Workspace,
@@ -104,6 +104,27 @@ function entriesToItems(entries: HistoryEntry[]): ChatItem[] {
     else items.push({ kind: "tool", text: e.name, args: e.args, result: e.result, isError: e.isError, state: "done" });
   }
   return items;
+}
+
+/** Préserve le live ; une réponse en cours peut chevaucher un snapshot plus court ou plus long. */
+function mergeInitialHistory(history: ChatItem[], live: ChatItem[], assistantIndex: number | null): ChatItem[] {
+  // ponytail: recherche O(n²) sur le chevauchement ; utiliser des IDs de messages si les timelines deviennent grandes.
+  let overlap = Math.min(history.length, live.length);
+  while (overlap > 0) {
+    const matches = live.slice(0, overlap).every((item, index) => {
+      const historical = history[history.length - overlap + index]!;
+      if (item.kind !== historical.kind) return false;
+      if (item.text === historical.text) return true;
+      return index === assistantIndex && item.kind === "assistant"
+        && item.text.length > 0 && historical.text.length > 0
+        && (item.text.startsWith(historical.text) || historical.text.startsWith(item.text));
+    });
+    if (matches) break;
+    overlap -= 1;
+  }
+  const prefix = history.length - overlap;
+  const retainedLive = live.map((item, index) => index < overlap ? { ...history[prefix + index], ...item } as ChatItem : item);
+  return [...history.slice(0, prefix), ...retainedLive];
 }
 
 /**
@@ -256,7 +277,15 @@ export function ChatView(props: {
   const [images, setImages] = useState<ImageContentInput[]>([]);
   const [skills, setSkills] = useState<SkillRef[]>([]);
   const [busy, setBusy] = useState(false);
-  const [closed, setClosed] = useState(false);
+  const busyRef = useRef(false);
+  const draftRevision = useRef(0);
+  const nearBottom = useRef(true);
+  const [connection, setConnection] = useState<EventConnectionState>("connecting");
+  const [sessionStatus, setSessionStatus] = useState(conversation.status);
+  const [running, setRunning] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyReady, setHistoryReady] = useState(false);
+  const historyHydrated = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -279,18 +308,37 @@ export function ChatView(props: {
     setter(next);
   };
 
+  useEffect(() => setSessionStatus(conversation.status), [conversation.status]);
+
+  const updateInput = (value: string | ((prev: string) => string)) => {
+    draftRevision.current += 1;
+    setInput(value);
+  };
+
   const loadHistory = useCallback((replaceIfEmpty: boolean) => {
     api.history(conversation.id).then((r) => {
-      if (replaceIfEmpty) {
-        setTimeline((prev) => {
-          if (prev.length > 0) return prev;
-          streamRef.current.thinkingInserted = r.entries.filter((e) => e.type === "assistant").length;
-          return entriesToItems(r.entries);
-        });
-      } else {
-        setTimeline((prev) => reconcile(prev, r.entries, streamRef.current));
-      }
-    }).catch(() => undefined);
+      setHistoryError(null);
+      setHistoryReady(true);
+      const firstHydration = !historyHydrated.current;
+      historyHydrated.current = true;
+      let streamBeforeHydration: StreamState | undefined;
+      setTimeline((prev) => {
+        if (!firstHydration && prev.length > 0) return replaceIfEmpty ? prev : reconcile(prev, r.entries, streamRef.current);
+        // Capturer après les événements déjà en file, une seule fois même si React rejoue l'updater.
+        streamBeforeHydration ??= { ...streamRef.current, toolByContent: { ...streamRef.current.toolByContent } };
+        const { assistantIndex, toolByContent } = streamBeforeHydration;
+        const merged = mergeInitialHistory(entriesToItems(r.entries), prev, assistantIndex);
+        const offset = merged.length - prev.length;
+        // Les événements suivants doivent continuer à cibler les mêmes bulles live après l'insertion.
+        streamRef.current.assistantIndex = assistantIndex === null ? null : assistantIndex + offset;
+        streamRef.current.toolByContent = Object.fromEntries(Object.entries(toolByContent).map(([content, index]) => [content, index + offset]));
+        streamRef.current.thinkingInserted = r.entries.filter((e) => e.type === "assistant").length;
+        return merged;
+      });
+    }).catch((e: Error) => {
+      setHistoryError(`Historique indisponible : ${e.message}`);
+      setHistoryReady(true);
+    });
     refreshFiles();
   }, [conversation.id, refreshFiles]);
 
@@ -308,16 +356,21 @@ export function ChatView(props: {
       (e) => {
         const ev = e as SseEvent;
         setTimeline((prev) => applyEvent(prev, ev, streamRef.current));
+        if (ev.type === "agent_start" || ev.type === "turn_start" || ev.type === "message_update") setRunning(true);
         if (ev.type === "message_update" && ev.assistantMessageEvent?.type === "text_start") setStreaming(true);
         if (ev.type === "agent_end") {
           setStreaming(false);
+          setRunning(false);
           loadHistory(false); // réconcilie : thinking + args/résultats des outils du tour
         }
       },
       {
         // à chaque (re)connexion : combler le trou d'événements via l'historique
-        onOpen: () => loadHistory(false),
-        onClose: () => setClosed(true),
+        onOpen: () => {
+          loadHistory(false);
+          api.conversation(conversation.id).then((r) => setSessionStatus(r.live ? r.conversation.status : "idle")).catch(() => undefined);
+        },
+        onStateChange: setConnection,
       },
     );
     return () => {
@@ -327,23 +380,27 @@ export function ChatView(props: {
   }, [conversation.id, loadHistory]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    if (nearBottom.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [timeline.length, timeline[timeline.length - 1]?.text.length]);
 
   const send = async () => {
     const text = input.trim();
-    if (!text && images.length === 0) return;
+    if (busyRef.current || (!text && images.length === 0)) return;
     const toSend = images;
-    setInput("");
-    setImages([]);
+    const sentRevision = draftRevision.current;
+    busyRef.current = true;
     setBusy(true);
     try {
       await api.sendMessage(conversation.id, text, toSend.length ? toSend : undefined);
+      // Ne supprimer que le brouillon envoyé, jamais les modifications faites pendant la requête.
+      if (draftRevision.current === sentRevision) setInput("");
+      setImages((prev) => prev.filter((image) => !toSend.includes(image)));
       // écho local : le flux SSE de pi ne contient pas les messages utilisateur
       setTimeline((prev) => [...prev, { kind: "user", text: text || "image(s) jointe(s)" }]);
     } catch (e) {
       toast((e as Error).message, true);
     } finally {
+      busyRef.current = false;
       setBusy(false);
       taRef.current?.focus();
     }
@@ -370,7 +427,10 @@ export function ChatView(props: {
         </button>
         <h1>{conversation.title || "Sans titre"}</h1>
         <span className="muted mono">{conversation.provider}/{conversation.model}</span>
-        <Badge color={statusColor(conversation.status)}>{conversation.status}</Badge>
+        <Badge color={statusColor(sessionStatus)}>{sessionStatus}</Badge>
+        <span className="muted" role="status">
+          {connection === "connected" ? "Connecté" : connection === "reconnecting" ? "Reconnexion…" : connection === "closed" ? "Connexion interrompue" : "Connexion…"}
+        </span>
         <button
           type="button"
           className={`btn btn-sm ${filesPanel ? "btn-primary" : ""}`}
@@ -381,8 +441,8 @@ export function ChatView(props: {
           <Icon name="files" /> Fichiers{files.length > 0 ? ` (${files.length})` : ""}
         </button>
         <div style={{ flex: 1 }} />
-        {busy ? (
-          <button type="button" className="btn btn-sm btn-danger" onClick={() => api.stopConversation(conversation.id).catch(() => undefined)}>
+        {busy || running || sessionStatus === "active" || sessionStatus === "running" ? (
+          <button type="button" className="btn btn-sm btn-danger" onClick={() => api.stopConversation(conversation.id).catch((e: Error) => toast(e.message, true))}>
             <Icon name="stop" /> Stop
           </button>
         ) : null}
@@ -399,9 +459,17 @@ export function ChatView(props: {
       </div>
       <div className="chat-body">
       <div className="chat-main">
-      <div className="chat-scroll" ref={scrollRef}>
-        {timeline.length === 0 ? (
-        <Empty title={closed ? "Session prête" : "En attente d'événements"}>
+      <div className="chat-scroll" ref={scrollRef} role="log" aria-label="Historique de la conversation" aria-live="off" tabIndex={0}
+        onScroll={(e) => {
+          const node = e.currentTarget;
+          nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight <= 80;
+        }}
+      >
+        <ErrorText error={historyError} />
+        {historyError ? <button type="button" className="btn btn-sm" onClick={() => loadHistory(true)}>Réessayer l’historique</button> : null}
+        {!historyReady && timeline.length === 0 ? <Skeleton /> : null}
+        {historyReady && !historyError && timeline.length === 0 ? (
+        <Empty title="Session prête">
           Envoie un message. Le menu Skills charge un skill, ou tape <code>/skill:nom</code>.
         </Empty>
       ) : null}
@@ -410,7 +478,7 @@ export function ChatView(props: {
           if (m.kind === "skill") {
             return (
               <div key={i} className="skill-card">
-                <button type="button" className="skill-head" onClick={() => toggle(expanded, setExpanded, i)}>
+                <button type="button" className="skill-head" aria-expanded={expanded.has(i)} onClick={() => toggle(expanded, setExpanded, i)}>
                   <span className="skill-pill"><Icon name="spark" size={14} /></span>
                   <span className="skill-name">{m.name}</span>
                   <span className="tool-meta">{m.text.length.toLocaleString()} caractères</span>
@@ -424,7 +492,7 @@ export function ChatView(props: {
           if (m.kind === "thinking") {
             return (
               <div key={i} className="msg-thinking">
-                <button type="button" className="thinking-head" onClick={() => toggle(openThinking, setOpenThinking, i)}>
+                <button type="button" className="thinking-head" aria-expanded={openThinking.has(i)} onClick={() => toggle(openThinking, setOpenThinking, i)}>
                   <span className={`chevron ${openThinking.has(i) ? "open" : ""}`}>▸</span>
                   Réflexion · {m.text.length.toLocaleString()} caractères
                 </button>
@@ -435,7 +503,7 @@ export function ChatView(props: {
           if (m.kind === "tool") {
             return (
               <div key={i} className={`tool-chip ${m.state} ${m.isError ? "error" : ""}`}>
-                <button type="button" className="tool-head" onClick={() => toggle(expanded, setExpanded, i)}>
+                <button type="button" className="tool-head" aria-expanded={expanded.has(i)} onClick={() => toggle(expanded, setExpanded, i)}>
                   <span className={`tool-dot ${m.state}`} />
                   <span className="tool-name">{m.text}</span>
                   {m.result !== undefined ? (
@@ -462,7 +530,7 @@ export function ChatView(props: {
           }
           const isLastAssistant = m.kind === "assistant" && i === timeline.length - 1;
           return (
-            <div key={i} className={`msg msg-${m.kind}`}>
+            <div key={i} className={`msg msg-${m.kind}`} role="article" aria-label={m.kind === "user" ? "Message de vous" : "Message de l’agent"}>
               <Markdown text={m.text} />
               {isLastAssistant && streaming ? <span className="caret" /> : null}
             </div>
@@ -497,7 +565,7 @@ export function ChatView(props: {
           value=""
           onChange={(e) => {
             if (!e.target.value) return;
-            setInput((v) => `/skill:${e.target.value} ${v}`.trimEnd() + " ");
+            updateInput((v) => `/skill:${e.target.value} ${v}`.trimEnd() + " ");
             taRef.current?.focus();
           }}
           title="Charger un skill (/skill:name, expandé par pi dans la session)"
@@ -509,9 +577,10 @@ export function ChatView(props: {
         </select>
         <textarea
           ref={taRef}
+          aria-label="Message à l’agent"
           value={input}
           placeholder="Message… (Entrée = envoyer, Maj+Entrée = nouvelle ligne, collage d'image accepté)"
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => updateInput(e.target.value)}
           onPaste={(e) => {
             const files = Array.from(e.clipboardData?.files ?? []);
             if (files.some((f) => f.type.startsWith("image/"))) {
@@ -520,7 +589,7 @@ export function ChatView(props: {
             }
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
               e.preventDefault();
               void send();
             }

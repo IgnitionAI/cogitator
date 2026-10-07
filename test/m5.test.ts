@@ -40,7 +40,8 @@ class FakeClient {
   failOnPrompt = false;
   constructor(opts: { cwd: string; args: string[]; env?: Record<string, string> }) {
     this.opts = opts;
-    this.sessionFile = `/fake/sessions/m5-${fakeCounter++}.jsonl`;
+    const sessionIndex = opts.args.indexOf("--session");
+    this.sessionFile = sessionIndex >= 0 ? opts.args[sessionIndex + 1]! : `/fake/sessions/m5-${fakeCounter++}.jsonl`;
   }
   async start() {}
   async stop() {}
@@ -202,7 +203,7 @@ test("busy-guard skip : run concurrent tracé skipped", async () => {
   })).json()).schedule;
 
   // simuler un run encore 'running' en base
-  db.prepare("INSERT INTO cron_run (id, task_id, status) VALUES ('run-stale', ?, 'running')").run(task.id);
+  db.prepare("INSERT INTO cron_run (id, task_id, status, started_at) VALUES ('run-stale', ?, 'running', '2000-01-01 00:00:00')").run(task.id);
   const run = await cron.fireNow(task.id);
   assert.equal(run!.status, "skipped");
   assert.match(run!.error ?? "", /encore actif/);
@@ -221,11 +222,27 @@ test("append_session : reprise de la session dédiée de la tâche", async () =>
 
   await cron.fireNow(task.id);
   const runs2 = (await (await fetch(`${base}/api/schedules/${task.id}/runs`)).json()).runs;
-  assert.equal(runs2[0]!.session_file, session1); // même session dédiée
+  assert.equal(runs2.length, 2);
+  assert.ok(runs2.every((run: { session_file: string | null }) => run.session_file === session1), "chaque run reprend la même session dédiée");
   // le client a été repris avec --session
   const lastArgs = clients[clients.length - 1]!.opts.args;
   const idx = lastArgs.indexOf("--session");
   assert.equal(lastArgs[idx + 1], session1);
+});
+
+test("runs de même seconde : historique et reprise choisissent le dernier run inséré", async () => {
+  const task = (await (await fetch(`${base}/api/schedules`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Same second", cron_expr: "0 0 * * *", prompt: "p", agent_id: agentId, workspace_id: wsId, output_policy: "append_session" }),
+  })).json()).schedule;
+  const insert = db.prepare("INSERT INTO cron_run (id, task_id, started_at, status, session_file) VALUES (?, ?, '2000-01-01 00:00:00', 'ok', ?)");
+  insert.run("tie-first", task.id, "/fake/sessions/first.jsonl");
+  insert.run("tie-latest", task.id, "/fake/sessions/latest.jsonl");
+  const runs = (await (await fetch(`${base}/api/schedules/${task.id}/runs`)).json()).runs;
+  assert.equal(runs[0]!.id, "tie-latest");
+  await cron.fireNow(task.id);
+  const args = clients.at(-1)!.opts.args;
+  assert.equal(args[args.indexOf("--session") + 1], "/fake/sessions/latest.jsonl");
 });
 
 test("tick : tâche due avec catchup → fire ; sans catchup → avance le curseur", async () => {

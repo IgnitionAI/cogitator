@@ -1,6 +1,6 @@
 import type { FeedEvent } from "./types";
 
-const DAY_FORMAT: Intl.DateTimeFormatOptions = { weekday: "long", day: "numeric", month: "long" };
+const DAY_FORMAT: Intl.DateTimeFormatOptions = { weekday: "long", day: "numeric", month: "long", year: "numeric" };
 const TIME_FORMAT: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" };
 
 /** Regroupe les événements par jour local (ordre d'entrée conservé). */
@@ -23,7 +23,8 @@ export function FeedList(props: { feed: FeedEvent[]; onOpenEvent: (event: FeedEv
         <div key={day}>
           <div className="feed-day">{day}</div>
           {events.map((event) => (
-            <div
+            <button
+              type="button"
               key={`${event.conversationId}:${event.path}:${event.at}`}
               className="feed-row"
               onClick={() => props.onOpenEvent(event)}
@@ -36,7 +37,7 @@ export function FeedList(props: { feed: FeedEvent[]; onOpenEvent: (event: FeedEv
                 {event.additions > 0 ? <span className="add">+{event.additions}</span> : null}
                 {event.deletions > 0 ? <span className="del">−{event.deletions}</span> : null}
               </span>
-            </div>
+            </button>
           ))}
         </div>
       ))}

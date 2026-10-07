@@ -14,10 +14,11 @@ export default function Providers() {
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [keyFor, setKeyFor] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    api.providers().then((r) => setProviders(r.providers)).catch((e: Error) => setError(e.message));
+    api.providers().then((r) => { setProviders(r.providers); setError(null); }).catch((e: Error) => setError(e.message)).finally(() => setLoading(false));
   }, []);
 
   useEffect(refresh, [refresh]);
@@ -30,7 +31,8 @@ export default function Providers() {
         actions={<button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}><Icon name="plus" /> Provider custom</button>}
       />
       <ErrorText error={error} />
-      {providers.length === 0 ? (
+      {error ? <button type="button" className="btn" onClick={refresh}>Réessayer</button> : null}
+      {loading ? <p role="status">Chargement…</p> : error && providers.length === 0 ? null : providers.length === 0 ? (
         <Empty title="Aucun provider" action={<button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}><Icon name="plus" /> Provider custom</button>}>
           Aucun provider détecté dans la config pi.
         </Empty>
@@ -82,8 +84,11 @@ function AddProviderModal(props: { onClose: () => void; onSaved: () => void }) {
   const [apiProt, setApiProt] = useState("openai-completions");
   const [apiKey, setApiKey] = useState("");
   const [models, setModels] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const save = async () => {
+    if (busy) return;
+    setBusy(true);
     try {
       await api.createProvider({
         id: id.trim(),
@@ -95,6 +100,8 @@ function AddProviderModal(props: { onClose: () => void; onSaved: () => void }) {
       props.onSaved();
     } catch (e) {
       toast((e as Error).message, true);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -111,14 +118,14 @@ function AddProviderModal(props: { onClose: () => void; onSaved: () => void }) {
           {APIS.map((a) => <option key={a} value={a}>{a}</option>)}
         </select>
       </Field>
-      <Field label="Clé API (optionnel — sinon env var du provider)">
+      <Field label="Clé API (optionnelle)" hint="Sans clé, aucune authentification n’est créée. Une configuration existante ou une variable reconnue par pi peut être nécessaire.">
         <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
       </Field>
       <Field label="Modèles (ids séparés par des virgules)">
         <input value={models} onChange={(e) => setModels(e.target.value)} placeholder="qwen3, llama3.1" />
       </Field>
       <div className="toolbar">
-        <button className="btn btn-primary" disabled={!id.trim() || !baseUrl.trim()} onClick={() => void save()}>Créer</button>
+        <button className="btn btn-primary" disabled={busy || !id.trim() || !baseUrl.trim()} onClick={() => void save()}>{busy ? "Création…" : "Créer"}</button>
       </div>
     </Modal>
   );
@@ -127,6 +134,7 @@ function AddProviderModal(props: { onClose: () => void; onSaved: () => void }) {
 function KeyModal(props: { providerId: string; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
   return (
     <Modal title={`Clé API — ${props.providerId}`} onClose={props.onClose}>
       <Field label="Nouvelle clé (stockée dans auth.json)" hint="Pour l'OAuth (codex, claude…), utilise le flux pi natif (/login dans un terminal).">
@@ -135,14 +143,17 @@ function KeyModal(props: { providerId: string; onClose: () => void; onSaved: () 
       <div className="toolbar">
         <button
           className="btn btn-primary"
-          disabled={!key.trim()}
+          disabled={busy || !key.trim()}
           onClick={() => {
+            if (busy) return;
+            setBusy(true);
             api.updateProvider(props.providerId, { apiKey: key.trim() })
               .then(props.onSaved)
-              .catch((e: Error) => toast(e.message, true));
+              .catch((e: Error) => toast(e.message, true))
+              .finally(() => setBusy(false));
           }}
         >
-          Enregistrer
+          {busy ? "Enregistrement…" : "Enregistrer"}
         </button>
       </div>
     </Modal>

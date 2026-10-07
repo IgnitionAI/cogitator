@@ -1,75 +1,93 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { Health } from "../types";
-import { Badge, Field, PageHead } from "../ui";
+import { Badge, ErrorText, Field, PageHead, Spinner } from "../ui";
 
 export default function Settings() {
   const [health, setHealth] = useState<Health | null>(null);
-  const [mcp, setMcp] = useState<{ mcpServers: Record<string, unknown> } | null>(null);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    api.health().then(setHealth).catch(() => undefined);
-    fetch("/api/mcp").then((r) => r.json()).then(setMcp).catch(() => undefined);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    Promise.all([
+      api.health().then(setHealth),
+      fetch("/api/mcp").then(async (res) => {
+        if (!res.ok) throw new Error("Configuration MCP indisponible.");
+        setDraft(JSON.stringify(await res.json(), null, 2));
+      }),
+    ]).catch((e: Error) => setError(e.message)).finally(() => setLoading(false));
   }, []);
+  useEffect(load, [load]);
 
   const saveMcp = async () => {
-    if (!mcp) return;
-    const res = await fetch("/api/mcp", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(mcp) });
-    setSaved(res.ok);
-    setTimeout(() => setSaved(false), 3000);
+    if (draft === null || busy) return;
+    setError(null);
+    setSaved(false);
+    let config: unknown;
+    try {
+      config = JSON.parse(draft);
+    } catch {
+      setError("JSON invalide. Vérifie les virgules, guillemets et accolades, puis réessaie.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/mcp", {
+        method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(config),
+      });
+      if (!res.ok) throw new Error("Enregistrement refusé. Vérifie la configuration MCP puis réessaie.");
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Enregistrement impossible. Réessaie sans quitter la page.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <>
       <PageHead title="Settings" sub="État du serveur et configuration globale." />
-
+      {loading ? <p role="status">Chargement de la configuration…</p> : null}
+      {error && (draft === null || health === null) ? <button type="button" className="btn" disabled={loading} onClick={load}>Réessayer le chargement</button> : null}
       {health?.mcp_adapter_detected ? (
         <div className="warn-banner" role="status">
-          <code>pi-mcp-adapter</code> est installé : il remplace le support MCP builtin de pi. Les serveurs des presets
-          sont enregistrés via <code>registerMcpServer</code>. Vérifie leur visibilité dans une session.
+          <code>pi-mcp-adapter</code> remplace le support MCP builtin de pi. Vérifie la visibilité des serveurs dans une session.
         </div>
       ) : null}
-
       {health ? (
-        <table style={{ maxWidth: 560 }}>
-          <tbody>
+        <div className="table-wrap" style={{ maxWidth: 640 }}>
+          <table><tbody>
             <tr><td className="muted">Version Cogitator</td><td className="mono">{health.version}</td></tr>
             <tr><td className="muted">Version pi</td><td className="mono">{health.pi_version ?? "introuvable"}</td></tr>
-            <tr><td className="muted">Sessions actives (pool)</td><td>{health.sessions_active}</td></tr>
+            <tr><td className="muted">Sessions actives</td><td>{health.sessions_active}</td></tr>
             <tr><td className="muted">Base SQLite</td><td className="mono">{health.db.path} (v{health.db.version})</td></tr>
             <tr><td className="muted">Port</td><td className="mono">127.0.0.1:5320 (COGITATOR_PORT)</td></tr>
             <tr><td className="muted">Données</td><td className="mono">~/.cogitator</td></tr>
-          </tbody>
-        </table>
+          </tbody></table>
+        </div>
       ) : null}
-
-      <h4 style={{ marginTop: 24 }}>MCP user-level (~/.pi/agent/mcp.json)</h4>
-      <p className="muted" style={{ fontSize: 12.5 }}>
-        Serveurs disponibles pour toutes les sessions pi (builtin). Les presets peuvent définir leurs propres serveurs via l'éditeur d'agents.
-      </p>
-      {mcp ? (
+      <h2 style={{ marginTop: 24, fontSize: 14 }}>Serveurs MCP globaux</h2>
+      <p className="muted">Configuration de <code>~/.pi/agent/mcp.json</code>, disponible pour toutes les sessions pi.</p>
+      {draft !== null ? (
         <>
-          <Field label="JSON (mcpServers)">
-            <textarea
-              className="mono"
-              style={{ minHeight: 200 }}
-              value={JSON.stringify(mcp, null, 2)}
-              onChange={(e) => {
-                try {
-                  setMcp(JSON.parse(e.target.value));
-                } catch {
-                  /* JSON en cours d'édition */
-                }
-              }}
-            />
+          <Field label="Configuration JSON (mcpServers)">
+            <textarea className="mono" spellCheck={false} style={{ minHeight: 200 }} value={draft}
+              onChange={(e) => { setDraft(e.target.value); setSaved(false); }} />
           </Field>
           <div className="toolbar">
-            <button className="btn btn-primary" onClick={() => void saveMcp()}>Enregistrer (atomic + backup)</button>
-            {saved ? <Badge color="#1a7f37">✓ sauvegardé</Badge> : null}
+            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void saveMcp()}>
+              {busy ? <Spinner /> : null} {busy ? "Enregistrement…" : "Enregistrer la configuration"}
+            </button>
+            {saved ? <span role="status"><Badge color="var(--success)">Configuration enregistrée</Badge></span> : null}
           </div>
         </>
       ) : null}
+      <ErrorText error={error} />
     </>
   );
 }

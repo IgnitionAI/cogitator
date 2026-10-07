@@ -6,17 +6,17 @@ import { Icon } from "../icons";
 
 export default function Cron() {
   const toast = useToast();
+  const [pendingTask, setPendingTask] = useState<string | null>(null);
   const [tasks, setTasks] = useState<CronTask[]>([]);
   const [agents, setAgents] = useState<AgentPreset[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [runsFor, setRunsFor] = useState<string | null>(null);
   const [editing, setEditing] = useState<CronTask | "new" | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
-    api.schedules().then((r) => setTasks(r.schedules)).catch((e: Error) => setError(e.message));
-    api.agents().then((r) => setAgents(r.agents)).catch(() => undefined);
-    api.workspaces().then((r) => setWorkspaces(r.workspaces)).catch(() => undefined);
+    Promise.all([api.schedules(), api.agents(), api.workspaces()]).then(([t, a, w]) => { setTasks(t.schedules); setAgents(a.agents); setWorkspaces(w.workspaces); setError(null); }).catch((e: Error) => setError(e.message)).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -32,8 +32,10 @@ export default function Cron() {
         sub="Tâches planifiées : un prompt tiré contre un agent, à heure fixe. Le cron ne tourne que si le serveur Cogitator tourne."
         actions={<button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> Nouvelle tâche</button>}
       />
+      <p className="muted">Expressions cron : fuseau local du serveur. Dates affichées : fuseau du navigateur ({Intl.DateTimeFormat().resolvedOptions().timeZone}).</p>
       <ErrorText error={error} />
-      {tasks.length === 0 ? (
+      {error ? <button type="button" className="btn" onClick={refresh}>Réessayer</button> : null}
+      {loading ? <p role="status">Chargement…</p> : error && tasks.length === 0 ? null : tasks.length === 0 ? (
         <Empty title="Aucune tâche" action={<button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> Nouvelle tâche</button>}>
           Planifie un prompt contre un agent. Le serveur doit rester allumé.
         </Empty>
@@ -55,8 +57,10 @@ export default function Cron() {
                   <input
                     type="checkbox"
                     style={{ width: "auto" }}
+                    disabled={pendingTask === t.id}
+                    aria-label={`Activer la tâche ${t.name}`}
                     checked={t.enabled === 1}
-                    onChange={(e) => api.updateSchedule(t.id, { enabled: e.target.checked }).then(refresh).catch((err: Error) => toast(err.message, true))}
+                    onChange={(e) => { if (pendingTask === t.id) return; setPendingTask(t.id); api.updateSchedule(t.id, { enabled: e.target.checked }).then(refresh).catch((err: Error) => toast(err.message, true)).finally(() => setPendingTask(null)); }}
                   />
                 </td>
                 <td style={{ whiteSpace: "nowrap" }}>
@@ -76,7 +80,7 @@ export default function Cron() {
         </table>
         </div>
       )}
-      {runsFor ? <RunsModal task={tasks.find((t) => t.id === runsFor)!} onClose={() => { setRunsFor(null); refresh(); }} /> : null}
+      {runsFor && tasks.some((t) => t.id === runsFor) ? <RunsModal task={tasks.find((t) => t.id === runsFor)!} onClose={() => { setRunsFor(null); refresh(); }} /> : null}
       {editing ? (
         <TaskEditor
           task={editing === "new" ? null : editing}
@@ -94,17 +98,24 @@ export default function Cron() {
 function RunsModal({ task, onClose }: { task: CronTask; onClose: () => void }) {
   const [runs, setRuns] = useState<CronRun[]>([]);
 
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(() => {
+    api.runs(task.id).then((r) => { setRuns(r.runs); setError(null); })
+      .catch((e: Error) => setError(e.message)).finally(() => setLoading(false));
+  }, [task.id]);
   useEffect(() => {
-    const load = () => api.runs(task.id).then((r) => setRuns(r.runs)).catch(() => undefined);
     load();
     const t = setInterval(load, 3000);
     return () => clearInterval(t);
-  }, [task.id]);
+  }, [load]);
 
   return (
     <Modal title={`Runs — ${task.name}`} onClose={onClose} wide>
-      {runs.length === 0 ? <Empty>Aucun run pour l'instant.</Empty> : (
-        <table>
+      <ErrorText error={error} />
+      {error ? <button type="button" className="btn" onClick={load}>Réessayer</button> : null}
+      {loading ? <p role="status">Chargement des runs…</p> : error && runs.length === 0 ? null : runs.length === 0 ? <Empty>Aucun run pour l'instant.</Empty> : (
+        <div className="table-wrap"><table>
           <thead><tr><th>Début</th><th>Fin</th><th>Statut</th><th>Session</th><th>Erreur</th></tr></thead>
           <tbody>
             {runs.map((r) => (
@@ -117,7 +128,7 @@ function RunsModal({ task, onClose }: { task: CronTask; onClose: () => void }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
     </Modal>
   );
@@ -142,13 +153,18 @@ function TaskEditor(props: {
     catchup: (props.task?.catchup ?? 1) === 1,
   });
 
+  const [busy, setBusy] = useState(false);
   const save = async () => {
+    if (busy || !form.agent_id || !form.workspace_id || !form.cron_expr.trim()) return;
+    setBusy(true);
     try {
       if (props.task) await api.updateSchedule(props.task.id, form);
       else await api.createSchedule(form);
       props.onSaved();
     } catch (e) {
       toast((e as Error).message, true);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -156,7 +172,7 @@ function TaskEditor(props: {
     <Modal title={props.task ? `Éditer — ${props.task.name}` : "Nouvelle tâche cron"} onClose={props.onClose}>
       <div className="form-row">
         <Field label="Nom"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-        <Field label="Expression cron" hint="5 champs : min heure jour mois jour-sem — ex: 0 9 * * 1-5">
+        <Field label="Expression cron" hint="5 champs : min heure jour mois jour-sem — ex: 0 9 * * 1-5. Fuseau local du serveur (pas celui du navigateur).">
           <input value={form.cron_expr} onChange={(e) => setForm({ ...form, cron_expr: e.target.value })} className="mono" />
         </Field>
       </div>
@@ -195,8 +211,8 @@ function TaskEditor(props: {
         Catchup (1 run de rattrapage si des exécutions ont été manquées)
       </label>
       <div className="toolbar">
-        <button className="btn btn-primary" disabled={!form.name.trim() || !form.prompt.trim() || !form.cron_expr.trim()} onClick={() => void save()}>
-          Sauvegarder
+        <button className="btn btn-primary" disabled={busy || !form.agent_id || !form.workspace_id || !form.name.trim() || !form.prompt.trim() || !form.cron_expr.trim()} onClick={() => void save()}>
+          {busy ? "Sauvegarde…" : "Sauvegarder"}
         </button>
       </div>
     </Modal>

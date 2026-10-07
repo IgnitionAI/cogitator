@@ -94,12 +94,15 @@ export const api = {
 
 /** SSE avec reconnexion native (le navigateur réessaie seul) ; onOpen à chaque (re)connexion
  *  pour réconcilier l'historique et combler les événements manqués pendant une coupure. */
+export type EventConnectionState = "connecting" | "connected" | "reconnecting" | "closed";
+
 export function openEvents(
   url: string,
   onEvent: (event: SseEvent) => void,
-  opts?: { onOpen?: () => void; onClose?: () => void },
+  opts?: { onOpen?: () => void; onClose?: () => void; onStateChange?: (state: EventConnectionState) => void },
 ): () => void {
   const source = new EventSource(url);
+  opts?.onStateChange?.("connecting");
   source.onmessage = (msg) => {
     try {
       onEvent(JSON.parse(msg.data) as SseEvent);
@@ -107,12 +110,18 @@ export function openEvents(
       /* événement non-JSON : ignoré */
     }
   };
-  source.onopen = () => opts?.onOpen?.();
+  source.onopen = () => {
+    opts?.onStateChange?.("connected");
+    opts?.onOpen?.();
+  };
   // NE PAS fermer sur error : le navigateur rétablit la connexion tout seul
-  source.onerror = () => undefined;
+  source.onerror = () => opts?.onStateChange?.(source.readyState === EventSource.CLOSED ? "closed" : "reconnecting");
   return () => {
+    source.onmessage = null;
+    source.onopen = null;
     source.onerror = null;
     source.close();
+    opts?.onStateChange?.("closed");
     opts?.onClose?.();
   };
 }

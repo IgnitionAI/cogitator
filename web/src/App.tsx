@@ -92,7 +92,7 @@ export default function App() {
       </header>
       <div className="nav-scrim" onClick={() => setNavOpen(false)} />
       <aside id="sidebar" className="sidebar">
-        <div className="brand"><img src="/favicon.png" alt="Cogitator" className="brand-logo" />Cogita<em>tor</em></div>
+        <div className="brand"><img src="/favicon.png" alt="Cogitator" className="brand-logo" style={{ width: 26, height: 26, borderRadius: 6, flexShrink: 0, objectFit: "cover", boxShadow: "0 0 14px rgba(94,106,210,.35)" }} />Cogita<em>tor</em></div>
         <nav aria-label="Principal">
           {NAV.map((n) => (
             <button

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, openEvents } from "./api";
 import type { Health } from "./types";
 import Conversations from "./screens/Conversations";
@@ -31,6 +31,8 @@ export default function App() {
   const [agents, setAgents] = useState<AgentPreset[]>([]);
   const [pendingConv, setPendingConv] = useState<string | null>(null);
   const [navOpen, setNavOpen] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const activeScreen = openWorkspace ? "workspaces" : screen;
 
   useEffect(() => {
     api.health().then(setHealth).catch(() => undefined);
@@ -42,7 +44,17 @@ export default function App() {
       }
     });
     return close;
-  }, []);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!navOpen) return;
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") setNavOpen(false); };
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("keydown", close);
+      menuButton.current?.focus();
+    };
+  }, [navOpen]);
 
   const go = (id: ScreenId) => {
     setScreen(id);
@@ -54,7 +66,10 @@ export default function App() {
       case "conversations":
         return <Conversations initialOpenId={pendingConv} onConsumeInitial={() => setPendingConv(null)} />;
       case "workspaces":
-        return <Workspaces onOpenWorkspace={(w) => setOpenWorkspace(w)} />;
+        return <Workspaces onOpenWorkspace={(w) => {
+          setOpenWorkspace(w);
+          api.agents().then((r) => setAgents(r.agents)).catch((error: unknown) => toast(`Impossible d’actualiser les agents : ${String(error)}`, true));
+        }} />;
       case "agents":
         return <Agents />;
       case "providers":
@@ -70,21 +85,21 @@ export default function App() {
     <div className={`app ${navOpen ? "nav-open" : ""}`}>
       <a className="skip-link" href="#main">Aller au contenu</a>
       <header className="topbar">
-        <button type="button" className="icon-btn" aria-label="Ouvrir le menu" onClick={() => setNavOpen(true)}>
+        <button ref={menuButton} type="button" className="icon-btn" aria-label={navOpen ? "Fermer le menu" : "Ouvrir le menu"} aria-expanded={navOpen} aria-controls="sidebar" onClick={() => setNavOpen((open) => !open)}>
           <Icon name="menu" />
         </button>
         <span className="brand-inline">Cogitator</span>
       </header>
       <div className="nav-scrim" onClick={() => setNavOpen(false)} />
-      <aside className="sidebar">
-        <div className="brand"><span className="mark" />Cogita<em>tor</em></div>
+      <aside id="sidebar" className="sidebar">
+        <div className="brand"><img src="/favicon.png" alt="Cogitator" className="brand-logo" />Cogita<em>tor</em></div>
         <nav aria-label="Principal">
           {NAV.map((n) => (
             <button
               key={n.id}
               type="button"
-              className={`nav-item ${screen === n.id && !openWorkspace ? "active" : ""}`}
-              aria-current={screen === n.id && !openWorkspace ? "page" : undefined}
+              className={`nav-item ${activeScreen === n.id ? "active" : ""}`}
+              aria-current={activeScreen === n.id ? "page" : undefined}
               onClick={() => { setOpenWorkspace(null); go(n.id); }}
             >
               <Icon name={n.icon} /> {n.label}
@@ -95,7 +110,7 @@ export default function App() {
           {health ? `v${health.version} · pi ${health.pi_version ?? "?"}` : "…"}
         </div>
       </aside>
-      <main id="main" className="main">
+      <main id="main" className="main" tabIndex={-1} inert={navOpen}>
         {openWorkspace ? (
           <WorkspacePage
             workspace={openWorkspace}

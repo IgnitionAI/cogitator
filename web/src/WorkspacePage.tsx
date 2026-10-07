@@ -76,6 +76,27 @@ export default function WorkspacePage(props: {
             <span className="del">−{activity.totals.deletions}</span>
           </span>
         ) : null}
+        <div style={{ flex: 1 }} />
+        <button
+          className="btn btn-sm"
+          title="Conversation de setup : le Majordome analyse le repo, propose conventions/règles/hooks/board, puis exécute"
+          onClick={() => {
+            const majordome = props.agents.find((a) => a.slug === "majordome");
+            if (!majordome) {
+              props.toast("Majordome introuvable", true);
+              return;
+            }
+            api.createConversation({
+              workspace_id: workspace.id,
+              agent_id: majordome.id,
+              prompt: "Initialise ce projet : analyse le repo et propose-mi le plan de setup (conventions, protections git, board initial, agents).",
+            })
+              .then((r) => props.onOpenConversation(r.conversation.id))
+              .catch((e: Error) => props.toast(e.message, true));
+          }}
+        >
+          ⚙ Setup projet
+        </button>
       </div>
       <div className="ws-tabs">
         {TABS.map((t) => (

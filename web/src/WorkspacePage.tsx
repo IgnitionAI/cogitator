@@ -89,7 +89,7 @@ export default function WorkspacePage(props: {
             api.createConversation({
               workspace_id: workspace.id,
               agent_id: majordome.id,
-              prompt: "Initialise ce projet : analyse le repo et propose-mi le plan de setup (conventions, protections git, board initial, agents).",
+              prompt: "Initialise ce projet : analyse le repo et propose-moi le plan de setup (conventions, protections git, board initial, agents).",
             })
               .then((r) => props.onOpenConversation(r.conversation.id))
               .catch((e: Error) => props.toast(e.message, true));

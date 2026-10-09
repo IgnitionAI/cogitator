@@ -64,11 +64,11 @@ export const workspaceMessages = {
     "en": "Low"
   },
   "workspace.workspaces": {
-    "fr": "Workspaces",
+    "fr": "Espaces de travail",
     "en": "Workspaces"
   },
   "workspace.workspace": {
-    "fr": "Workspace",
+    "fr": "Espace de travail",
     "en": "Workspace"
   },
   "workspace.refresh": {
@@ -88,7 +88,7 @@ export const workspaceMessages = {
     "en": "Initialize project"
   },
   "workspace.initHelp": {
-    "fr": "Conversation de setup : le Majordome analyse le repo, propose conventions/règles/hooks/board, puis exécute",
+    "fr": "Conversation d’initialisation : le Majordome analyse le dépôt, propose conventions, règles, automatisations et tableau, puis exécute",
     "en": "Setup conversation: the Majordomo analyzes the repository, proposes conventions/rules/hooks/board, then executes"
   },
   "workspace.majordomoMissing": {
@@ -96,7 +96,7 @@ export const workspaceMessages = {
     "en": "Majordomo not found"
   },
   "workspace.initPrompt": {
-    "fr": "Initialise ce projet : analyse le repo et propose-moi le plan de setup (conventions, protections git, board initial, agents).",
+    "fr": "Initialise ce projet : analyse le dépôt et propose-moi le plan de configuration (conventions, protections git, tableau initial, agents).",
     "en": "Initialize this project: analyze the repository and propose a setup plan (conventions, Git safeguards, initial board, agents)."
   },
   "workspace.noChanges": {
@@ -124,7 +124,7 @@ export const workspaceMessages = {
     "en": "(untitled)"
   },
   "workspace.noConversations": {
-    "fr": "Aucune conversation dans ce workspace. Ouvre l’onglet Chef de projet pour commencer.",
+    "fr": "Aucune conversation dans cet espace de travail. Ouvre l’onglet Chef de projet pour commencer.",
     "en": "No conversations in this workspace. Open the Project manager tab to get started."
   },
   "workspace.noTeam": {
@@ -188,7 +188,7 @@ export const workspaceMessages = {
     "en": "Column"
   },
   "workspace.labels": {
-    "fr": "Labels (virgules)",
+    "fr": "Étiquettes (séparées par des virgules)",
     "en": "Labels (comma-separated)"
   },
   "workspace.assignee": {
@@ -200,7 +200,7 @@ export const workspaceMessages = {
     "en": "— unassigned —"
   },
   "workspace.nothingToLink": {
-    "fr": "Aucune conversation à lier dans ce workspace.",
+    "fr": "Aucune conversation à lier dans cet espace de travail.",
     "en": "No conversations to link in this workspace."
   },
   "workspace.activityLoading": {
@@ -240,7 +240,7 @@ export const workspaceMessages = {
     "en": "Save changes before starting the agent"
   },
   "workspace.startHelp": {
-    "fr": "Créer une conversation avec l’agent assigné dans ce workspace",
+    "fr": "Créer une conversation avec l’agent assigné dans cet espace de travail",
     "en": "Create a conversation with the assigned agent in this workspace"
   },
   "workspace.assignFirst": {

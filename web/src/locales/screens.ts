@@ -4,11 +4,11 @@ export const screensMessages = {
     "en": "Agents"
   },
   "screens.agentsSub": {
-    "fr": "Un agent = fournisseur + modèle + thinking + skills + MCP + prompt de scope + subagents.",
+    "fr": "Un agent = fournisseur + modèle + raisonnement + compétences + MCP + instructions système + sous-agents.",
     "en": "An agent = provider + model + thinking + skills + MCP + scope prompt + subagents."
   },
   "screens.importSkills": {
-    "fr": "Importer des skills",
+    "fr": "Importer des compétences",
     "en": "Import skills"
   },
   "screens.newAgent": {
@@ -76,11 +76,11 @@ export const screensMessages = {
     "en": "Source"
   },
   "screens.sourceHint": {
-    "fr": "Repo GitHub (IgnitionAI/skills), chemin local, ou commande CLI : npx aiblueprint-cli@latest skills update",
+    "fr": "Dépôt GitHub (IgnitionAI/skills), chemin local, ou commande CLI : npx aiblueprint-cli@latest skills update",
     "en": "GitHub repo (IgnitionAI/skills), local path, or CLI command: npx aiblueprint-cli@latest skills update"
   },
   "screens.overwrite": {
-    "fr": "Écraser les skills existants du même nom",
+    "fr": "Écraser les compétences existantes du même nom",
     "en": "Overwrite existing skills with the same name"
   },
   "screens.importing": {
@@ -104,11 +104,11 @@ export const screensMessages = {
     "en": "Operation failed. Try again."
   },
   "screens.retryOptions": {
-    "fr": "Réessayer le chargement des fournisseurs et skills",
+    "fr": "Réessayer le chargement des fournisseurs et compétences",
     "en": "Retry loading providers and skills"
   },
   "screens.loadingOptions": {
-    "fr": "Chargement des fournisseurs et skills…",
+    "fr": "Chargement des fournisseurs et compétences…",
     "en": "Loading providers and skills…"
   },
   "screens.name": {
@@ -144,19 +144,19 @@ export const screensMessages = {
     "en": "Description"
   },
   "screens.scope": {
-    "fr": "Prompt de scope (system prompt)",
+    "fr": "Instructions système et périmètre",
     "en": "Scope prompt (system prompt)"
   },
   "screens.scopeExample": {
-    "fr": "Tu es l'agent… Ton scope : …",
+    "fr": "Tu es l’agent… Ton périmètre : …",
     "en": "You are the agent… Your scope: …"
   },
   "screens.searchSkill": {
-    "fr": "Rechercher un skill",
+    "fr": "Rechercher une compétence",
     "en": "Search for a skill"
   },
   "screens.searchSkillPlaceholder": {
-    "fr": "Rechercher un skill…",
+    "fr": "Rechercher une compétence…",
     "en": "Search for a skill…"
   },
   "screens.mcpNamePlaceholder": {
@@ -196,11 +196,11 @@ export const screensMessages = {
     "en": "thinking…"
   },
   "screens.subPromptPlaceholder": {
-    "fr": "system prompt du subagent",
+    "fr": "instructions système du sous-agent",
     "en": "subagent system prompt"
   },
   "screens.addSubagent": {
-    "fr": "+ Subagent",
+    "fr": "+ Sous-agent",
     "en": "+ Subagent"
   },
   "screens.validationHint": {
@@ -436,7 +436,7 @@ export const screensMessages = {
     "en": "Cron"
   },
   "screens.cronSub": {
-    "fr": "Exécute un prompt avec un agent à heure fixe. Le serveur Cogitator doit rester démarré.",
+    "fr": "Envoie des instructions à un agent à heure fixe. Le serveur Cogitator doit rester démarré.",
     "en": "Run a prompt with an agent on a schedule. The Cogitator server must remain running."
   },
   "screens.newTask": {
@@ -448,7 +448,7 @@ export const screensMessages = {
     "en": "No tasks"
   },
   "screens.cronEmpty": {
-    "fr": "Choisis un agent, un workspace et une fréquence. Le serveur doit rester démarré.",
+    "fr": "Choisis un agent, un espace de travail et une fréquence. Le serveur doit rester démarré.",
     "en": "Choose an agent, workspace and schedule. The server must remain running."
   },
   "screens.scheduledTasks": {
@@ -520,7 +520,7 @@ export const screensMessages = {
     "en": "New cron task"
   },
   "screens.cronPrerequisites": {
-    "fr": "Crée un agent et un workspace avant de planifier une tâche.",
+    "fr": "Crée un agent et un espace de travail avant de planifier une tâche.",
     "en": "Create an agent and a workspace before scheduling a task."
   },
   "screens.cronExpression": {
@@ -532,11 +532,11 @@ export const screensMessages = {
     "en": "5 fields: minute hour day month weekday, e.g. 0 9 * * 1-5. Server-local timezone (not the browser’s)."
   },
   "screens.executionPrompt": {
-    "fr": "Prompt envoyé à l’exécution",
+    "fr": "Instructions envoyées à l’exécution",
     "en": "Prompt sent on execution"
   },
   "screens.workspace": {
-    "fr": "Workspace",
+    "fr": "Espace de travail",
     "en": "Workspace"
   },
   "screens.output": {
@@ -576,19 +576,19 @@ export const screensMessages = {
     "en": "Save task"
   },
   "screens.workspaces": {
-    "fr": "Workspaces",
+    "fr": "Espaces de travail",
     "en": "Workspaces"
   },
   "screens.workspacesSub": {
-    "fr": "Un dossier = un workspace. Sessions, skills et config projet pi s'y rattachent.",
+    "fr": "Un dossier = un espace de travail. Sessions, compétences et configuration du projet pi s’y rattachent.",
     "en": "A folder = a workspace. Sessions, skills and pi project configuration belong to it."
   },
   "screens.addWorkspace": {
-    "fr": "Ajouter un workspace",
+    "fr": "Ajouter un espace de travail",
     "en": "Add workspace"
   },
   "screens.noWorkspaces": {
-    "fr": "Aucun workspace",
+    "fr": "Aucun espace de travail",
     "en": "No workspaces"
   },
   "screens.addFolder": {
@@ -596,7 +596,7 @@ export const screensMessages = {
     "en": "Add folder"
   },
   "screens.workspaceEmpty": {
-    "fr": "Ajoute un dossier de projet pour y rattacher conversations et board.",
+    "fr": "Ajoute un dossier de projet pour y rattacher conversations et tableau.",
     "en": "Add a project folder to attach conversations and a board."
   },
   "screens.activityPrefix": {
@@ -632,7 +632,7 @@ export const screensMessages = {
     "en": "Files"
   },
   "screens.projectBoard": {
-    "fr": "Board kanban du projet",
+    "fr": "Tableau kanban du projet",
     "en": "Project kanban board"
   },
   "screens.board": {
@@ -700,7 +700,7 @@ export const screensMessages = {
     "en": "Model for {name}"
   },
   "screens.importResult": {
-    "fr": "Skills importés : {imported} ; ignorés : {skipped}",
+    "fr": "Compétences importées : {imported} ; ignorées : {skipped}",
     "en": "Skills imported: {imported}; skipped: {skipped}"
   },
   "screens.mcpRequired": {
@@ -708,7 +708,7 @@ export const screensMessages = {
     "en": "MCP {number}: name and command or URL required. Remove the row if unused."
   },
   "screens.subRequired": {
-    "fr": "Subagent {number} : nom, fournisseur et modèle requis. Retire la ligne si elle est inutile.",
+    "fr": "Sous-agent {number} : nom, fournisseur et modèle requis. Retire la ligne si elle est inutile.",
     "en": "Subagent {number}: name, provider and model required. Remove the row if unused."
   },
   "screens.editNamed": {
@@ -728,35 +728,35 @@ export const screensMessages = {
     "en": "MCP arguments {number}"
   },
   "screens.subName": {
-    "fr": "Nom du subagent {number}",
+    "fr": "Nom du sous-agent {number}",
     "en": "Subagent name {number}"
   },
   "screens.subProvider": {
-    "fr": "Fournisseur du subagent {number}",
+    "fr": "Fournisseur du sous-agent {number}",
     "en": "Subagent provider {number}"
   },
   "screens.subModel": {
-    "fr": "Modèle du subagent {number}",
+    "fr": "Modèle du sous-agent {number}",
     "en": "Subagent model {number}"
   },
   "screens.subDescription": {
-    "fr": "Description du subagent {number}",
+    "fr": "Description du sous-agent {number}",
     "en": "Subagent description {number}"
   },
   "screens.subThinking": {
-    "fr": "Thinking du subagent {number}",
+    "fr": "Raisonnement du sous-agent {number}",
     "en": "Subagent thinking {number}"
   },
   "screens.subPrompt": {
-    "fr": "Prompt du subagent {number}",
+    "fr": "Instructions du sous-agent {number}",
     "en": "Subagent prompt {number}"
   },
   "screens.agentCounts": {
-    "fr": "Skills : {skills} · MCP : {mcp} · Subagents : {subagents}",
+    "fr": "Compétences : {skills} · MCP : {mcp} · Sous-agents : {subagents}",
     "en": "Skills: {skills} · MCP: {mcp} · Subagents: {subagents}"
   },
   "screens.selectedSkills": {
-    "fr": "Skills sélectionnés : {count}",
+    "fr": "Compétences sélectionnées : {count}",
     "en": "Selected skills: {count}"
   },
   "screens.mcpCount": {
@@ -764,7 +764,7 @@ export const screensMessages = {
     "en": "MCP servers ({count})"
   },
   "screens.subCount": {
-    "fr": "Subagents ({count}) — définitions générées à la sauvegarde",
+    "fr": "Sous-agents ({count}) — définitions générées à la sauvegarde",
     "en": "Subagents ({count}) — definitions generated on save"
   },
   "screens.unavailable": {
@@ -828,7 +828,7 @@ export const screensMessages = {
     "en": "Runs: {name}"
   },
   "screens.deleteWorkspace": {
-    "fr": "Supprimer le workspace \"{name}\" ? Les conversations deviennent libres ; les sessions pi restent sur disque.",
+    "fr": "Supprimer l’espace de travail \"{name}\" ? Les conversations deviennent libres ; les sessions pi restent sur disque.",
     "en": "Delete workspace \"{name}\"? Conversations become unassigned; pi sessions remain on disk."
   },
   "screens.activityFor": {

@@ -1,8 +1,11 @@
+import * as i18n from "../web/src/i18n.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+
+i18n.setLocale("fr");
 
 type Node = { type: unknown; props: Record<string, unknown> };
 const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve(); };
@@ -37,6 +40,7 @@ function harness(file: string, component: string, api: Record<string, (...args: 
   }).outputText, {
     exports, confirm: () => confirmed,
     require(name: string) {
+      if (name === "./i18n" || name === "../i18n") return i18n;
       if (name === "react") return react;
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (name.endsWith("/api")) return { api };
@@ -117,7 +121,7 @@ test("dialog mutation failures remain visible inline and preserve form values fo
   }, { workspaceId: "fixture", onClose() {}, onCreated() {} });
   change(card.get((n) => n.type === "input"), "Carte à conserver");
   click(card.get((n) => n.type === "button")); await settle();
-  assert.equal(card.get((n) => n.props.role === "alert").props.children, "Création refusée");
+  assert.equal(card.get((n) => n.props.role === "alert").props.children, "Erreur : Création refusée");
   assert.equal(card.get((n) => n.type === "input").props.value, "Carte à conserver");
   assert.equal(card.get((n) => n.type === "button").props.disabled, false);
 

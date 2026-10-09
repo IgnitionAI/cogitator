@@ -34,4 +34,4 @@ Precise, industrial, quiet. Three words: exact, dense, unobtrusive. Feels like a
 
 ## Accessibility & Inclusion
 
-WCAG 2.2 AA. Visible `:focus-visible` rings. Every icon-only control named. Reduced motion keeps opacity, drops movement. French UI. Single dark theme in v1 (local control tool).
+WCAG 2.2 AA. Visible `:focus-visible` rings. Every icon-only control named. Reduced motion keeps opacity, drops movement. English and French UI with a persistent language selector. Single dark theme in v1 (local control tool).

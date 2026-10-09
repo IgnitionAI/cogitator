@@ -14,7 +14,9 @@
 
 Cogitator lets you orchestrate pi processes from your browser: compose agents from a provider, model, thinking level, skills, MCP servers, and subagents; manage project workspaces; and dispatch work through a kanban board backed by **GitHub Issues**. Track the work through modified files, diffs, and a chronological activity feed.
 
-The application currently has a French-language interface. The documentation is in English.
+The entire application interface is available in **English and French**. Use the **Language / Langue** selector in the sidebar (inside the menu on mobile). The first visit follows the browser’s supported language preference, falling back to English; your choice is remembered locally and updates open screens without losing drafts. Dates and numbers follow the selected language, without changing the scheduling timezone.
+
+User content, agent responses, editable agent presets, code, files, and technical identifiers are preserved as authored. Cogitator’s controls and diagnostic explanations are translated; external diagnostic details remain available in their original form. The documentation is in English.
 
 ## Installation
 

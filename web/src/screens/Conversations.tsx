@@ -1,3 +1,4 @@
+import { t, formatNumber, statusLabel, thinkingLabel, localizeText } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, openEvents, type EventConnectionState } from "../api";
 import { THINKING_LEVELS } from "../types";
@@ -15,7 +16,7 @@ import { parseUIResponse, uiRequestKey, type UIResponse } from "../../../src/gen
 
 let nextChatItemKey = 0;
 type ChatItem = (
-  | { kind: "user"; text: string }
+  | { kind: "user"; text: string; attachmentCount?: number }
   | { kind: "skill"; name: string; text: string; rest?: string }
   | { kind: "assistant"; text: string }
   | { kind: "thinking"; text: string }
@@ -61,7 +62,7 @@ function applyEvent(prev: ChatItem[], ev: SseEvent, st: StreamState): ChatItem[]
         case "toolcall_start": {
           const index = prev.length;
           if (ame.contentIndex !== undefined) st.toolByContent[ame.contentIndex] = index;
-          return [...prev, { kind: "tool", id: ame.id, text: ame.toolName ?? "outil", state: "running" }];
+          return [...prev, { kind: "tool", id: ame.id, text: ame.toolName ?? "", state: "running" }];
         }
         case "toolcall_end": {
           const index = ame.contentIndex !== undefined ? st.toolByContent[ame.contentIndex] : undefined;
@@ -87,7 +88,7 @@ function applyEvent(prev: ChatItem[], ev: SseEvent, st: StreamState): ChatItem[]
         ...(ev.type === "tool_execution_end" ? { state: "done" as const, isError: ev.isError === true } : {}),
       };
       return index >= 0 ? patchAt(prev, index, patch) : [...prev, {
-        kind: "tool", id: ev.toolCallId, text: ev.toolName ?? "outil", state: "running", ...patch,
+        kind: "tool", id: ev.toolCallId, text: ev.toolName ?? "", state: "running", ...patch,
       }];
     }
     case "agent_end": {
@@ -218,49 +219,49 @@ export default function Conversations({ initialOpenId, onConsumeInitial }: {
   return (
     <>
       <PageHead
-        title="Conversations"
-        sub={`${conversations.length} session${conversations.length === 1 ? "" : "s"} · ${conversations.filter((c) => c.status === "active").length} active${conversations.filter((c) => c.status === "active").length === 1 ? "" : "s"}`}
+        title={t("chat.conversations")}
+        sub={`${t(conversations.length === 1 ? "chat.session" : "chat.sessions", { count: formatNumber(conversations.length) })} · ${t(conversations.filter((c) => c.status === "active").length === 1 ? "chat.activeSession" : "chat.activeSessions", { count: formatNumber(conversations.filter((c) => c.status === "active").length) })}`}
         actions={
           <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)}>
-            <Icon name="plus" /> Nouvelle conversation
+            <Icon name="plus" /> {t("chat.new")}
           </button>
         }
       />
-      <ErrorText error={error} />
-      {error ? <button type="button" className="btn btn-sm" onClick={refresh}>Réessayer</button> : null}
+      <ErrorText error={error ? localizeText(error) : null} />
+      {error ? <button type="button" className="btn btn-sm" onClick={refresh}>{t("chat.retry")}</button> : null}
       {!ready ? (
         <Skeleton />
       ) : error && conversations.length === 0 ? null : conversations.length === 0 ? (
         <Empty
-          title="Aucune conversation"
+          title={t("chat.noConversations")}
           action={
             <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)}>
-              <Icon name="plus" /> Nouvelle conversation
+              <Icon name="plus" /> {t("chat.new")}
             </button>
           }
         >
-          Crée-en une avec un agent, ou en provider libre.
+          {t("chat.createHint")}
         </Empty>
       ) : (
         <div className="list">
           {conversations.map((c) => (
             <div key={c.id} className="list-row">
               <button type="button" className="list-main" onClick={() => setOpenId(c.id)}>
-                <span className="list-title">{c.title || "Sans titre"}</span>
+                <span className="list-title">{c.title || t("chat.untitled")}</span>
                 <span className="list-meta">
-                  <span className="mono">{c.provider}/{c.model}{c.thinking ? `:${c.thinking}` : ""}</span>
-                  <span>{c.workspace_dir ? c.workspace_dir.split("/").pop() : "libre"}</span>
+                  <span className="mono">{c.provider}/{c.model}{c.thinking ? `:${thinkingLabel(c.thinking)}` : ""}</span>
+                  <span>{c.workspace_dir ? c.workspace_dir.split("/").pop() : t("chat.free")}</span>
                 </span>
               </button>
-              <Badge color={statusColor(c.status)}>{c.status}</Badge>
+              <Badge color={statusColor(c.status)}>{statusLabel(c.status)}</Badge>
               <IconBtn
                 name="trash"
-                label={`Supprimer la conversation ${c.title || "sans titre"}`}
+                label={t("chat.deleteTitle", { title: c.title || t("chat.untitledLower") })}
                 danger
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (confirm("Supprimer cette conversation de Cogitator ? Le fichier .jsonl pi est conservé.")) {
-                    api.deleteConversation(c.id).then(refresh).catch((err: Error) => toast(err.message, true));
+                  if (confirm(t("chat.deleteConfirm"))) {
+                    api.deleteConversation(c.id).then(refresh).catch((err: Error) => toast(localizeText(err.message), true));
                   }
                 }}
               />
@@ -352,7 +353,7 @@ export function ChatView(props: {
         return recovered;
       });
     }).catch((e: Error) => {
-      setHistoryError(`Historique indisponible : ${e.message}`);
+      setHistoryError(e.message);
       setHistoryReady(true);
     });
     refreshFiles();
@@ -422,9 +423,9 @@ export function ChatView(props: {
       if (draftRevision.current === sentRevision) setInput("");
       setImages((prev) => prev.filter((image) => !toSend.includes(image)));
       // écho local : le flux SSE de pi ne contient pas les messages utilisateur
-      setTimeline((prev) => [...prev, { kind: "user", text: text || "image(s) jointe(s)", key: ++nextChatItemKey }]);
+      setTimeline((prev) => [...prev, { kind: "user", text, attachmentCount: !text ? toSend.length : undefined, key: ++nextChatItemKey }]);
     } catch (e) {
-      setSendError(`Envoi impossible : ${(e as Error).message}. Ton brouillon est conservé, réessaie avec Envoyer.`);
+      setSendError((e as Error).message);
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -433,7 +434,7 @@ export function ChatView(props: {
   };
 
   const sendInteraction = async (text: string) => {
-    if (busyRef.current) throw new Error("Un envoi est en cours. Réessaie dans un instant.");
+    if (busyRef.current) throw new Error(t("chat.sendingBusy"));
     busyRef.current = true;
     setBusy(true);
     try {
@@ -451,19 +452,19 @@ export function ChatView(props: {
     const response = parseUIResponse(item.text);
     if (response) responses.set(uiRequestKey(response.request), response);
   }
-  const statusText = running ? "En cours" : ({ idle: "Prêt", active: "Prêt", running: "En cours", spawning: "Démarrage", dead: "Session arrêtée", error: "Erreur" }[sessionStatus] ?? sessionStatus);
-  const connectionText = connection === "connected" ? "Connecté" : connection === "reconnecting" ? "Reconnexion…" : connection === "closed" ? "Connexion interrompue" : "Connexion…";
+  const statusText = running ? t("chat.running") : ({ idle: t("chat.ready"), active: t("chat.ready"), running: t("chat.running"), spawning: t("chat.starting"), dead: t("chat.stopped"), error: t("chat.error") }[sessionStatus] ?? sessionStatus);
+  const connectionText = connection === "connected" ? t("chat.connected") : connection === "reconnecting" ? t("chat.reconnecting") : connection === "closed" ? t("chat.disconnected") : t("chat.connecting");
 
   const addFiles = (files: Iterable<File>) => {
     for (const file of files) {
-      if (!file.type.startsWith("image/")) { toast("Seules les images peuvent être jointes.", true); continue; }
+      if (!file.type.startsWith("image/")) { toast(t("chat.imagesOnly"), true); continue; }
       const reader = new FileReader();
       reader.onload = () => {
         const dataUrl = String(reader.result ?? "");
         const base64 = dataUrl.split(",")[1] ?? "";
         if (base64) setImages((prev) => [...prev, { type: "image" as const, data: base64, mimeType: file.type }]);
       };
-      reader.onerror = () => toast(`Lecture impossible : ${file.name}`, true);
+      reader.onerror = () => toast(t("chat.readFailed", { name: file.name }), true);
       reader.readAsDataURL(file);
     }
   };
@@ -472,11 +473,11 @@ export function ChatView(props: {
   return (
     <div className="chat">
       <header className="chat-head">
-        <button type="button" className="btn btn-sm chat-back" aria-label={props.embedded ? "Retour au tableau" : "Retour aux conversations"} onClick={props.onClose}>
-          <Icon name="back" /> <span className="chat-back-label">Retour</span>
+        <button type="button" className="btn btn-sm chat-back" aria-label={props.embedded ? t("chat.backBoard") : t("chat.backConversations")} onClick={props.onClose}>
+          <Icon name="back" /> <span className="chat-back-label">{t("chat.back")}</span>
         </button>
         <div className="chat-heading">
-          <Title>{conversation.title || "Sans titre"}</Title>
+          <Title>{conversation.title || t("chat.untitled")}</Title>
           <div className="chat-context"><span className="mono">{conversation.provider} / {conversation.model}</span><span className="chat-connection" role="status">{connectionText}</span></div>
         </div>
         <span className={`chat-state ${running ? "is-running" : sessionStatus === "error" || sessionStatus === "dead" ? "is-error" : ""}`} role="status"><Icon name={running ? "activity" : sessionStatus === "error" || sessionStatus === "dead" ? "warning" : "check"} size={14} />{statusText}</span>
@@ -485,52 +486,52 @@ export function ChatView(props: {
           className={`btn btn-sm ${filesPanel ? "btn-primary" : ""}`}
           onClick={() => { setFilesPanel((v) => !v); refreshFiles(); }}
           aria-pressed={filesPanel}
-          title="Fichiers modifiés dans cette conversation"
+          title={t("chat.changedFilesTitle")}
         >
-          <Icon name="files" /> Fichiers{files.length > 0 ? ` (${files.length})` : ""}
+          <Icon name="files" /> {t("chat.files")}{files.length > 0 ? ` (${formatNumber(files.length)})` : ""}
         </button>
         {busy || running || sessionStatus === "running" ? (
-          <button type="button" className="btn btn-sm btn-danger" onClick={() => api.stopConversation(conversation.id).catch((e: Error) => toast(e.message, true))}>
-            <Icon name="stop" /> Arrêter
+          <button type="button" className="btn btn-sm btn-danger" onClick={() => api.stopConversation(conversation.id).catch((e: Error) => toast(localizeText(e.message), true))}>
+            <Icon name="stop" /> {t("chat.stop")}
           </button>
         ) : null}
         <IconBtn
           name="trash"
-          label="Supprimer la conversation"
+          label={t("chat.delete")}
           danger
           onClick={() => {
-            if (confirm("Supprimer cette conversation de Cogitator ? Le fichier .jsonl pi est conservé.")) {
-              api.deleteConversation(conversation.id).then(props.onDeleted).catch((e: Error) => toast(e.message, true));
+            if (confirm(t("chat.deleteConfirm"))) {
+              api.deleteConversation(conversation.id).then(props.onDeleted).catch((e: Error) => toast(localizeText(e.message), true));
             }
           }}
         />
       </header>
       <div className="chat-body">
       <div className="chat-main">
-      <div className="chat-scroll" ref={scrollRef} role="log" aria-label="Historique de la conversation" aria-live="off" tabIndex={0}
+      <div className="chat-scroll" ref={scrollRef} role="log" aria-label={t("chat.history")} aria-live="off" tabIndex={0}
         onScroll={(e) => {
           const node = e.currentTarget;
           nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight <= 80;
           setShowLatest(!nearBottom.current);
         }}
       >
-        <ErrorText error={historyError} />
-        {historyError ? <button type="button" className="btn btn-sm" onClick={() => loadHistory()}>Réessayer l’historique</button> : null}
+        <ErrorText error={historyError ? t("chat.historyError", { error: localizeText(historyError) }) : null} />
+        {historyError ? <button type="button" className="btn btn-sm" onClick={() => loadHistory()}>{t("chat.retryHistory")}</button> : null}
         {!historyReady && timeline.length === 0 ? <Skeleton /> : null}
         {historyReady && !historyError && timeline.length === 0 ? (
-        <Empty title="Que souhaites-tu construire ?">
-          Décris le résultat attendu. L’agent peut répondre avec du texte, utiliser ses outils ou te proposer une interface interactive.
+        <Empty title={t("chat.emptyChat")}>
+          {t("chat.chatHint")}
         </Empty>
       ) : null}
         {timeline.map((m, i) => {
-          if (m.kind === "status") return <div key={m.key ?? i} className="msg-status">{m.text}</div>;
+          if (m.kind === "status") return <div key={m.key ?? i} className="msg-status">{m.text === "Tour terminé" ? t("chat.turnDone") : localizeText(m.text)}</div>;
           if (m.kind === "skill") {
             return (
               <div key={m.key ?? i} className="skill-card">
                 <button type="button" className="skill-head" aria-expanded={expanded.has(i)} onClick={() => toggle(expanded, setExpanded, i)}>
                   <span className="skill-pill"><Icon name="spark" size={14} /></span>
                   <span className="skill-name">{m.name}</span>
-                  <span className="tool-meta">{m.text.length.toLocaleString()} caractères</span>
+                  <span className="tool-meta">{t(m.text.length === 1 ? "chat.character" : "chat.characters", { count: formatNumber(m.text.length) })}</span>
                   <span className={`chevron ${expanded.has(i) ? "open" : ""}`}>▸</span>
                 </button>
                 {expanded.has(i) ? <div className="skill-body"><Markdown text={m.text} /></div> : null}
@@ -543,18 +544,18 @@ export function ChatView(props: {
               <div key={m.key ?? i} className="msg-thinking">
                 <button type="button" className="thinking-head" aria-expanded={openThinking.has(i)} onClick={() => toggle(openThinking, setOpenThinking, i)}>
                   <span className={`chevron ${openThinking.has(i) ? "open" : ""}`}>▸</span>
-                  Réflexion · {m.text.length.toLocaleString()} caractères
+                  {t("chat.thinking")} · {t(m.text.length === 1 ? "chat.character" : "chat.characters", { count: formatNumber(m.text.length) })}
                 </button>
                 {openThinking.has(i) ? <div className="thinking-body">{m.text}</div> : null}
               </div>
             );
           }
-          if (m.kind === "tool") return <ToolResult key={m.key ?? i} name={m.text} args={m.args} result={m.result} isError={m.isError} state={m.state} />;
+          if (m.kind === "tool") return <ToolResult key={m.key ?? i} name={m.text || t("chat.tool")} args={m.args} result={m.result} isError={m.isError} state={m.state} />;
           const isLastAssistant = m.kind === "assistant" && i === timeline.length - 1;
           return (
-            <div key={m.key ?? i} className={`msg msg-${m.kind}`} role="article" aria-label={m.kind === "user" ? "Message de vous" : "Message de l’agent"}>
-              <div className="message-label"><Icon name={m.kind === "user" ? "users" : "bot"} size={14} />{m.kind === "user" ? "Vous" : "Agent"}</div>
-              {m.kind === "assistant" ? <AssistantContent text={m.text} responses={responses} disabled={busy || running} streaming={streaming && i === streamRef.current.assistantIndex} onSubmit={sendInteraction} /> : <UserContent text={m.text} />}
+            <div key={m.key ?? i} className={`msg msg-${m.kind}`} role="article" aria-label={m.kind === "user" ? t("chat.userMessage") : t("chat.agentMessage")}>
+              <div className="message-label"><Icon name={m.kind === "user" ? "users" : "bot"} size={14} />{m.kind === "user" ? t("chat.you") : t("chat.agent")}</div>
+              {m.kind === "assistant" ? <AssistantContent text={m.text} responses={responses} disabled={busy || running} streaming={streaming && i === streamRef.current.assistantIndex} onSubmit={sendInteraction} /> : m.attachmentCount ? <span>{t(m.attachmentCount === 1 ? "chat.attachedImage" : "chat.attachedImages", { count: formatNumber(m.attachmentCount) })}</span> : <UserContent text={m.text} />}
               {isLastAssistant && streaming ? <span className="caret" /> : null}
             </div>
           );
@@ -563,11 +564,11 @@ export function ChatView(props: {
           <div className="msg msg-user thumbs">
             {images.map((img, i) => (
               <span key={i} className="thumb">
-                <img src={`data:${img.mimeType};base64,${img.data}`} alt={`Pièce jointe ${i + 1}`} />
-                <IconBtn name="close" label={`Retirer l'image ${i + 1}`} onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))} />
+                <img src={`data:${img.mimeType};base64,${img.data}`} alt={t("chat.attachment", { number: formatNumber(i + 1) })} />
+                <IconBtn name="close" label={t("chat.removeImage", { number: formatNumber(i + 1) })} onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))} />
               </span>
             ))}
-            <span className="muted" style={{ fontSize: 12 }}>{images.length} image(s) à envoyer</span>
+            <span className="muted" style={{ fontSize: 12 }}>{t(images.length === 1 ? "chat.imageToSend" : "chat.imagesToSend", { count: formatNumber(images.length) })}</span>
           </div>
         ) : null}
       </div>
@@ -575,9 +576,9 @@ export function ChatView(props: {
         nearBottom.current = true;
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
         setShowLatest(false);
-      }}><Icon name="download" size={14} /> Derniers messages</button> : null}
+      }}><Icon name="download" size={14} /> {t("chat.latest")}</button> : null}
       <div className="composer">
-      <ErrorText error={sendError} />
+      <ErrorText error={sendError ? t("chat.sendError", { error: localizeText(sendError) }) : null} />
       <div className="chat-input">
         <input
           ref={fileRef}
@@ -592,9 +593,9 @@ export function ChatView(props: {
         />
         <textarea
           ref={taRef}
-          aria-label="Message à l’agent"
+          aria-label={t("chat.message")}
           value={input}
-          placeholder="Décris ta demande…"
+          placeholder={t("chat.placeholder")}
           aria-describedby="composer-hint"
           onChange={(e) => updateInput(e.target.value)}
           onPaste={(e) => {
@@ -612,33 +613,33 @@ export function ChatView(props: {
           }}
         />
         <div className="composer-tools">
-          <IconBtn name="paperclip" label="Joindre une image" onClick={() => fileRef.current?.click()} />
-          <select value="" aria-label="Charger un skill" title="Charger un skill dans le message" onChange={(e) => {
+          <IconBtn name="paperclip" label={t("chat.attach")} onClick={() => fileRef.current?.click()} />
+          <select value="" aria-label={t("chat.loadSkill")} title={t("chat.loadSkillTitle")} onChange={(e) => {
             if (!e.target.value) return;
             updateInput((value) => `/skill:${e.target.value} ${value}`.trimEnd() + " ");
             taRef.current?.focus();
           }}>
-            <option value="">Skills…</option>
+            <option value="">{t("chat.skills")}</option>
             {skills.map((skill) => <option key={skill.name} value={skill.name}>{skill.name}</option>)}
           </select>
         </div>
         <button type="button" className="btn btn-primary" onClick={() => void send()} disabled={busy || (!input.trim() && images.length === 0)}>
-          {busy ? <Spinner /> : <Icon name="send" />} <span className="composer-send-label">Envoyer</span>
+          {busy ? <Spinner /> : <Icon name="send" />} <span className="composer-send-label">{t("chat.send")}</span>
         </button>
       </div>
-      <div id="composer-hint" className="composer-hint"><span>Entrée pour envoyer <span aria-hidden="true">·</span> Maj + Entrée pour une nouvelle ligne</span><span>{running ? "L’agent travaille" : "Les réponses interactives sont transmises à l’agent"}</span></div>
+      <div id="composer-hint" className="composer-hint"><span>{t("chat.keyboardHint")}</span><span>{running ? t("chat.working") : t("chat.interactionHint")}</span></div>
       </div>
       </div>
       {filesPanel ? (
         <aside className="chat-side">
           <div className="chat-side-head">
-            <span>Fichiers modifiés</span>
-            <span className="muted">{files.length}</span>
+            <span>{t("chat.changedFiles")}</span>
+            <span className="muted">{formatNumber(files.length)}</span>
           </div>
-          {filesLoading ? <p role="status">Chargement des fichiers…</p> : null}
-          {filesError ? <div className="error-text" role="alert">{filesError} <button type="button" className="btn btn-sm" onClick={refreshFiles}>Réessayer</button></div> : null}
+          {filesLoading ? <p role="status">{t("chat.loadingFiles")}</p> : null}
+          {filesError ? <div className="error-text" role="alert">{localizeText(filesError)} <button type="button" className="btn btn-sm" onClick={refreshFiles}>{t("chat.retry")}</button></div> : null}
           {!filesLoading && !filesError && files.length === 0 ? (
-            <Empty>Aucun fichier modifié pour l'instant.</Empty>
+            <Empty>{t("chat.noFiles")}</Empty>
           ) : !filesLoading && !filesError ? (
             <div className="chat-side-list">
               {files.map((f) => (
@@ -726,59 +727,59 @@ function NewConversationModal(props: {
   };
 
   return (
-    <Modal title="Nouvelle conversation" onClose={() => { if (!pending.current) props.onClose(); }}>
-      {createError ? <p className="error-text" role="alert">{createError}</p> : null}
-      {loading ? <p role="status">Chargement des agents et fournisseurs…</p> : null}
-      {error ? <div className="error-text" role="alert">{error} <button type="button" className="btn btn-sm" onClick={() => setRetry((n) => n + 1)}>Réessayer</button></div> : null}
+    <Modal title={t("chat.new")} onClose={() => { if (!pending.current) props.onClose(); }}>
+      {createError ? <p className="error-text" role="alert">{localizeText(createError)}</p> : null}
+      {loading ? <p role="status">{t("chat.loadingOptions")}</p> : null}
+      {error ? <div className="error-text" role="alert">{localizeText(error)} <button type="button" className="btn btn-sm" onClick={() => setRetry((n) => n + 1)}>{t("chat.retry")}</button></div> : null}
       <fieldset disabled={busy || loading || Boolean(error)} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-      <Field label="Mode">
+      <Field label={t("chat.mode")}>
         <select value={mode} onChange={(e) => setMode(e.target.value as "agent" | "free")}>
-          <option value="agent">Agent configuré</option>
-          <option value="free">Fournisseur libre</option>
+          <option value="agent">{t("chat.configuredAgent")}</option>
+          <option value="free">{t("chat.freeProvider")}</option>
         </select>
       </Field>
       {mode === "agent" ? (
-        <Field label="Agent">
+        <Field label={t("chat.agent")}>
           <select value={agentId} onChange={(e) => setAgentId(e.target.value)}>
             {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </Field>
       ) : (
         <div className="form-row">
-          <Field label="Fournisseur">
+          <Field label={t("chat.provider")}>
             <select value={providerId} onChange={(e) => { setProviderId(e.target.value); setModel(""); }}>
               {providers.map((p) => <option key={p.id} value={p.id}>{p.id} {p.auth.ready ? "✓" : "⚠"}</option>)}
             </select>
           </Field>
-          <Field label="Modèle">
+          <Field label={t("chat.model")}>
             <select value={model} onChange={(e) => setModel(e.target.value)}>
-              <option value="">(défaut)</option>
+              <option value="">{t("chat.default")}</option>
               {models.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
             </select>
           </Field>
           {mode === "free" ? (
-            <Field label="Réflexion (optionnel)">
+            <Field label={t("chat.thinkingOptional")}>
               <select value={thinking} onChange={(e) => setThinking(e.target.value)}>
-                <option value="">(défaut)</option>
-                {THINKING_LEVELS.map((t) => <option key={t} value={t}>{t}</option>)}
+                <option value="">{t("chat.default")}</option>
+                {THINKING_LEVELS.map((t) => <option key={t} value={t}>{thinkingLabel(t)}</option>)}
               </select>
             </Field>
           ) : null}
         </div>
       )}
-      <Field label="Workspace (optionnel)">
+      <Field label={t("chat.workspaceOptional")}>
         <select value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)}>
-          <option value="">— libre —</option>
+          <option value="">{t("chat.unassigned")}</option>
           {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
         </select>
       </Field>
-      <Field label="Prompt initial (optionnel)">
-        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Premier message…" />
+      <Field label={t("chat.initialPrompt")}>
+        <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={t("chat.firstMessage")} />
       </Field>
-      {!loading && !error && !canCreate ? <p role="status" className="muted">{mode === "agent" ? "Aucun agent disponible. Configure un agent dans Équipe / Agents ou choisis le mode Fournisseur libre." : "Aucun modèle disponible. Configure un fournisseur et ses modèles dans les paramètres."}</p> : null}
+      {!loading && !error && !canCreate ? <p role="status" className="muted">{mode === "agent" ? t("chat.noAgents") : t("chat.noModels")}</p> : null}
       <div className="toolbar">
         <button type="button" className="btn btn-primary" onClick={() => void create()} disabled={busy || !canCreate}>
-          {busy ? <><Spinner /> Création…</> : "Créer la conversation"}
+          {busy ? <><Spinner /> {t("chat.creating")}</> : t("chat.create")}
         </button>
       </div>
       </fieldset>

@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { UI_INSTRUCTIONS, parseUI, parseUIResponse, splitUIBlocks, uiRequestKey, type UIResponse } from "../../src/generative-ui";
 import { GenerativeUI, UIResponseSummary } from "./GenerativeUI";
 import { Markdown } from "./markdown";
@@ -25,9 +26,9 @@ export function UserContent({ text }: { text: string }) {
   if (response) return <UIResponseSummary response={response} />;
   if (text === UI_REQUEST) return (
     <details className="ui-request">
-      <summary>Demande d’interface interactive</summary>
-      <p>L’agent reçoit le format des composants disponibles. Aucune opération n’est autorisée par cette demande.</p>
-      <details><summary>Voir les instructions transmises</summary><pre tabIndex={0}>{text}</pre></details>
+      <summary>{t("chat.request")}</summary>
+      <p>{t("chat.requestSafety")}</p>
+      <details><summary>{t("chat.instructions")}</summary><pre tabIndex={0}>{text}</pre></details>
     </details>
   );
   return <Markdown text={text} />;

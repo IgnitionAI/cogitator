@@ -1,21 +1,23 @@
+import { t, formatDate, formatNumber, localizeText } from "./i18n";
+import type { workspaceMessages } from "./locales/workspace";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import type { AgentPreset, BoardCard, Conversation } from "./types";
 import { Field, Modal, useToast } from "./ui";
 
-const COLUMNS: Array<{ id: string; label: string }> = [
-  { id: "backlog", label: "À planifier" },
-  { id: "todo", label: "À faire" },
-  { id: "in_progress", label: "En cours" },
-  { id: "done", label: "Terminé" },
-  { id: "canceled", label: "Annulé" },
+const COLUMNS: Array<{ id: string; label: keyof typeof workspaceMessages }> = [
+  { id: "backlog", label: "workspace.backlog" },
+  { id: "todo", label: "workspace.todo" },
+  { id: "in_progress", label: "workspace.inProgress" },
+  { id: "done", label: "workspace.done" },
+  { id: "canceled", label: "workspace.canceled" },
 ];
 
-const PRIORITIES: Array<{ id: string; label: string; color: string }> = [
-  { id: "urgent", label: "Urgente", color: "#eb5757" },
-  { id: "high", label: "Haute", color: "#f2994a" },
-  { id: "medium", label: "Moyenne", color: "#8a8f98" },
-  { id: "low", label: "Basse", color: "var(--subtle)" },
+const PRIORITIES: Array<{ id: string; label: keyof typeof workspaceMessages; color: string }> = [
+  { id: "urgent", label: "workspace.urgent", color: "#eb5757" },
+  { id: "high", label: "workspace.high", color: "#f2994a" },
+  { id: "medium", label: "workspace.medium", color: "#8a8f98" },
+  { id: "low", label: "workspace.low", color: "var(--subtle)" },
 ];
 
 const LABEL_COLORS = ["#5e6ad2", "#4cb782", "#e2a336", "#eb5757", "#38bdf8", "#c084fc"];
@@ -61,29 +63,29 @@ export function BoardPanel(props: {
   return (
     <>
       <div className="toolbar" style={{ marginBottom: 12 }}>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>Ajouter une carte</button>
-        <button type="button" className="btn btn-sm" disabled={loading} onClick={refresh}>Actualiser</button>
+        <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>{t("workspace.addCard")}</button>
+        <button type="button" className="btn btn-sm" disabled={loading} onClick={refresh}>{t("workspace.refresh")}</button>
         <span className="muted" style={{ fontSize: 12 }}>
-          {cards.length} carte(s) · source : cogitator.board.json (visible dans l'arborescence, manipulable par les agents)
+          {t((cards.length) === 1 ? "workspace.cardCountOne" : "workspace.cardCountMany", { count: formatNumber(cards.length) })}
         </span>
       </div>
-      {loading ? <p role="status">Chargement du tableau…</p> : null}
-      {error ? <div role="alert" className="error-text">{error} <button type="button" className="btn btn-sm" onClick={refresh}>Réessayer</button></div> : null}
-      <div className="board" aria-busy={loading}>
+      {loading ? <p role="status">{t("workspace.boardLoading")}</p> : null}
+      {error ? <div role="alert" className="error-text">{t("workspace.error", { detail: localizeText(error) })} <button type="button" className="btn btn-sm" onClick={refresh}>{t("workspace.retry")}</button></div> : null}
+      <div className="board" data-scroll-hint={t("workspace.scrollBoard")} aria-busy={loading}>
         {COLUMNS.map((col) => {
           const colCards = cards.filter((c) => c.status === col.id);
           return (
             <div key={col.id} className="board-col">
               <div className="board-col-head">
-                {col.label} <span className="muted">{colCards.length}</span>
+                {t(col.label)} <span className="muted">{formatNumber(colCards.length)}</span>
               </div>
-              {!loading && !error && colCards.length === 0 ? <p className="muted">Aucune carte</p> : null}
+              {!loading && !error && colCards.length === 0 ? <p className="muted">{t("workspace.noCards")}</p> : null}
               {colCards.map((c) => {
                 const prio = PRIORITIES.find((p) => p.id === c.priority);
                 return (
                   <div key={c.id} className="board-card">
                     <div className="board-card-top">
-                      <span className="board-prio" style={{ background: prio?.color }} title={prio?.label} />
+                      <span className="board-prio" style={{ background: prio?.color }} title={prio ? t(prio.label) : undefined} />
                       <button type="button" className="board-title" onClick={() => setDetail(c)}>{c.title}</button>
                     </div>
                     <a className="board-gh mono" href={c.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>↗ #{c.number}</a>
@@ -95,10 +97,10 @@ export function BoardPanel(props: {
                       </div>
                     ) : null}
                     <div className="board-meta">
-                      {prio ? <span>{prio.label}</span> : null}
+                      {prio ? <span>{t(prio.label)}</span> : null}
                       {agentName(c.assignee_agent_id) ? <span>👤 {agentName(c.assignee_agent_id)}</span> : null}
-                      {c.conversation_ids.length > 0 ? <span>💬 {c.conversation_ids.length}</span> : null}
-                      {c.blocked_by.length > 0 ? <span className="del">⛔ {c.blocked_by.length}</span> : null}
+                      {c.conversation_ids.length > 0 ? <span>💬 {formatNumber(c.conversation_ids.length)}</span> : null}
+                      {c.blocked_by.length > 0 ? <span className="del">⛔ {formatNumber(c.blocked_by.length)}</span> : null}
                     </div>
                   </div>
                 );
@@ -141,7 +143,7 @@ export default function BoardModal(props: {
   onClose: () => void;
 }) {
   return (
-    <Modal title={`Tableau : ${props.workspaceName}`} onClose={props.onClose} wide>
+    <Modal title={t("workspace.boardTitle", { name: props.workspaceName })} onClose={props.onClose} wide>
       <BoardPanel workspaceId={props.workspaceId} agents={props.agents} />
     </Modal>
   );
@@ -174,18 +176,18 @@ function NewCardModal(props: {
     }
   };
   return (
-    <Modal title="Nouvelle carte" onClose={() => { if (!pendingRef.current) props.onClose(); }}>
-      {error ? <p className="error-text" role="alert">{error}</p> : null}
+    <Modal title={t("workspace.newCard")} onClose={() => { if (!pendingRef.current) props.onClose(); }}>
+      {error ? <p className="error-text" role="alert">{t("workspace.error", { detail: localizeText(error) })}</p> : null}
       <fieldset disabled={pending} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-      <Field label="Titre"><input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus /></Field>
-      <Field label="Description"><textarea value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
-      <Field label="Priorité">
+      <Field label={t("workspace.title")}><input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus /></Field>
+      <Field label={t("workspace.description")}><textarea value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
+      <Field label={t("workspace.priority")}>
         <select value={priority} onChange={(e) => setPriority(e.target.value)}>
-          {PRIORITIES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+          {PRIORITIES.map((p) => <option key={p.id} value={p.id}>{t(p.label)}</option>)}
         </select>
       </Field>
       <div className="toolbar">
-        <button className="btn btn-primary" disabled={pending || !title.trim()} onClick={() => void create()}>{pending ? "Création…" : "Créer la carte"}</button>
+        <button className="btn btn-primary" disabled={pending || !title.trim()} onClick={() => void create()}>{pending ? t("workspace.creating") : t("workspace.createCard")}</button>
       </div>
       </fieldset>
     </Modal>
@@ -272,7 +274,7 @@ function CardDetail(props: {
       setForm(cardForm(result.card));
       setSavedForm(cardForm(result.card));
       props.onChanged();
-      toast("Carte mise à jour");
+      toast(t("workspace.updated"));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -304,34 +306,34 @@ function CardDetail(props: {
   const otherCards = props.cards.filter((c) => c.id !== card.id);
 
   return (
-    <Modal title={card.title} onClose={() => { if (!pendingRef.current && ((!dirty && !comment.trim()) || confirm("Fermer sans enregistrer les modifications de cette carte ?"))) props.onClose(); }} wide>
-      {error ? <p className="error-text" role="alert">{error}</p> : null}
+    <Modal title={card.title} onClose={() => { if (!pendingRef.current && ((!dirty && !comment.trim()) || confirm(t("workspace.discard")))) props.onClose(); }} wide>
+      {error ? <p className="error-text" role="alert">{t("workspace.error", { detail: localizeText(error) })}</p> : null}
       <fieldset disabled={pending} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <div className="form-row">
-        <Field label="Titre"><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
-        <Field label="Colonne">
+        <Field label={t("workspace.title")}><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
+        <Field label={t("workspace.column")}>
           <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-            {COLUMNS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            {COLUMNS.map((c) => <option key={c.id} value={c.id}>{t(c.label)}</option>)}
           </select>
         </Field>
-        <Field label="Priorité">
+        <Field label={t("workspace.priority")}>
           <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
-            {PRIORITIES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            {PRIORITIES.map((p) => <option key={p.id} value={p.id}>{t(p.label)}</option>)}
           </select>
         </Field>
       </div>
-      <Field label="Description"><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
+      <Field label={t("workspace.description")}><textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
       <div className="form-row">
-        <Field label="Labels (virgules)"><input value={form.labels} onChange={(e) => setForm({ ...form, labels: e.target.value })} /></Field>
-        <Field label="Assigné (agent Cogitator)">
+        <Field label={t("workspace.labels")}><input value={form.labels} onChange={(e) => setForm({ ...form, labels: e.target.value })} /></Field>
+        <Field label={t("workspace.assignee")}>
           <select value={form.assignee_agent_id} onChange={(e) => setForm({ ...form, assignee_agent_id: e.target.value })}>
-            <option value="">— non assigné —</option>
+            <option value="">{t("workspace.unassigned")}</option>
             {props.agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </Field>
       </div>
-      <fieldset className="field" style={{ border: 0, padding: 0, minWidth: 0 }}><legend className="field-label">Conversations liées ({form.conversation_ids.length})</legend>
-        {props.conversations.length === 0 ? <p className="muted">Aucune conversation à lier dans ce workspace.</p> : null}
+      <fieldset className="field" style={{ border: 0, padding: 0, minWidth: 0 }}><legend className="field-label">{t("workspace.linkedConversations", { count: formatNumber(form.conversation_ids.length) })}</legend>
+        {props.conversations.length === 0 ? <p className="muted">{t("workspace.nothingToLink")}</p> : null}
         <div className="link-list">
           {props.conversations.map((c) => (
             <label key={c.id} style={{ display: "flex", gap: 6, fontSize: 12.5, padding: "2px 4px" }}>
@@ -341,71 +343,71 @@ function CardDetail(props: {
                 checked={form.conversation_ids.includes(c.id)}
                 onChange={() => setForm({ ...form, conversation_ids: toggleIn(form.conversation_ids, c.id) })}
               />
-              <span className="muted">{(c.title || "(sans titre)").slice(0, 60)}</span>
+              <span className="muted">{(c.title || t("workspace.untitled")).slice(0, 60)}</span>
             </label>
           ))}
         </div>
       </fieldset>
-      {activityLoading ? <p role="status">Chargement de l’activité liée…</p> : null}
-      {activityError ? <div role="alert" className="error-text">{activityError} <button type="button" className="btn btn-sm" onClick={() => setActivityRetry((n) => n + 1)}>Réessayer</button></div> : null}
+      {activityLoading ? <p role="status">{t("workspace.activityLoading")}</p> : null}
+      {activityError ? <div role="alert" className="error-text">{t("workspace.error", { detail: localizeText(activityError) })} <button type="button" className="btn btn-sm" onClick={() => setActivityRetry((n) => n + 1)}>{t("workspace.retry")}</button></div> : null}
       {activity ? (
         <div className="file-stats" style={{ marginBottom: 12, fontSize: 12.5 }}>
-          Activité des conversations liées : <span className="add">+{activity.additions}</span>
-          <span className="del">−{activity.deletions}</span>
-          <span className="muted"> sur {activity.files} fichier(s)</span>
+          {t("workspace.linkedActivity")} <span className="add">+{formatNumber(activity.additions)}</span>
+          <span className="del">−{formatNumber(activity.deletions)}</span>
+          <span className="muted">{t((activity.files) === 1 ? "workspace.fileCountOne" : "workspace.fileCountMany", { count: formatNumber(activity.files) })}</span>
         </div>
       ) : null}
       <div className="form-row">
         <div>
-        <Field label={`Bloque (${form.blocks.length})`}>
+        <Field label={t("workspace.blocks", { count: formatNumber(form.blocks.length) })}>
           <select value="" onChange={(e) => { if (e.target.value) setForm({ ...form, blocks: toggleIn(form.blocks, e.target.value) }); }}>
-            <option value="">+ ajouter…</option>
+            <option value="">{t("workspace.add")}</option>
             {otherCards.filter((c) => !form.blocks.includes(c.id)).map((c) => <option key={c.id} value={c.id}>{c.title.slice(0, 50)}</option>)}
           </select>
         </Field>
           <div className="link-chips">{form.blocks.map((id) => (
-            <button type="button" key={id} className="chip" aria-label={`Retirer le lien vers ${props.cards.find((c) => c.id === id)?.title ?? id}`} onClick={() => setForm({ ...form, blocks: form.blocks.filter((x) => x !== id) })}>
+            <button type="button" key={id} className="chip" aria-label={t("workspace.removeLink", { title: props.cards.find((c) => c.id === id)?.title ?? id })} onClick={() => setForm({ ...form, blocks: form.blocks.filter((x) => x !== id) })}>
               {props.cards.find((c) => c.id === id)?.title ?? id} ×
             </button>
           ))}</div>
         </div>
         <div>
-        <Field label={`Bloqué par (${form.blocked_by.length})`}>
+        <Field label={t("workspace.blockedBy", { count: formatNumber(form.blocked_by.length) })}>
           <select value="" onChange={(e) => { if (e.target.value) setForm({ ...form, blocked_by: toggleIn(form.blocked_by, e.target.value) }); }}>
-            <option value="">+ ajouter…</option>
+            <option value="">{t("workspace.add")}</option>
             {otherCards.filter((c) => !form.blocked_by.includes(c.id)).map((c) => <option key={c.id} value={c.id}>{c.title.slice(0, 50)}</option>)}
           </select>
         </Field>
           <div className="link-chips">{form.blocked_by.map((id) => (
-            <button type="button" key={id} className="chip" aria-label={`Retirer le blocage par ${props.cards.find((c) => c.id === id)?.title ?? id}`} onClick={() => setForm({ ...form, blocked_by: form.blocked_by.filter((x) => x !== id) })}>
+            <button type="button" key={id} className="chip" aria-label={t("workspace.removeBlock", { title: props.cards.find((c) => c.id === id)?.title ?? id })} onClick={() => setForm({ ...form, blocked_by: form.blocked_by.filter((x) => x !== id) })}>
               {props.cards.find((c) => c.id === id)?.title ?? id} ×
             </button>
           ))}</div>
         </div>
       </div>
-      <fieldset className="field" style={{ border: 0, padding: 0, minWidth: 0 }}><legend className="field-label">Commentaires ({card.comments.length})</legend>
+      <fieldset className="field" style={{ border: 0, padding: 0, minWidth: 0 }}><legend className="field-label">{t("workspace.comments", { count: formatNumber(card.comments.length) })}</legend>
         <div className="comments">
           {card.comments.map((cm) => (
             <div key={cm.id} className="comment">
               <div className="comment-head">
                 <span className="comment-author">{cm.author}</span>
-                <span className="muted">{new Date(cm.at).toLocaleString()}</span>
+                <span className="muted">{formatDate(cm.at)}</span>
               </div>
               <div className="comment-text">{cm.text}</div>
             </div>
           ))}
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <input aria-label="Nouveau commentaire" value={comment} placeholder="Commenter…" onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) void addComment(); }} />
-          <button className="btn btn-sm" disabled={pending || !comment.trim()} onClick={() => void addComment()}>Envoyer</button>
+          <input aria-label={t("workspace.newComment")} value={comment} placeholder={t("workspace.comment")} onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) void addComment(); }} />
+          <button className="btn btn-sm" disabled={pending || !comment.trim()} onClick={() => void addComment()}>{t("workspace.send")}</button>
         </div>
       </fieldset>
       <div className="toolbar">
-        <button className="btn btn-primary" disabled={pending || !dirty || !form.title.trim()} onClick={() => void save()}>{pending ? "En cours…" : "Sauvegarder"}</button>
+        <button className="btn btn-primary" disabled={pending || !dirty || !form.title.trim()} onClick={() => void save()}>{pending ? t("workspace.working") : t("workspace.save")}</button>
         <button
           className="btn"
           disabled={pending || dirty || !form.assignee_agent_id}
-          title={dirty ? "Sauvegarde les modifications avant de lancer l’agent" : form.assignee_agent_id ? "Créer une conversation avec l’agent assigné dans ce workspace" : "Assigne un agent d'abord"}
+          title={dirty ? t("workspace.saveFirst") : form.assignee_agent_id ? t("workspace.startHelp") : t("workspace.assignFirst")}
           onClick={() => {
             if (pendingRef.current || dirty || !form.assignee_agent_id) return;
             pendingRef.current = true;
@@ -413,7 +415,7 @@ function CardDetail(props: {
             setError(null);
             api.boardStartWork(props.workspaceId, card.id)
               .then((r) => {
-                toast(`Agent lancé sur #${r.card.number} — conversation #${r.conversation.id.slice(0, 8)}`);
+                toast(t("workspace.started", { number: r.card.number, id: r.conversation.id.slice(0, 8) }));
                 props.onOpenConversation?.(r.conversation.id);
                 props.onChanged();
               })
@@ -421,12 +423,12 @@ function CardDetail(props: {
               .finally(() => { pendingRef.current = false; setPending(false); });
           }}
         >
-          🚀 Lancer l'agent
+          {t("workspace.startAgent")}
         </button>
         <button
           className="btn btn-danger"
           onClick={() => {
-            if (pendingRef.current || !confirm("Supprimer cette carte ? Cette action est irréversible.")) return;
+            if (pendingRef.current || !confirm(t("workspace.deleteConfirm"))) return;
             pendingRef.current = true;
             setPending(true);
             setError(null);
@@ -435,10 +437,10 @@ function CardDetail(props: {
               .finally(() => { pendingRef.current = false; setPending(false); });
           }}
         >
-          Supprimer
+          {t("workspace.delete")}
         </button>
       </div>
-      {dirty ? <p role="status" className="muted">Modifications non sauvegardées : sauvegarde la carte avant de lancer l’agent.</p> : null}
+      {dirty ? <p role="status" className="muted">{t("workspace.unsaved")}</p> : null}
       </fieldset>
     </Modal>
   );

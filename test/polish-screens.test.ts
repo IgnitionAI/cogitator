@@ -1,8 +1,11 @@
+import * as i18n from "../web/src/i18n.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+
+i18n.setLocale("fr");
 
 type Element = { type: unknown; props: Record<string, unknown> };
 const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
@@ -22,6 +25,7 @@ function harness(screen: string, api: object, fetch?: unknown, component = "defa
     exports, fetch, window: { location: { origin: "http://localhost:9876" } },
     setInterval: () => 0, clearInterval() {},
     require(name: string) {
+      if (name === "./i18n" || name === "../i18n") return i18n;
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (name === "react") return {
         useState(initial: unknown) {

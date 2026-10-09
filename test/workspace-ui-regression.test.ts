@@ -1,8 +1,11 @@
+import * as i18n from "../web/src/i18n.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
+
+i18n.setLocale("fr");
 
 type Element = { type: unknown; props: Record<string, unknown> };
 type ReadApi = Record<string, () => Promise<unknown>>;
@@ -51,6 +54,7 @@ function workspaceHarness(api: ReadApi) {
   }).outputText, {
     exports,
     require(name: string) {
+      if (name === "./i18n" || name === "../i18n") return i18n;
       if (name === "react") return react;
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (name === "./api") return { api: new Proxy(api, { get(target, key: string) {
@@ -110,7 +114,7 @@ test("workspace tabs isolate reads and failures; team requires both dependencies
   assert.ok(page.find(page.render(), (element) => element.type === "FileRow"));
   assert.equal(calls.includes("board"), false);
   page.select("team"); await settle();
-  assert.equal(page.alert()?.props.children && (page.alert()!.props.children as unknown[])[0], "board offline");
+  assert.equal(page.alert()?.props.children && (page.alert()!.props.children as unknown[])[0], "Erreur : board offline");
   boardFails = false;
   page.click(page.find(page.render(), (element) => element.type === "button" && element.props.children === "Réessayer")!);
   page.render(); await settle();
@@ -118,7 +122,7 @@ test("workspace tabs isolate reads and failures; team requires both dependencies
   conversationsFail = true;
   page.select("feed"); await settle();
   page.select("team"); await settle();
-  assert.equal((page.alert()!.props.children as unknown[])[0], "conversations offline");
+  assert.equal((page.alert()!.props.children as unknown[])[0], "Erreur : conversations offline");
   page.select("feed"); await settle();
   assert.equal(page.alert(), undefined);
 });

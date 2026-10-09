@@ -1,3 +1,4 @@
+import { t as translate, localizeText, formatNumber } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { ProviderView } from "../types";
@@ -26,42 +27,42 @@ export default function Providers() {
   return (
     <>
       <PageHead
-        title="Fournisseurs"
-        sub="Configuration pi : modèles et authentification. Les modifications sont sauvegardées avant écriture."
-        actions={<button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}><Icon name="plus" /> Ajouter un fournisseur</button>}
+        title={translate("screens.providers")}
+        sub={translate("screens.providersSub")}
+        actions={<button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}><Icon name="plus" /> {translate("screens.addProvider")}</button>}
       />
-      <ErrorText error={error} />
-      {error ? <button type="button" className="btn" onClick={refresh}>Réessayer</button> : null}
-      {loading ? <p role="status">Chargement…</p> : error && providers.length === 0 ? null : providers.length === 0 ? (
-        <Empty title="Aucun fournisseur" action={<button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}><Icon name="plus" /> Ajouter un fournisseur</button>}>
-          Aucun fournisseur détecté dans la config pi.
+      <ErrorText error={error ? localizeText(error) : null} />
+      {error ? <button type="button" className="btn" onClick={refresh}>{translate("screens.retry")}</button> : null}
+      {loading ? <p role="status">{translate("screens.loading")}</p> : error && providers.length === 0 ? null : providers.length === 0 ? (
+        <Empty title={translate("screens.noProviders")} action={<button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}><Icon name="plus" /> {translate("screens.addProvider")}</button>}>
+          {translate("screens.providersEmpty")}
         </Empty>
       ) : (
-        <div className="table-wrap" role="region" aria-label="Fournisseurs" tabIndex={0}>
+        <div className="table-wrap" data-scroll-hint={translate("common.scrollColumns")} role="region" aria-label={translate("screens.providers")} tabIndex={0}>
         <table>
           <thead>
-            <tr><th>Fournisseur</th><th>Source</th><th>Authentification</th><th>État</th><th>Modèles</th><th scope="col">Actions</th></tr>
+            <tr><th>{translate("screens.provider")}</th><th>{translate("screens.source")}</th><th>{translate("screens.authentication")}</th><th>{translate("screens.state")}</th><th>{translate("screens.models")}</th><th scope="col">{translate("screens.actions")}</th></tr>
           </thead>
           <tbody>
             {providers.map((p) => (
               <tr key={p.id}>
                 <td className="mono">{p.id}</td>
-                <td><Badge>{p.source}</Badge></td>
-                <td className="mono">{p.auth.type ?? "—"}</td>
-                <td><Badge color={p.auth.ready === true ? "var(--success)" : p.auth.ready === false ? "var(--todo)" : "var(--muted)"}>{p.auth.ready === true ? "Prêt" : p.auth.ready === false ? "À configurer" : "État inconnu"}</Badge></td>
-                <td>{p.models.length}</td>
+                <td><Badge>{p.source === "custom" ? translate("screens.custom") : p.source === "builtin" ? translate("screens.builtin") : p.source}</Badge></td>
+                <td className="mono">{p.auth.type === "api_key" ? translate("screens.api_key") : p.auth.type === "oauth" ? translate("screens.oauth") : p.auth.type ?? "—"}</td>
+                <td><Badge color={p.auth.ready === true ? "var(--success)" : p.auth.ready === false ? "var(--todo)" : "var(--muted)"}>{p.auth.ready === true ? translate("screens.ready") : p.auth.ready === false ? translate("screens.configure") : translate("screens.unknown")}</Badge></td>
+                <td>{formatNumber(p.models.length)}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  <button className="btn btn-sm" onClick={() => setKeyFor(p.id)}>Clé API</button>{" "}
+                  <button className="btn btn-sm" onClick={() => setKeyFor(p.id)}>{translate("screens.apiKey")}</button>{" "}
                   {p.source === "custom" ? (
                     <button
                       className="btn btn-sm btn-danger"
                       onClick={() => {
-                        if (confirm(`Supprimer le fournisseur personnalisé "${p.id}" ?`)) {
-                          api.deleteProvider(p.id).then(refresh).catch((e: Error) => toast(e.message, true));
+                        if (confirm(translate("screens.deleteProvider", { name: p.id }))) {
+                          api.deleteProvider(p.id).then(refresh).catch((e: Error) => toast(localizeText(e.message), true));
                         }
                       }}
                     >
-                      Supprimer
+                      {translate("screens.delete")}
                     </button>
                   ) : null}
                 </td>
@@ -100,39 +101,39 @@ function AddProviderModal(props: { onClose: () => void; onSaved: () => void }) {
       });
       props.onSaved();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Opération impossible. Réessaie.");
+      setActionError(e instanceof Error ? e.message : translate("screens.operationFailed"));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal title="Nouveau fournisseur personnalisé" onClose={() => { if (!busy) props.onClose(); }}>
+    <Modal title={translate("screens.newProvider")} onClose={() => { if (!busy) props.onClose(); }}>
       <fieldset className="form-fields" disabled={busy}>
-      <ErrorText error={actionError} />
-      <Field label="ID (minuscules, chiffres, -)">
+      <ErrorText error={actionError ? localizeText(actionError) : null} />
+      <Field label={translate("screens.providerId")}>
         <input value={id} onChange={(e) => setId(e.target.value)} placeholder="ollama" />
       </Field>
-      <Field label="URL de base">
+      <Field label={translate("screens.baseUrl")}>
         <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="http://localhost:11434/v1" />
       </Field>
-      <Field label="Protocole API">
+      <Field label={translate("screens.apiProtocol")}>
         <select value={apiProt} onChange={(e) => setApiProt(e.target.value)}>
           {APIS.map((a) => <option key={a} value={a}>{a}</option>)}
         </select>
       </Field>
-      <Field label="Clé API (optionnelle)" hint="Sans clé, aucune authentification n’est créée. Une configuration existante ou une variable reconnue par pi peut être nécessaire.">
+      <Field label={translate("screens.optionalKey")} hint={translate("screens.optionalKeyHint")}>
         <input type="password" autoComplete="new-password" spellCheck={false} value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
       </Field>
-      <Field label="Modèles (ids séparés par des virgules)">
+      <Field label={translate("screens.modelIds")}>
         <input value={models} onChange={(e) => setModels(e.target.value)} placeholder="qwen3, llama3.1" />
       </Field>
       <div className="toolbar">
-        <button className="btn btn-primary" disabled={busy || !id.trim() || !baseUrl.trim()} onClick={() => void save()}>{busy ? "Création…" : "Créer le fournisseur"}</button>
-        <button type="button" className="btn" disabled={busy} onClick={props.onClose}>Annuler</button>
+        <button className="btn btn-primary" disabled={busy || !id.trim() || !baseUrl.trim()} onClick={() => void save()}>{busy ? translate("screens.creating") : translate("screens.createProvider")}</button>
+        <button type="button" className="btn" disabled={busy} onClick={props.onClose}>{translate("screens.cancel")}</button>
       </div>
       </fieldset>
-      {busy ? <p role="status" className="muted">Opération en cours. Attends la fin avant de fermer.</p> : null}
+      {busy ? <p role="status" className="muted">{translate("screens.pending")}</p> : null}
     </Modal>
   );
 }
@@ -142,10 +143,10 @@ function KeyModal(props: { providerId: string; onClose: () => void; onSaved: () 
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   return (
-    <Modal title={`Clé API : ${props.providerId}`} onClose={() => { if (!busy) props.onClose(); }}>
+    <Modal title={translate("screens.keyFor", { name: props.providerId })} onClose={() => { if (!busy) props.onClose(); }}>
       <fieldset className="form-fields" disabled={busy}>
-      <ErrorText error={actionError} />
-      <Field label="Nouvelle clé (stockée dans auth.json)" hint="Pour l'OAuth (codex, claude…), utilise le flux pi natif (/login dans un terminal).">
+      <ErrorText error={actionError ? localizeText(actionError) : null} />
+      <Field label={translate("screens.newKey")} hint={translate("screens.oauthHint")}>
         <input type="password" autoComplete="new-password" spellCheck={false} value={key} onChange={(e) => setKey(e.target.value)} />
       </Field>
       <div className="toolbar">
@@ -162,12 +163,12 @@ function KeyModal(props: { providerId: string; onClose: () => void; onSaved: () 
               .finally(() => setBusy(false));
           }}
         >
-          {busy ? "Enregistrement…" : "Enregistrer"}
+          {busy ? translate("screens.saving") : translate("screens.save")}
         </button>
-        <button type="button" className="btn" disabled={busy} onClick={props.onClose}>Annuler</button>
+        <button type="button" className="btn" disabled={busy} onClick={props.onClose}>{translate("screens.cancel")}</button>
       </div>
       </fieldset>
-      {busy ? <p role="status" className="muted">Opération en cours. Attends la fin avant de fermer.</p> : null}
+      {busy ? <p role="status" className="muted">{translate("screens.pending")}</p> : null}
     </Modal>
   );
 }

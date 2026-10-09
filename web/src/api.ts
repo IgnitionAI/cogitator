@@ -8,7 +8,12 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`);
+  if (!res.ok) {
+    const failure = data as { error?: unknown; issues?: unknown };
+    const message = typeof failure.error === "string" ? failure.error : `HTTP ${res.status}`;
+    const issues = Array.isArray(failure.issues) ? failure.issues.filter((issue): issue is string => typeof issue === "string") : [];
+    throw new Error([message, ...issues].join("\n"));
+  }
   return data as T;
 }
 

@@ -1,3 +1,4 @@
+import { t as translate, localizeText, formatNumber, thinkingLabel, getLocale } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { THINKING_LEVELS } from "../types";
@@ -23,49 +24,49 @@ export default function Agents() {
   return (
     <>
       <PageHead
-        title="Agents"
-        sub="Un agent = fournisseur + modèle + thinking + skills + MCP + prompt de scope + subagents."
+        title={translate("screens.agents")}
+        sub={translate("screens.agentsSub")}
         actions={
           <>
-            <button type="button" className="btn" onClick={() => setShowImport(true)}><Icon name="download" /> Importer des skills</button>
-            <button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> Nouvel agent</button>
+            <button type="button" className="btn" onClick={() => setShowImport(true)}><Icon name="download" /> {translate("screens.importSkills")}</button>
+            <button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> {translate("screens.newAgent")}</button>
           </>
         }
       />
-      <ErrorText error={error} />
-      {error ? <button type="button" className="btn" onClick={refresh}>Réessayer</button> : null}
-      {loading ? <p role="status">Chargement…</p> : error && agents.length === 0 ? null : agents.length === 0 ? (
-        <Empty title="Aucun agent" action={<button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> Nouvel agent</button>}>
-          Crée un agent avec son modèle, ses outils et ses instructions pi.
+      <ErrorText error={error ? localizeText(error) : null} />
+      {error ? <button type="button" className="btn" onClick={refresh}>{translate("screens.retry")}</button> : null}
+      {loading ? <p role="status">{translate("screens.loading")}</p> : error && agents.length === 0 ? null : agents.length === 0 ? (
+        <Empty title={translate("screens.noAgents")} action={<button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> {translate("screens.newAgent")}</button>}>
+          {translate("screens.agentEmpty")}
         </Empty>
       ) : (
         <div className="cards">
           {agents.map((a) => (
             <div key={a.id} className="card" style={{ cursor: "default" }}>
-              <h2>{a.name} {a.is_default ? <Badge color="var(--todo)">Par défaut</Badge> : null}</h2>
+              <h2>{a.name} {a.is_default ? <Badge color="var(--todo)">{translate("screens.default")}</Badge> : null}</h2>
               <div className="meta">
-                <span>{a.skills.length} skill(s) · {a.mcp_servers.length} MCP · {a.subagents?.length ?? 0} subagent(s)</span>
+                <span>{translate("screens.agentCounts", { skills: formatNumber(a.skills.length), mcp: formatNumber(a.mcp_servers.length), subagents: formatNumber(a.subagents?.length ?? 0) })}</span>
                 {a.description ? <span>{a.description.slice(0, 90)}</span> : null}
               </div>
               <QuickModel
                 agent={a}
                 providers={providers}
-                onChanged={() => { refresh(); toast(`${a.name} : modèle mis à jour`); }}
+                onChanged={() => { refresh(); toast(translate("screens.modelUpdated", { name: a.name })); }}
               />
               <div className="actions">
-                <button className="btn btn-sm" onClick={() => setEditing(a)}>Modifier</button>{" "}
+                <button className="btn btn-sm" onClick={() => setEditing(a)}>{translate("screens.edit")}</button>{" "}
                 {!a.is_default ? (
-                  <button className="btn btn-sm" onClick={() => api.setDefaultAgent(a.id).then(refresh).catch((e: Error) => toast(e.message, true))}>Définir par défaut</button>
+                  <button className="btn btn-sm" onClick={() => api.setDefaultAgent(a.id).then(refresh).catch((e: Error) => toast(localizeText(e.message), true))}>{translate("screens.setDefault")}</button>
                 ) : null}{" "}
                 <button
                   className="btn btn-sm btn-danger"
                   onClick={() => {
-                    if (confirm(`Supprimer l'agent "${a.name}" ? Ses définitions herdr noo-* seront retirées.`)) {
-                      api.deleteAgent(a.id).then(refresh).catch((e: Error) => toast(e.message, true));
+                    if (confirm(translate("screens.deleteAgent", { name: a.name }))) {
+                      api.deleteAgent(a.id).then(refresh).catch((e: Error) => toast(localizeText(e.message), true));
                     }
                   }}
                 >
-                  Supprimer
+                  {translate("screens.delete")}
                 </button>
               </div>
             </div>
@@ -108,7 +109,7 @@ function QuickModel(props: {
       });
       props.onChanged();
     } catch (e) {
-      toast((e as Error).message, true);
+      toast(localizeText((e as Error).message), true);
     } finally {
       setBusy(false);
     }
@@ -116,7 +117,7 @@ function QuickModel(props: {
 
   return (
     <div style={{ marginTop: 8 }}>
-      <p className="muted">Fournisseur et modèle : chaque changement est enregistré immédiatement.</p>
+      <p className="muted">{translate("screens.quickModel")}</p>
       <div className="form-row">
       <select
         value={agent.provider}
@@ -124,23 +125,23 @@ function QuickModel(props: {
           const nextProvider = providers.find((p) => p.id === e.target.value);
           void switchTo(e.target.value, nextProvider?.models[0]?.id ?? "");
         }}
-        aria-label={`Fournisseur de ${agent.name}`}
+        aria-label={translate("screens.agentProvider", { name: agent.name })}
         disabled={busy}
-        title="Fournisseur"
+        title={translate("screens.provider")}
       >
-        {!provider ? <option value={agent.provider}>{agent.provider} (indisponible)</option> : null}
+        {!provider ? <option value={agent.provider}>{agent.provider} {translate("screens.unavailable")}</option> : null}
         {providers.map((p) => (
           <option key={p.id} value={p.id}>
-            {p.id} {p.auth.ready === true ? "(prêt)" : p.auth.ready === false ? "(authentification requise)" : "(état inconnu)"}
+            {p.id} {p.auth.ready === true ? translate("screens.readyParen") : p.auth.ready === false ? translate("screens.authParen") : translate("screens.unknownParen")}
           </option>
         ))}
       </select>
       <select
         value={agent.model}
         onChange={(e) => void switchTo(agent.provider, e.target.value)}
-        aria-label={`Modèle de ${agent.name}`}
+        aria-label={translate("screens.agentModel", { name: agent.name })}
         disabled={busy}
-        title="Modèle"
+        title={translate("screens.model")}
       >
         {!models.some((m) => m.id === agent.model) ? <option value={agent.model}>{agent.model}</option> : null}
         {models.map((m) => (
@@ -168,39 +169,39 @@ function ImportSkillsModal(props: { onClose: () => void }) {
     try {
       const r = await api.importSkills(source.trim(), overwrite);
       setResult(r);
-      toast(`${r.imported.length} skill(s) importé(s)${r.skipped.length ? `, ${r.skipped.length} ignoré(s)` : ""}`);
+      toast(translate("screens.importResult", { imported: formatNumber(r.imported.length), skipped: formatNumber(r.skipped.length) }));
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Opération impossible. Réessaie.");
+      setActionError(e instanceof Error ? e.message : translate("screens.operationFailed"));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal title="Importer des skills" onClose={() => { if (!busy) props.onClose(); }}>
+    <Modal title={translate("screens.importSkills")} onClose={() => { if (!busy) props.onClose(); }}>
       <fieldset className="form-fields" disabled={busy}>
-      <ErrorText error={actionError} />
-      <Field label="Source" hint="Repo GitHub (IgnitionAI/skills), chemin local, ou commande CLI : npx aiblueprint-cli@latest skills update">
+      <ErrorText error={actionError ? localizeText(actionError) : null} />
+      <Field label={translate("screens.source")} hint={translate("screens.sourceHint")}>
         <input value={source} onChange={(e) => setSource(e.target.value)} placeholder="IgnitionAI/skills" />
       </Field>
       <label style={{ display: "flex", gap: 8, marginBottom: 14, fontSize: 13 }}>
         <input type="checkbox" style={{ width: "auto" }} checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} />
-        Écraser les skills existants du même nom
+        {translate("screens.overwrite")}
       </label>
       {result ? (
         <div className="checks" style={{ marginBottom: 12 }}>
           {result.imported.map((s) => <div key={s} style={{ color: "var(--success)" }}>✓ {s}</div>)}
-          {result.skipped.map((s) => <div key={s} className="warn">≡ {s} (existant, ignoré)</div>)}
+          {result.skipped.map((s) => <div key={s} className="warn">≡ {s} {translate("screens.skippedExisting")}</div>)}
         </div>
       ) : null}
       <div className="toolbar">
         <button className="btn btn-primary" disabled={!source.trim() || busy} onClick={() => void run()}>
-          {busy ? "Import…" : "Importer vers ~/.agents/skills"}
+          {busy ? translate("screens.importing") : translate("screens.importDestination")}
         </button>
-        <button type="button" className="btn" disabled={busy} onClick={props.onClose}>Annuler</button>
+        <button type="button" className="btn" disabled={busy} onClick={props.onClose}>{translate("screens.cancel")}</button>
       </div>
       </fieldset>
-      {busy ? <p role="status" className="muted">Opération en cours. Attends la fin avant de fermer.</p> : null}
+      {busy ? <p role="status" className="muted">{translate("screens.pending")}</p> : null}
     </Modal>
   );
 }
@@ -254,8 +255,8 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
   const save = async () => {
     if (busy) return;
     const errors = [
-      ...form.mcp_servers.flatMap((m, i) => !m.name.trim() || !(m.command?.trim() || m.url?.trim()) ? [`MCP ${i + 1} : nom et commande ou URL requis. Retire la ligne si elle est inutile.`] : []),
-      ...form.subagents.flatMap((s, i) => !s.name.trim() || !s.provider.trim() || !s.model.trim() ? [`Subagent ${i + 1} : nom, fournisseur et modèle requis. Retire la ligne si elle est inutile.`] : []),
+      ...form.mcp_servers.flatMap((m, i) => !m.name.trim() || !(m.command?.trim() || m.url?.trim()) ? [translate("screens.mcpRequired", { number: formatNumber(i + 1) })] : []),
+      ...form.subagents.flatMap((s, i) => !s.name.trim() || !s.provider.trim() || !s.model.trim() ? [translate("screens.subRequired", { number: formatNumber(i + 1) })] : []),
     ];
     if (errors.length) { setChecks({ errors, warnings: [] }); return; }
     setChecks(null);
@@ -281,66 +282,66 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
         : await api.createAgent(body);
       persisted = true;
       setSavedId(r.agent.id);
-      setSaveNotice("Agent enregistré et définitions appliquées. Validation en cours…");
+      setSaveNotice(translate("screens.savedValidating"));
       const v = await api.validateAgent(r.agent.id);
-      setSaveNotice(v.errors.length ? "Agent enregistré et appliqué, mais invalide : corrige les erreurs puis sauvegarde à nouveau." : "Agent enregistré, appliqué et validé.");
+      setSaveNotice(v.errors.length ? translate("screens.savedInvalid") : translate("screens.savedValid"));
       setChecks(v);
       if (v.errors.length === 0) {
-        toast(props.agent ? "Agent mis à jour et appliqué" : "Agent créé et appliqué");
+        toast(props.agent ? translate("screens.agentUpdated") : translate("screens.agentCreated"));
         props.onSaved();
       }
     } catch (e) {
-      if (persisted) setSaveNotice("Agent enregistré et appliqué, mais validation indisponible. La sauvegarde n’a pas été annulée.");
-      setActionError(e instanceof Error ? e.message : "Opération impossible. Réessaie.");
+      if (persisted) setSaveNotice(translate("screens.validationUnavailable"));
+      setActionError(e instanceof Error ? e.message : translate("screens.operationFailed"));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal title={props.agent ? `Modifier : ${props.agent.name}` : "Nouvel agent"} onClose={() => { if (!busy) props.onClose(); }} wide>
+    <Modal title={props.agent ? translate("screens.editNamed", { name: props.agent.name }) : translate("screens.newAgent")} onClose={() => { if (!busy) props.onClose(); }} wide>
       <fieldset className="form-fields" disabled={busy}>
-      <ErrorText error={actionError} />
-      <ErrorText error={loadError} />
-      {loadError ? <button type="button" className="btn" onClick={loadOptions}>Réessayer le chargement des fournisseurs et skills</button> : null}
-      {optionsLoading ? <p role="status">Chargement des fournisseurs et skills…</p> : null}
+      <ErrorText error={actionError ? localizeText(actionError) : null} />
+      <ErrorText error={loadError ? localizeText(loadError) : null} />
+      {loadError ? <button type="button" className="btn" onClick={loadOptions}>{translate("screens.retryOptions")}</button> : null}
+      {optionsLoading ? <p role="status">{translate("screens.loadingOptions")}</p> : null}
       <div className="form-grid">
-        <Field label="Nom">
-          <input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="RAG Expert" />
+        <Field label={translate("screens.name")}>
+          <input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder={translate("screens.agentExample")} />
         </Field>
-        <Field label="Fournisseur">
+        <Field label={translate("screens.provider")}>
           <select value={form.provider} onChange={(e) => setForm((f) => ({ ...f, provider: e.target.value, model: "" }))}>
-            {providers.map((p) => <option key={p.id} value={p.id}>{p.id} {p.auth.ready === true ? "(prêt)" : p.auth.ready === false ? "(authentification requise)" : "(état inconnu)"}</option>)}
+            {providers.map((p) => <option key={p.id} value={p.id}>{p.id} {p.auth.ready === true ? translate("screens.readyParen") : p.auth.ready === false ? translate("screens.authParen") : translate("screens.unknownParen")}</option>)}
           </select>
         </Field>
-        <Field label="Modèle">
+        <Field label={translate("screens.model")}>
           <select value={form.model} onChange={(e) => set("model", e.target.value)}>
-            <option value="">(défaut du fournisseur)</option>
+            <option value="">{translate("screens.providerDefault")}</option>
             {models.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
           </select>
         </Field>
-        <Field label="Niveau de raisonnement">
+        <Field label={translate("screens.thinking")}>
           <select value={form.thinking} onChange={(e) => set("thinking", e.target.value)}>
-            <option value="">(défaut)</option>
-            {THINKING_LEVELS.map((t) => <option key={t} value={t}>{t}</option>)}
+            <option value="">{translate("screens.defaultParen")}</option>
+            {THINKING_LEVELS.map((t) => <option key={t} value={t}>{thinkingLabel(t)}</option>)}
           </select>
         </Field>
-        <Field label="Outils autorisés (vide = tous)" hint="Séparés par des virgules">
+        <Field label={translate("screens.tools")} hint={translate("screens.commaHint")}>
           <input value={form.tools} onChange={(e) => set("tools", e.target.value)} placeholder="read, bash, edit, write" />
         </Field>
-        <Field label="Description">
+        <Field label={translate("screens.description")}>
           <input value={form.description} onChange={(e) => set("description", e.target.value)} />
         </Field>
       </div>
-      <Field label="Prompt de scope (system prompt)">
-        <textarea value={form.system_prompt} onChange={(e) => set("system_prompt", e.target.value)} placeholder="Tu es l'agent… Ton scope : …" />
+      <Field label={translate("screens.scope")}>
+        <textarea value={form.system_prompt} onChange={(e) => set("system_prompt", e.target.value)} placeholder={translate("screens.scopeExample")} />
       </Field>
 
       <fieldset className="field">
-        <legend>Skills ({form.skills.length} sélectionné(s))</legend>
-        <input aria-label="Rechercher un skill" type="search" value={skillQuery} onChange={(e) => setSkillQuery(e.target.value)} placeholder="Rechercher un skill…" />
+        <legend>{translate("screens.selectedSkills", { count: formatNumber(form.skills.length) })}</legend>
+        <input aria-label={translate("screens.searchSkill")} type="search" value={skillQuery} onChange={(e) => setSkillQuery(e.target.value)} placeholder={translate("screens.searchSkillPlaceholder")} />
         <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 6, padding: 6 }}>
-          {skills.filter((s) => `${s.name} ${s.description}`.toLocaleLowerCase().includes(skillQuery.toLocaleLowerCase())).map((s) => (
+          {skills.filter((s) => `${s.name} ${s.description}`.toLocaleLowerCase(getLocale()).includes(skillQuery.toLocaleLowerCase(getLocale()))).map((s) => (
             <label key={s.path} style={{ display: "flex", gap: 6, padding: "2px 4px", fontSize: 12.5 }}>
               <input
                 type="checkbox"
@@ -357,66 +358,66 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
       </fieldset>
 
       <fieldset className="field">
-        <legend>Serveurs MCP ({form.mcp_servers.length})</legend>
+        <legend>{translate("screens.mcpCount", { count: formatNumber(form.mcp_servers.length) })}</legend>
         {form.mcp_servers.map((m, i) => (
           <div key={i} className="subagent-box">
             <div className="form-row">
-              <input aria-label={`Nom MCP ${i + 1}`} placeholder="name" value={m.name} onChange={(e) => patchMcp(i, { name: e.target.value })} />
-              <input aria-label={`Commande ou URL MCP ${i + 1}`} placeholder="command (ex: node) ou url" value={m.command ?? m.url ?? ""} onChange={(e) => { const value = e.target.value.trim(); patchMcp(i, /^https?:\/\//i.test(value) ? { url: value, command: undefined, args: undefined } : { command: e.target.value, url: undefined }); }} />
+              <input aria-label={translate("screens.mcpName", { number: formatNumber(i + 1) })} placeholder={translate("screens.mcpNamePlaceholder")} value={m.name} onChange={(e) => patchMcp(i, { name: e.target.value })} />
+              <input aria-label={translate("screens.mcpCommand", { number: formatNumber(i + 1) })} placeholder={translate("screens.mcpCommandPlaceholder")} value={m.command ?? m.url ?? ""} onChange={(e) => { const value = e.target.value.trim(); patchMcp(i, /^https?:\/\//i.test(value) ? { url: value, command: undefined, args: undefined } : { command: e.target.value, url: undefined }); }} />
             </div>
             <div className="toolbar" style={{ marginTop: 6 }}>
-              <input aria-label={`Arguments MCP ${i + 1}`} placeholder="args (séparés par | )" value={(m.args ?? []).join(" | ")} onChange={(e) => patchMcp(i, { args: e.target.value.split("|").map((x) => x.trim()).filter(Boolean) })} />
-              <button className="btn btn-sm btn-danger" onClick={() => set("mcp_servers", form.mcp_servers.filter((_, j) => j !== i))}>Retirer</button>
+              <input aria-label={translate("screens.mcpArgs", { number: formatNumber(i + 1) })} placeholder={translate("screens.argsPlaceholder")} value={(m.args ?? []).join(" | ")} onChange={(e) => patchMcp(i, { args: e.target.value.split("|").map((x) => x.trim()).filter(Boolean) })} />
+              <button className="btn btn-sm btn-danger" onClick={() => set("mcp_servers", form.mcp_servers.filter((_, j) => j !== i))}>{translate("screens.remove")}</button>
             </div>
           </div>
         ))}
-        <button className="btn btn-sm" onClick={() => set("mcp_servers", [...form.mcp_servers, { name: "" }])}>+ Serveur MCP</button>
+        <button className="btn btn-sm" onClick={() => set("mcp_servers", [...form.mcp_servers, { name: "" }])}>{translate("screens.addMcp")}</button>
       </fieldset>
 
       <fieldset className="field">
-        <legend>Subagents ({form.subagents.length}) — définitions générées à la sauvegarde</legend>
+        <legend>{translate("screens.subCount", { count: formatNumber(form.subagents.length) })}</legend>
         {form.subagents.map((s, i) => (
           <div key={i} className="subagent-box">
             <div className="form-grid">
-              <input aria-label={`Nom du subagent ${i + 1}`} placeholder="name (slug)" value={s.name} onChange={(e) => patchSub(i, { name: e.target.value })} />
-              <select aria-label={`Fournisseur du subagent ${i + 1}`} value={s.provider} onChange={(e) => patchSub(i, { provider: e.target.value, model: "" })}>
-                <option value="">fournisseur…</option>
+              <input aria-label={translate("screens.subName", { number: formatNumber(i + 1) })} placeholder={translate("screens.slugPlaceholder")} value={s.name} onChange={(e) => patchSub(i, { name: e.target.value })} />
+              <select aria-label={translate("screens.subProvider", { number: formatNumber(i + 1) })} value={s.provider} onChange={(e) => patchSub(i, { provider: e.target.value, model: "" })}>
+                <option value="">{translate("screens.providerPlaceholder")}</option>
                 {providers.map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}
               </select>
-              <input aria-label={`Modèle du subagent ${i + 1}`} placeholder="model" value={s.model} onChange={(e) => patchSub(i, { model: e.target.value })} />
+              <input aria-label={translate("screens.subModel", { number: formatNumber(i + 1) })} placeholder={translate("screens.modelPlaceholder")} value={s.model} onChange={(e) => patchSub(i, { model: e.target.value })} />
             </div>
             <div className="toolbar" style={{ marginTop: 6 }}>
-              <input aria-label={`Description du subagent ${i + 1}`} placeholder="description" value={s.description ?? ""} onChange={(e) => patchSub(i, { description: e.target.value })} />
-              <select aria-label={`Thinking du subagent ${i + 1}`} value={s.thinking ?? ""} onChange={(e) => patchSub(i, { thinking: e.target.value || null })}>
-                <option value="">thinking…</option>
-                {THINKING_LEVELS.map((t) => <option key={t} value={t}>{t}</option>)}
+              <input aria-label={translate("screens.subDescription", { number: formatNumber(i + 1) })} placeholder={translate("screens.descriptionPlaceholder")} value={s.description ?? ""} onChange={(e) => patchSub(i, { description: e.target.value })} />
+              <select aria-label={translate("screens.subThinking", { number: formatNumber(i + 1) })} value={s.thinking ?? ""} onChange={(e) => patchSub(i, { thinking: e.target.value || null })}>
+                <option value="">{translate("screens.thinkingPlaceholder")}</option>
+                {THINKING_LEVELS.map((t) => <option key={t} value={t}>{thinkingLabel(t)}</option>)}
               </select>
-              <button className="btn btn-sm btn-danger" onClick={() => set("subagents", form.subagents.filter((_, j) => j !== i))}>Retirer</button>
+              <button className="btn btn-sm btn-danger" onClick={() => set("subagents", form.subagents.filter((_, j) => j !== i))}>{translate("screens.remove")}</button>
             </div>
-            <textarea aria-label={`Prompt du subagent ${i + 1}`} placeholder="system prompt du subagent" value={s.system_prompt ?? ""} onChange={(e) => patchSub(i, { system_prompt: e.target.value })} style={{ marginTop: 6, minHeight: 50 }} />
+            <textarea aria-label={translate("screens.subPrompt", { number: formatNumber(i + 1) })} placeholder={translate("screens.subPromptPlaceholder")} value={s.system_prompt ?? ""} onChange={(e) => patchSub(i, { system_prompt: e.target.value })} style={{ marginTop: 6, minHeight: 50 }} />
           </div>
         ))}
-        <button className="btn btn-sm" onClick={() => set("subagents", [...form.subagents, { name: "", provider: form.provider, model: form.model }])}>+ Subagent</button>
+        <button className="btn btn-sm" onClick={() => set("subagents", [...form.subagents, { name: "", provider: form.provider, model: form.model }])}>{translate("screens.addSubagent")}</button>
       </fieldset>
 
-      <p className="muted">La validation serveur intervient après enregistrement et application des définitions.</p>
-      {saveNotice ? <p role="status">{saveNotice}</p> : null}
+      <p className="muted">{translate("screens.validationHint")}</p>
+      {saveNotice ? <p role="status">{localizeText(saveNotice)}</p> : null}
       {checks ? (
         <div className="checks" role="status">
-          {checks.errors.map((e) => <div key={e} className="err">✗ {e}</div>)}
-          {checks.warnings.map((w) => <div key={w} className="warn">⚠ {w}</div>)}
-          {checks.errors.length === 0 ? <div style={{ color: "var(--success)" }}>✓ Valide</div> : null}
+          {checks.errors.map((e) => <div key={e} className="err">✗ {localizeText(e)}</div>)}
+          {checks.warnings.map((w) => <div key={w} className="warn">⚠ {localizeText(w)}</div>)}
+          {checks.errors.length === 0 ? <div style={{ color: "var(--success)" }}>{translate("screens.valid")}</div> : null}
         </div>
       ) : null}
 
       <div className="toolbar">
         <button className="btn btn-primary" onClick={() => void save()} disabled={busy || optionsLoading || !!loadError || !form.name.trim() || !form.provider || !(form.model || models[0]?.id)}>
-          {busy ? "Enregistrement et application…" : "Enregistrer et appliquer"}
+          {busy ? translate("screens.savingApplying") : translate("screens.saveApply")}
         </button>
-        <button type="button" className="btn" disabled={busy} onClick={props.onClose}>Annuler</button>
+        <button type="button" className="btn" disabled={busy} onClick={props.onClose}>{translate("screens.cancel")}</button>
       </div>
       </fieldset>
-      {busy ? <p role="status" className="muted">Opération en cours. Attends la fin avant de fermer.</p> : null}
+      {busy ? <p role="status" className="muted">{translate("screens.pending")}</p> : null}
     </Modal>
   );
 }

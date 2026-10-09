@@ -1,3 +1,4 @@
+import { t, formatTime, formatNumber, localizeText } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import type { FileChange, FileEvent } from "./types";
@@ -15,12 +16,12 @@ export interface TreeNode {
 export function FileRow(props: { f: FileChange; onClick?: () => void }) {
   const { f } = props;
   return (
-    <div className={`file-row ${props.onClick ? "clickable" : ""}`} title={f.path} aria-label={props.onClick ? `Voir les modifications de ${f.path}` : undefined} role={props.onClick ? "button" : undefined} tabIndex={props.onClick ? 0 : undefined} onClick={props.onClick} onKeyDown={props.onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); props.onClick?.(); } } : undefined}>
-      <span className={`file-kind ${f.kind === "write" ? "W" : "E"}`}>{f.kind === "write" ? "W" : "E"}</span>
+    <div className={`file-row ${props.onClick ? "clickable" : ""}`} title={f.path} aria-label={props.onClick ? t("workspace.viewChanges", { path: f.path }) : undefined} role={props.onClick ? "button" : undefined} tabIndex={props.onClick ? 0 : undefined} onClick={props.onClick} onKeyDown={props.onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); props.onClick?.(); } } : undefined}>
+      <span className={`file-kind ${f.kind === "write" ? "W" : "E"}`} title={f.kind === "write" ? t("workspace.write") : t("workspace.edit")}>{f.kind === "write" ? t("workspace.writeShort") : t("workspace.editShort")}</span>
       <span className="file-path mono">{f.path.split("/").slice(-2).join("/")}</span>
       <span className="file-stats">
-        {f.additions > 0 ? <span className="add">+{f.additions}</span> : null}
-        {f.deletions > 0 ? <span className="del">−{f.deletions}</span> : null}
+        {f.additions > 0 ? <span className="add">+{formatNumber(f.additions)}</span> : null}
+        {f.deletions > 0 ? <span className="del">−{formatNumber(f.deletions)}</span> : null}
       </span>
       {props.onClick ? <DiffAffordance /> : null}
     </div>
@@ -45,20 +46,20 @@ export function FileDiffModal(props: { conversationId: string; path: string; onC
 
   const shortName = props.path.split("/").slice(-2).join("/");
   return (
-    <Modal title={`Modifications : ${shortName}`} onClose={props.onClose} wide>
-      {error ? <div className="error-text" role="alert">{error} <button type="button" className="btn btn-sm" onClick={() => setRetry((n) => n + 1)}>Réessayer</button></div> : null}
-      {!error && operations === null ? <div className="muted" role="status" style={{ padding: 12 }}>Chargement…</div> : null}
+    <Modal title={t("workspace.changesTitle", { name: shortName })} onClose={props.onClose} wide>
+      {error ? <div className="error-text" role="alert">{t("workspace.error", { detail: localizeText(error) })} <button type="button" className="btn btn-sm" onClick={() => setRetry((n) => n + 1)}>{t("workspace.retry")}</button></div> : null}
+      {!error && operations === null ? <div className="muted" role="status" style={{ padding: 12 }}>{t("workspace.loading")}</div> : null}
       {operations !== null && operations.length === 0 ? (
-        <div className="muted" style={{ padding: 12 }}>Aucune opération trouvée dans cette session.</div>
+        <div className="muted" style={{ padding: 12 }}>{t("workspace.noOperations")}</div>
       ) : null}
       {operations?.map((op, i) => (
         <div key={i} className="diff-op">
           <div className="diff-op-head">
-            <span className={`file-kind ${op.kind === "write" ? "W" : "E"}`}>{op.kind === "write" ? "W" : "E"}</span>
-            <span className="muted mono">{new Date(op.at).toLocaleTimeString()}</span>
+            <span className={`file-kind ${op.kind === "write" ? "W" : "E"}`} title={op.kind === "write" ? t("workspace.write") : t("workspace.edit")}>{op.kind === "write" ? t("workspace.writeShort") : t("workspace.editShort")}</span>
+            <span className="muted mono">{formatTime(op.at)}</span>
             <span className="file-stats" style={{ marginLeft: "auto" }}>
-              {op.additions > 0 ? <span className="add">+{op.additions}</span> : null}
-              {op.deletions > 0 ? <span className="del">−{op.deletions}</span> : null}
+              {op.additions > 0 ? <span className="add">+{formatNumber(op.additions)}</span> : null}
+              {op.deletions > 0 ? <span className="del">−{formatNumber(op.deletions)}</span> : null}
             </span>
           </div>
           {op.hunks.map((h, j) => (
@@ -71,7 +72,7 @@ export function FileDiffModal(props: { conversationId: string; path: string; onC
       ))}
       {operations !== null && operations.length > 0 ? (
         <div className="muted" style={{ fontSize: 11.5, marginTop: 10 }}>
-          Reconstruit depuis les appels d’outils de la session ; l'état actuel du fichier sur disque peut différer.
+          {t("workspace.reconstructed")}
         </div>
       ) : null}
     </Modal>
@@ -155,9 +156,9 @@ export function TreePanel(props: {
         >
           <span className="tree-icon">{n.type === "dir" ? (open.has(n.path) ? "▾" : "▸") : ""}</span>
           <span className={`tree-name ${n.type}`}>{n.name}</span>
-          {props.modifiedPaths?.has(n.path) ? <span className="tree-dot" role="img" aria-label="Modifié dans une conversation" /> : null}
+          {props.modifiedPaths?.has(n.path) ? <span className="tree-dot" role="img" aria-label={t("workspace.modified")} /> : null}
           {n.type === "file" && n.size !== undefined ? (
-            <span className="tree-size">{n.size > 1024 ? `${Math.round(n.size / 1024)} Ko` : `${n.size} o`}</span>
+            <span className="tree-size">{n.size > 1024 ? t("workspace.kilobytes", { count: formatNumber(Math.round(n.size / 1024)) }) : t("workspace.bytes", { count: formatNumber(n.size) })}</span>
           ) : null}
         </button>
         {n.type === "dir" && open.has(n.path) && n.children ? (
@@ -169,22 +170,22 @@ export function TreePanel(props: {
   return (
       <div className="tree-panes">
         <div className="tree-nav">
-          <button type="button" className="btn btn-sm" disabled={treeLoading} onClick={() => setRetry((n) => n + 1)}>Actualiser</button>
-          {treeLoading ? <p role="status">Chargement de l’arborescence…</p> : treeError ? <div role="alert" className="error-text">{treeError} <button type="button" className="btn btn-sm" onClick={() => setRetry((n) => n + 1)}>Réessayer</button></div> : tree.length === 0 ? <p className="muted">Dossier vide.</p> : renderNodes(tree, 0)}
+          <button type="button" className="btn btn-sm" disabled={treeLoading} onClick={() => setRetry((n) => n + 1)}>{t("workspace.refresh")}</button>
+          {treeLoading ? <p role="status">{t("workspace.treeLoading")}</p> : treeError ? <div role="alert" className="error-text">{t("workspace.error", { detail: localizeText(treeError) })} <button type="button" className="btn btn-sm" onClick={() => setRetry((n) => n + 1)}>{t("workspace.retry")}</button></div> : tree.length === 0 ? <p className="muted">{t("workspace.emptyFolder")}</p> : renderNodes(tree, 0)}
         </div>
         <div className="tree-viewer">
-          {error ? <div className="error-text" role="alert" style={{ padding: 12 }}>{error} <button type="button" className="btn btn-sm" onClick={() => selected && loadFile(selected)}>Réessayer</button></div> : null}
-          {fileLoading ? <p role="status">Chargement du fichier…</p> : null}
+          {error ? <div className="error-text" role="alert" style={{ padding: 12 }}>{t("workspace.error", { detail: localizeText(error) })} <button type="button" className="btn btn-sm" onClick={() => selected && loadFile(selected)}>{t("workspace.retry")}</button></div> : null}
+          {fileLoading ? <p role="status">{t("workspace.fileLoading")}</p> : null}
           {!fileLoading && !error && !content ? (
             <div className="muted" style={{ padding: 14, fontSize: 12.5 }}>
-              Sélectionne un fichier pour le lire sans le modifier. Les points marquent les fichiers modifiés par les agents.
+              {t("workspace.selectFile")}
             </div>
           ) : null}
           {content ? (
             <>
               <div className="tree-viewer-head mono">{selected}</div>
-              <pre className="tree-content" tabIndex={0} aria-label={`Contenu de ${selected}`}>{content.content}</pre>
-              {content.truncated ? <div className="muted" style={{ padding: 8, fontSize: 11.5 }}>Aperçu tronqué. Ouvre le fichier sur disque pour le lire en entier.</div> : null}
+              <pre className="tree-content" tabIndex={0} aria-label={t("workspace.fileContent", { path: selected ?? "" })}>{content.content}</pre>
+              {content.truncated ? <div className="muted" style={{ padding: 8, fontSize: 11.5 }}>{t("workspace.truncated")}</div> : null}
             </>
           ) : null}
         </div>
@@ -200,7 +201,7 @@ export function FileTreeModal(props: {
   onClose: () => void;
 }) {
   return (
-    <Modal title={`Arborescence : ${props.workspaceName}`} onClose={props.onClose} wide>
+    <Modal title={t("workspace.treeTitle", { name: props.workspaceName })} onClose={props.onClose} wide>
       <TreePanel workspaceId={props.workspaceId} modifiedPaths={props.modifiedPaths} />
     </Modal>
   );

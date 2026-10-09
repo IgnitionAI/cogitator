@@ -27,7 +27,7 @@ function extractText(content: unknown): string {
 function prettyArgs(args: unknown): string {
   try {
     const s = typeof args === "string" ? args : JSON.stringify(args, null, 2);
-    return s.length > RESULT_CAP ? s.slice(0, RESULT_CAP) + "\n… (tronqué)" : s;
+    return s.length > RESULT_CAP ? s.slice(0, RESULT_CAP) + "\n…" : s;
   } catch {
     return String(args);
   }
@@ -73,7 +73,7 @@ export function readEntries(sessionFile: string, limit = 300): HistoryEntry[] {
           out.push({
             type: "tool",
             id,
-            name: typeof block.name === "string" ? block.name : "outil",
+            name: typeof block.name === "string" ? block.name : "",
             args: prettyArgs(block.arguments),
           });
         }
@@ -85,7 +85,7 @@ export function readEntries(sessionFile: string, limit = 300): HistoryEntry[] {
       const callId = typeof msg.toolCallId === "string" ? msg.toolCallId : undefined;
       const index = callId !== undefined ? pendingTools.get(callId) : undefined;
       const text = extractText(content);
-      const capped = text.length > RESULT_CAP ? text.slice(0, RESULT_CAP) + "\n… (tronqué)" : text;
+      const capped = text.length > RESULT_CAP ? text.slice(0, RESULT_CAP) + "\n…" : text;
       if (index !== undefined && out[index]?.type === "tool") {
         const tool = out[index] as Extract<HistoryEntry, { type: "tool" }>;
         tool.result = capped;

@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { createElement, useState, type ReactNode } from "react";
 
 /**
@@ -58,13 +59,13 @@ function CodeBlock({ text, language }: { text: string; language: string }) {
   }
   return <div className="md-code-block">
     <div className="md-code-head">
-      <span>{language || "Texte"}</span>
+      <span>{language || t("chat.text")}</span>
       <button type="button" className="btn btn-sm" disabled={copy === "pending"} onClick={copyCode}>
-        {copy === "error" ? "Réessayer la copie" : "Copier le code"}
+        {copy === "error" ? t("chat.retryCopy") : t("chat.copyCode")}
       </button>
-      <span role="status" className={copy === "error" ? "is-error" : undefined}>{copy === "done" ? "Copié" : copy === "pending" ? "Copie…" : copy === "error" ? "Copie impossible. Réessaie ou sélectionne le texte." : ""}</span>
+      <span role="status" className={copy === "error" ? "is-error" : undefined}>{copy === "done" ? t("chat.copied") : copy === "pending" ? t("chat.copying") : copy === "error" ? t("chat.copyError") : ""}</span>
     </div>
-    <pre className="md-pre" tabIndex={0} aria-label="Bloc de code"><code>{text}</code></pre>
+    <pre className="md-pre" tabIndex={0} aria-label={t("chat.codeBlock")}><code>{text}</code></pre>
   </div>;
 }
 
@@ -156,8 +157,8 @@ export function Markdown(props: { text: string }) {
       const [head, ...body] = rows;
       if (head) {
         blocks.push(
-          <div key={key++} className="md-table-wrap" tabIndex={0} role="region" aria-label="Tableau">
-            <p className="md-scroll-hint">Défilement horizontal si nécessaire.</p>
+          <div key={key++} className="md-table-wrap" tabIndex={0} role="region" aria-label={t("chat.table")}>
+            <p className="md-scroll-hint">{t("chat.horizontalScroll")}</p>
             <table className="md-table">
               <thead>
                 <tr>{head.map((c, j) => <th key={j} scope="col">{renderInline(c.trim(), `t${key}h${j}`)}</th>)}</tr>

@@ -1,3 +1,4 @@
+import * as i18n from "../web/src/i18n.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -5,6 +6,8 @@ import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import type { HistoryEntry, SseEvent } from "../web/src/types";
 import * as generativeUI from "../src/generative-ui.js";
+
+i18n.setLocale("fr");
 
 // Executes the real component handlers with local hook/API doubles; never contacts the backend.
 function chatHarness() {
@@ -48,6 +51,7 @@ function chatHarness() {
       readAsDataURL(file: { name: string }) { this.result = `data:image/png;base64,${file.name}`; this.onload?.(); }
     },
     require: (name: string) => {
+      if (name === "./i18n" || name === "../i18n") return i18n;
       if (name === "react") return react;
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (name === "../api") return { openEvents: (_url: string, listener: typeof onEvent) => { onEvent = listener; return () => {}; }, api: {

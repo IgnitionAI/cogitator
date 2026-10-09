@@ -1,3 +1,5 @@
+import { t, formatDate, formatNumber, localizeText, statusLabel, thinkingLabel } from "./i18n";
+import type { workspaceMessages } from "./locales/workspace";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { api } from "./api";
 import { BoardPanel } from "./Board";
@@ -8,14 +10,14 @@ import { Badge, Empty, statusColor, useToast } from "./ui";
 import { ChatView } from "./screens/Conversations";
 import { Icon, type IconName } from "./icons";
 
-const TABS: Array<{ id: string; label: string; icon: IconName }> = [
-  { id: "board", label: "Tableau", icon: "board" },
-  { id: "activity", label: "Activité", icon: "activity" },
-  { id: "feed", label: "Journal", icon: "feed" },
-  { id: "files", label: "Fichiers", icon: "tree" },
-  { id: "conversations", label: "Conversations", icon: "chat" },
-  { id: "team", label: "Équipe", icon: "users" },
-  { id: "pm", label: "Chef de projet", icon: "bot" },
+const TABS: Array<{ id: string; label: keyof typeof workspaceMessages; icon: IconName }> = [
+  { id: "board", label: "workspace.board", icon: "board" },
+  { id: "activity", label: "workspace.activity", icon: "activity" },
+  { id: "feed", label: "workspace.feed", icon: "feed" },
+  { id: "files", label: "workspace.files", icon: "tree" },
+  { id: "conversations", label: "workspace.conversations", icon: "chat" },
+  { id: "team", label: "workspace.team", icon: "users" },
+  { id: "pm", label: "workspace.pm", icon: "bot" },
 ];
 
 export default function WorkspacePage(props: {
@@ -101,7 +103,7 @@ export default function WorkspacePage(props: {
     if (pmConv || pmPending.current) return;
     const chef = props.agents.find((a) => a.slug === "chef-de-projet");
     if (!chef) {
-      setPmError("Chef de Projet introuvable. Configure cet agent dans Équipe / Agents, puis réessaie.");
+      setPmError("workspace.pmMissing");
       return;
     }
     pmPending.current = true;
@@ -131,49 +133,49 @@ export default function WorkspacePage(props: {
   return (
     <>
       <div className="ws-head">
-        <button type="button" className="btn btn-sm" onClick={props.onBack}><Icon name="back" /> Workspaces</button>
+        <button type="button" className="btn btn-sm" onClick={props.onBack}><Icon name="back" /> {t("workspace.workspaces")}</button>
         <h1>{workspace.name}</h1>
         <span className="muted mono" style={{ fontSize: 12 }}>{workspace.dir}</span>
         {stats && stats.files.length > 0 ? (
           <span className="file-stats" style={{ marginLeft: 12 }}>
-            <span className="add">+{stats.totals.additions}</span>
-            <span className="del">−{stats.totals.deletions}</span>
+            <span className="add">+{formatNumber(stats.totals.additions)}</span>
+            <span className="del">−{formatNumber(stats.totals.deletions)}</span>
           </span>
         ) : null}
         <div style={{ flex: 1 }} />
         <button
           className="btn btn-sm"
-          title="Conversation de setup : le Majordome analyse le repo, propose conventions/règles/hooks/board, puis exécute"
+          title={t("workspace.initHelp")}
           onClick={() => {
             const majordome = props.agents.find((a) => a.slug === "majordome");
             if (!majordome) {
-              toast("Majordome introuvable", true);
+              toast(t("workspace.majordomoMissing"), true);
               return;
             }
             api.createConversation({
               workspace_id: workspace.id,
               agent_id: majordome.id,
-              prompt: "Initialise ce projet : analyse le repo et propose-moi le plan de setup (conventions, protections git, board initial, agents).",
+              prompt: t("workspace.initPrompt"),
             })
               .then((r) => props.onOpenConversation(r.conversation.id))
-              .catch((e: Error) => toast(e.message, true));
+              .catch((e: Error) => toast(t("workspace.error", { detail: localizeText(e.message) }), true));
           }}
         >
-          <Icon name="spark" size={14} /> Initialiser le projet
+          <Icon name="spark" size={14} /> {t("workspace.init")}
         </button>
       </div>
-      <div className="ws-tabs" role="tablist" aria-label="Workspace">
-        {TABS.map((t) => (
+      <div className="ws-tabs" role="tablist" aria-label={t("workspace.workspace")}>
+        {TABS.map((item) => (
           <button
-            key={t.id}
+            key={item.id}
             type="button"
             role="tab"
-            id={`${tabsId}-tab-${t.id}`}
-            aria-selected={tab === t.id}
-            aria-controls={`${tabsId}-panel-${t.id}`}
-            tabIndex={tab === t.id ? 0 : -1}
+            id={`${tabsId}-tab-${item.id}`}
+            aria-selected={tab === item.id}
+            aria-controls={`${tabsId}-panel-${item.id}`}
+            tabIndex={tab === item.id ? 0 : -1}
             onKeyDown={(e) => {
-              const index = TABS.findIndex((item) => item.id === t.id);
+              const index = TABS.findIndex((candidate) => candidate.id === item.id);
               const next = e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1
                 : e.key === "ArrowRight" ? (index + 1) % TABS.length
                 : e.key === "ArrowLeft" ? (index + TABS.length - 1) % TABS.length : null;
@@ -183,21 +185,21 @@ export default function WorkspacePage(props: {
               setTab(id);
               document.getElementById(`${tabsId}-tab-${id}`)?.focus();
             }}
-            className={`ws-tab ${tab === t.id ? "active" : ""}`}
-            onClick={() => setTab(t.id)}
+            className={`ws-tab ${tab === item.id ? "active" : ""}`}
+            onClick={() => setTab(item.id)}
           >
-            <Icon name={t.icon} size={14} /> {t.label}
-            {t.id === "conversations" && convs.length > 0 ? ` (${convs.length})` : ""}
+            <Icon name={item.icon} size={14} /> {t(item.label)}
+            {item.id === "conversations" && convs.length > 0 ? t("workspace.tabCount", { count: formatNumber(convs.length) }) : ""}
           </button>
         ))}
       </div>
 
-      {TABS.map((t) => <div key={t.id} id={`${tabsId}-panel-${t.id}`} role="tabpanel" aria-labelledby={`${tabsId}-tab-${t.id}`} hidden={tab !== t.id} tabIndex={0}>
-      {tab === t.id ? <>
+      {TABS.map((item) => <div key={item.id} id={`${tabsId}-panel-${item.id}`} role="tabpanel" aria-labelledby={`${tabsId}-tab-${item.id}`} hidden={tab !== item.id} tabIndex={0}>
+      {tab === item.id ? <>
       {["activity", "feed", "team", "conversations"].includes(tab) ? <>
-        <button type="button" className="btn btn-sm" disabled={loading} onClick={refresh}>Actualiser</button>
-        {loading ? <p role="status">Chargement…</p> : null}
-        {error ? <div role="alert" className="error-text">{error} <button type="button" className="btn btn-sm" onClick={refresh}>Réessayer</button></div> : null}
+        <button type="button" className="btn btn-sm" disabled={loading} onClick={refresh}>{t("workspace.refresh")}</button>
+        {loading ? <p role="status">{t("workspace.loading")}</p> : null}
+        {error ? <div role="alert" className="error-text">{t("workspace.error", { detail: localizeText(error) })} <button type="button" className="btn btn-sm" onClick={refresh}>{t("workspace.retry")}</button></div> : null}
       </> : null}
       {tab === "board" ? <BoardPanel workspaceId={workspace.id} agents={props.agents} onOpenConversation={props.onOpenConversation} /> : null}
 
@@ -208,7 +210,7 @@ export default function WorkspacePage(props: {
               <FileRow key={f.path} f={f} onClick={f.lastConversationId ? () => setDiffFor({ convId: f.lastConversationId!, path: f.path }) : undefined} />
             ))}
           </div>
-        ) : <Empty>Aucune modification enregistrée sur ce projet.</Empty>
+        ) : <Empty>{t("workspace.noChanges")}</Empty>
       ) : null}
 
       {tab === "feed" && !loading && !error ? (
@@ -216,7 +218,7 @@ export default function WorkspacePage(props: {
           <div style={{ maxWidth: 860 }}>
             <FeedList feed={feed} onOpenEvent={(e) => setDiffFor({ convId: e.conversationId, path: e.path })} />
           </div>
-        ) : <Empty>Les modifications des agents apparaîtront ici.</Empty>
+        ) : <Empty>{t("workspace.feedEmpty")}</Empty>
       ) : null}
 
       {tab === "files" ? <TreePanel workspaceId={workspace.id} modifiedPaths={modified} /> : null}
@@ -229,7 +231,7 @@ export default function WorkspacePage(props: {
           onTalk={(agent) => {
             api.createConversation({ workspace_id: workspace.id, agent_id: agent.id })
               .then((r) => props.onOpenConversation(r.conversation.id))
-              .catch(() => toast("Création de la conversation impossible", true));
+              .catch((e: Error) => toast(t("workspace.conversationFailed") + ": " + localizeText(e.message), true));
           }}
         />
       ) : null}
@@ -245,9 +247,9 @@ export default function WorkspacePage(props: {
             />
           </div>
         ) : (
-          <Empty>{pmLoading ? <span role="status">Préparation de la conversation avec le Chef de Projet…</span> : <>
-            <span role="alert">{pmError || "Conversation indisponible."}</span>{" "}
-            <button type="button" className="btn btn-sm" onClick={() => void openPm()}>Réessayer</button>
+          <Empty>{pmLoading ? <span role="status">{t("workspace.pmPreparing")}</span> : <>
+            <span role="alert">{pmError === "workspace.pmMissing" ? t("workspace.pmMissing") : pmError ? t("workspace.error", { detail: localizeText(pmError) }) : t("workspace.unavailable")}</span>{" "}
+            <button type="button" className="btn btn-sm" onClick={() => void openPm()}>{t("workspace.retry")}</button>
           </>}</Empty>
         )
       ) : null}
@@ -257,15 +259,15 @@ export default function WorkspacePage(props: {
           <div className="cards" style={{ marginTop: 4 }}>
             {convs.map((c) => (
               <button type="button" key={c.id} className="card clickable" onClick={() => props.onOpenConversation(c.id)}>
-                <h4>{c.title || "(sans titre)"}</h4>
+                <h4>{c.title || t("workspace.untitled")}</h4>
                 <div className="meta">
-                  <span className="mono">{c.provider}/{c.model}{c.thinking ? `:${c.thinking}` : ""}</span>
-                  <span><Badge color={statusColor(c.status)}>{c.status}</Badge>{" "}<span className="muted">{new Date(c.updated_at).toLocaleString()}</span></span>
+                  <span className="mono">{c.provider}/{c.model}{c.thinking ? `:${thinkingLabel(c.thinking)}` : ""}</span>
+                  <span><Badge color={statusColor(c.status)}>{statusLabel(c.status)}</Badge>{" "}<span className="muted">{formatDate(c.updated_at)}</span></span>
                 </div>
               </button>
             ))}
           </div>
-        ) : <Empty>Aucune conversation dans ce workspace. Ouvre l’onglet Chef de projet pour commencer.</Empty>
+        ) : <Empty>{t("workspace.noConversations")}</Empty>
       ) : null}
       </> : null}
       </div>)}
@@ -291,14 +293,14 @@ function TeamTab(props: {
     .filter((m) => m.assigned.length > 0 || m.convs.length > 0);
 
   if (members.length === 0) {
-    return <Empty>Personne sur ce projet pour l’instant. Assigne un agent à une carte du tableau ou ouvre l’onglet Chef de projet.</Empty>;
+    return <Empty>{t("workspace.noTeam")}</Empty>;
   }
 
-  const COLS: Array<{ id: string; label: string }> = [
-    { id: "in_progress", label: "En cours" },
-    { id: "todo", label: "À faire" },
-    { id: "backlog", label: "À planifier" },
-    { id: "done", label: "Terminé" },
+  const COLS: Array<{ id: string; label: keyof typeof workspaceMessages }> = [
+    { id: "in_progress", label: "workspace.inProgress" },
+    { id: "todo", label: "workspace.todo" },
+    { id: "backlog", label: "workspace.backlog" },
+    { id: "done", label: "workspace.done" },
   ];
 
   return (
@@ -320,9 +322,9 @@ function TeamTab(props: {
               <span className="team-stats">
                 {COLS.map((col) => {
                   const n = assigned.filter((c) => c.status === col.id).length;
-                  return n > 0 ? <span key={col.id} className="team-stat">{col.label} : <strong>{n}</strong></span> : null;
+                  return n > 0 ? <span key={col.id} className="team-stat">{t(col.label)} : <strong>{formatNumber(n)}</strong></span> : null;
                 })}
-                {convs.length > 0 ? <span className="team-stat">{convs.length} conversation(s)</span> : null}
+                {convs.length > 0 ? <span className="team-stat">{t((convs.length) === 1 ? "workspace.conversationCountOne" : "workspace.conversationCountMany", { count: formatNumber(convs.length) })}</span> : null}
               </span>
               {active.length > 0 ? (
                 <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -331,15 +333,15 @@ function TeamTab(props: {
                       #{c.number} {c.title.slice(0, 42)}{c.title.length > 42 ? "…" : ""}
                     </a>
                   ))}
-                  {active.length > 4 ? <span className="muted">+{active.length - 4} autre(s)…</span> : null}
+                  {active.length > 4 ? <span className="muted">{t((active.length - 4) === 1 ? "workspace.moreOne" : "workspace.moreMany", { count: formatNumber(active.length - 4) })}</span> : null}
                 </span>
               ) : (
-                <span className="muted">Aucun ticket actif</span>
+                <span className="muted">{t("workspace.noTickets")}</span>
               )}
-              {lastActivity > 0 ? <span className="muted">activité : {new Date(lastActivity).toLocaleString()}</span> : null}
+              {lastActivity > 0 ? <span className="muted">{t("workspace.lastActivity", { date: formatDate(lastActivity) })}</span> : null}
             </div>
             <div className="actions">
-              <button className="btn btn-sm" onClick={() => props.onTalk(agent)}>Ouvrir une conversation</button>
+              <button className="btn btn-sm" onClick={() => props.onTalk(agent)}>{t("workspace.openConversation")}</button>
             </div>
           </div>
         );

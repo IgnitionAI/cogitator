@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
+import { localizeText, t, useLocale } from "./i18n";
 
 export function Modal(props: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   const titleId = useId();
@@ -29,7 +30,7 @@ export function Modal(props: { title: string; onClose: () => void; children: Rea
       >
         <div className="modal-head">
           <h2 id={titleId}>{props.title}</h2>
-          <button type="button" className="icon-btn" aria-label="Fermer" onClick={props.onClose}>
+          <button type="button" className="icon-btn" aria-label={t("common.close")} onClick={props.onClose}>
             <Icon name="close" />
           </button>
         </div>
@@ -81,7 +82,7 @@ export function Empty(props: { title?: string; children: ReactNode; action?: Rea
 
 export function ErrorText(props: { error: string | null }) {
   if (!props.error) return null;
-  return <div className="error-text" role="alert">{props.error}</div>;
+  return <div className="error-text" role="alert">{localizeText(props.error)}</div>;
 }
 
 export function PageHead(props: { title: string; sub?: ReactNode; actions?: ReactNode }) {
@@ -124,7 +125,7 @@ export function Spinner() {
 export function Skeleton(props: { rows?: number }) {
   return (
     <div className="list" role="status">
-      <span className="sr-only">Chargement en cours…</span>
+      <span className="sr-only">{t("common.loading")}</span>
       {Array.from({ length: props.rows ?? 4 }, (_, i) => (
         <div key={i} className="list-row skeleton-row" aria-hidden="true" style={{ "--i": i } as CSSProperties}>
           <div className="skeleton-line" />
@@ -152,6 +153,7 @@ let toastSequence = 0;
 
 /** File de toasts globale : un seul propriétaire (le provider), consommée via useToast(). */
 export function ToastProvider(props: { children: ReactNode }) {
+  useLocale();
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
 
   const toast = useCallback<ToastFn>((text, isError = false) => {
@@ -164,11 +166,11 @@ export function ToastProvider(props: { children: ReactNode }) {
     <ToastContext.Provider value={toast}>
       {props.children}
       <div className="toasts" role="status" aria-live="polite">
-        {toasts.map((t) => (
-          <div key={t.id} className={`toast ${t.isError ? "err" : ""}`}>
-            <Icon name={t.isError ? "warning" : "check"} size={14} />
-            <span>{t.text}</span>
-            <IconBtn name="close" label="Fermer la notification" onClick={() => setToasts((current) => current.filter((entry) => entry.id !== t.id))} />
+        {toasts.map((entry) => (
+          <div key={entry.id} className={`toast ${entry.isError ? "err" : ""}`}>
+            <Icon name={entry.isError ? "warning" : "check"} size={14} />
+            <span>{localizeText(entry.text)}</span>
+            <IconBtn name="close" label={t("common.dismissNotification")} onClick={() => setToasts((current) => current.filter((item) => item.id !== entry.id))} />
           </div>
         ))}
       </div>

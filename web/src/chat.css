@@ -117,7 +117,6 @@
 .gen-ui-table caption { text-align: start; padding: 8px 12px; color: var(--muted); font-size: 12px; }
 .gen-ui-table th button { display: inline-flex; align-items: center; min-height: 32px; background: none; border: 0; padding: 0; color: var(--fg); font: inherit; text-align: start; cursor: pointer; }
 .gen-ui-table td { overflow-wrap: anywhere; min-width: 100px; }
-.gen-ui-table > .gen-ui-hint::after { content: " · Défilement horizontal si nécessaire"; }
 @media (hover: hover) and (pointer: fine) {
   .gen-ui-submit:hover:not(:disabled) { background: var(--accent-hover); }
   .gen-ui-option:hover { border-color: var(--control-border); }

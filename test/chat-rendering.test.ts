@@ -1,3 +1,4 @@
+import * as i18n from "../web/src/i18n.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -7,12 +8,15 @@ import * as runtime from "react/jsx-runtime";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
+i18n.setLocale("fr");
+
 function load(file: string, react: unknown = React, navigator: unknown = {}) {
   const exports: Record<string, React.ComponentType<Record<string, unknown>>> = {};
   const code = ts.transpileModule(readFileSync(`web/src/${file}.tsx`, "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   runInNewContext(code, { exports, navigator, URL, require(name: string) {
+      if (name === "./i18n" || name === "../i18n") return i18n;
     if (name === "react") return react;
     if (name === "react/jsx-runtime") return runtime;
     if (name === "./icons") return load("icons");

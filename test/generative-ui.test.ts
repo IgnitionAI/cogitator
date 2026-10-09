@@ -1,3 +1,4 @@
+import * as i18n from "../web/src/i18n.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -8,6 +9,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import * as contract from "../src/generative-ui.js";
 import { parseUI, parseUIResponse, serializeUIResponse, splitUIBlocks, uiRequestKey, type UISpec, type UIResponse } from "../src/generative-ui.js";
+
+i18n.setLocale("fr");
 
 const form: UISpec = { version: 1, id: "step", kind: "form", title: "Projet", fields: [
   { id: "name", label: "Nom", type: "text", required: true },
@@ -82,7 +85,7 @@ const componentExports: {
 } = {} as typeof componentExports;
 runInNewContext(ts.transpileModule(readFileSync("web/src/GenerativeUI.tsx", "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText, {
   exports: componentExports,
-  require: (name: string) => name === "../../src/generative-ui" ? contract : require(name),
+  require: (name: string) => name === "./i18n" ? i18n : name === "../../src/generative-ui" ? contract : require(name),
 });
 const render = (spec: unknown, props: { complete?: boolean; response?: UIResponse; disabled?: boolean } = {}) => renderToStaticMarkup(createElement(componentExports.GenerativeUI, { source: JSON.stringify(spec), complete: true, onSubmit: async () => {}, ...props }));
 

@@ -1,3 +1,4 @@
+import * as i18n from "../web/src/i18n.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -13,6 +14,8 @@ import { PiPool, type PiClientFactoryOptions } from "../src/pool.js";
 import { getPaths } from "../src/paths.js";
 import { UI_INSTRUCTIONS, UI_PRESENTATION_POLICY, parseUIResponse, serializeUIResponse } from "../src/generative-ui.js";
 import { readEntries } from "../src/history.js";
+
+i18n.setLocale("fr");
 
 test("new conversations freeze the UI instructions; old spawn snapshots remain unchanged", () => {
   const dir = mkdtempSync(join(tmpdir(), "cog-ui-snapshot-"));
@@ -97,7 +100,7 @@ test("JSONL restores generated interfaces, responses and actual tool error state
 test("live tools finish only on execution end and preserve explicit errors", () => {
   const exports: { applyEvent?: (items: unknown[], event: unknown, state: unknown) => Array<Record<string, unknown>> } = {};
   const source = readFileSync("web/src/screens/Conversations.tsx", "utf8") + "\nexport { applyEvent };";
-  runInNewContext(ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText, { exports, require: () => ({}) });
+  runInNewContext(ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText, { exports, require: (name: string) => name === "../i18n" ? i18n : ({}) });
   const apply = exports.applyEvent!;
   const state = { assistantIndex: null, streaming: false, toolByContent: {} };
   let items = apply([], { type: "message_update", assistantMessageEvent: { type: "toolcall_start", id: "call1", contentIndex: 0, toolName: "read" } }, state);
@@ -117,7 +120,7 @@ test("recovery repairs missed text, tool completion and remote responses while r
   type Item = { kind: string; text: string; id?: string; key?: number; result?: string; state?: string; isError?: boolean };
   const exports: { reconcile?: (items: Item[], entries: unknown[], stream: typeof state, initial?: boolean) => Item[] } = {};
   const source = readFileSync("web/src/screens/Conversations.tsx", "utf8") + "\nexport { reconcile };";
-  runInNewContext(ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText, { exports, require: () => ({}) });
+  runInNewContext(ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText, { exports, require: (name: string) => name === "../i18n" ? i18n : ({}) });
   const state = { assistantIndex: 1 as number | null, streaming: false, toolByContent: { 0: 2 } };
   const response = serializeUIResponse({ version: 1, id: "choice", kind: "choices", title: "Choix", options: [{ id: "yes", label: "Oui" }] }, { selection: "yes" });
   const previous = [

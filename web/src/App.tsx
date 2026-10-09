@@ -11,19 +11,21 @@ import WorkspacePage from "./WorkspacePage";
 import type { AgentPreset, Workspace } from "./types";
 import { Icon, type IconName } from "./icons";
 import { useToast } from "./ui";
+import { localizeText, setLocale, statusLabel, t, useLocale, type TranslationKey } from "./i18n";
 
 const NAV = [
-  { id: "conversations", icon: "chat", label: "Conversations" },
-  { id: "workspaces", icon: "folder", label: "Workspaces" },
-  { id: "agents", icon: "bot", label: "Agents" },
-  { id: "providers", icon: "plug", label: "Fournisseurs" },
-  { id: "cron", icon: "clock", label: "Cron" },
-  { id: "settings", icon: "settings", label: "Paramètres" },
-] as const satisfies ReadonlyArray<{ id: string; icon: IconName; label: string }>;
+  { id: "conversations", icon: "chat", label: "common.conversations" },
+  { id: "workspaces", icon: "folder", label: "common.workspaces" },
+  { id: "agents", icon: "bot", label: "common.agents" },
+  { id: "providers", icon: "plug", label: "common.providers" },
+  { id: "cron", icon: "clock", label: "common.cron" },
+  { id: "settings", icon: "settings", label: "common.settings" },
+] as const satisfies ReadonlyArray<{ id: string; icon: IconName; label: TranslationKey }>;
 
 type ScreenId = (typeof NAV)[number]["id"];
 
 export default function App() {
+  const locale = useLocale();
   const [screen, setScreen] = useState<ScreenId>("conversations");
   const [health, setHealth] = useState<Health | null>(null);
   const toast = useToast();
@@ -41,7 +43,7 @@ export default function App() {
     const close = openEvents("/api/events", (e) => {
       const ev = e as { type?: string; name?: string; status?: string; error?: string };
       if (ev.type === "cron_run_finished") {
-        toast(`${ev.name} : run ${ev.status}${ev.error ? ` (${ev.error})` : ""}`, ev.status !== "ok");
+        toast(t(ev.error ? "common.cronFinishedError" : "common.cronFinished", { name: ev.name ?? "", status: statusLabel(ev.status ?? ""), error: localizeText(ev.error ?? "") }), ev.status !== "ok");
       }
     });
     return close;
@@ -51,7 +53,7 @@ export default function App() {
     if (!navOpen) return;
     const desktop = window.matchMedia("(min-width: 769px)");
     const closeOnDesktop = () => { if (desktop.matches) setNavOpen(false); };
-    const links = sidebar.current?.querySelectorAll<HTMLButtonElement>("button");
+    const links = sidebar.current?.querySelectorAll<HTMLElement>("button, select");
     sidebar.current?.querySelector<HTMLButtonElement>("[aria-current=page]")?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") setNavOpen(false);
@@ -86,7 +88,7 @@ export default function App() {
       case "workspaces":
         return <Workspaces onOpenWorkspace={(w) => {
           setOpenWorkspace(w);
-          api.agents().then((r) => setAgents(r.agents)).catch((error: unknown) => toast(`Impossible d’actualiser les agents : ${String(error)}`, true));
+          api.agents().then((r) => setAgents(r.agents)).catch((error: unknown) => toast(t("common.refreshAgentsError", { error: localizeText(String(error)) }), true));
         }} />;
       case "agents":
         return <Agents />;
@@ -101,21 +103,21 @@ export default function App() {
 
   return (
     <div className={`app ${navOpen ? "nav-open" : ""}`}>
-      <a className="skip-link" href="#main" inert={navOpen}>Aller au contenu</a>
+      <a className="skip-link" href="#main" inert={navOpen}>{t("common.skip")}</a>
       <header className="topbar" inert={navOpen}>
-        <button ref={menuButton} type="button" className="icon-btn" aria-label={navOpen ? "Fermer le menu" : "Ouvrir le menu"} aria-expanded={navOpen} aria-controls="sidebar" onClick={() => setNavOpen((open) => !open)}>
+        <button ref={menuButton} type="button" className="icon-btn" aria-label={t(navOpen ? "common.closeMenu" : "common.openMenu")} aria-expanded={navOpen} aria-controls="sidebar" onClick={() => setNavOpen((open) => !open)}>
           <Icon name="menu" />
         </button>
         <span className="brand-inline">Cogitator</span>
       </header>
       <div className="nav-scrim" onClick={() => setNavOpen(false)} />
-      <aside ref={sidebar} id="sidebar" className="sidebar" role={navOpen ? "dialog" : undefined} aria-modal={navOpen || undefined} aria-label="Navigation principale">
+      <aside ref={sidebar} id="sidebar" className="sidebar" role={navOpen ? "dialog" : undefined} aria-modal={navOpen || undefined} aria-label={t("common.navigation")}>
         <div className="brand">
           <img src="/favicon.png" alt="" className="brand-logo" width={26} height={26} />
           <span>Cogita<em>tor</em></span>
-          <button type="button" className="icon-btn nav-close" aria-label="Fermer le menu" onClick={() => setNavOpen(false)}><Icon name="close" /></button>
+          <button type="button" className="icon-btn nav-close" aria-label={t("common.closeMenu")} onClick={() => setNavOpen(false)}><Icon name="close" /></button>
         </div>
-        <nav aria-label="Principal">
+        <nav aria-label={t("common.main")}>
           {NAV.map((n) => (
             <button
               key={n.id}
@@ -124,11 +126,18 @@ export default function App() {
               aria-current={activeScreen === n.id ? "page" : undefined}
               onClick={() => { setOpenWorkspace(null); go(n.id); }}
             >
-              <Icon name={n.icon} /> {n.label}
+              <Icon name={n.icon} /> {t(n.label)}
             </button>
           ))}
         </nav>
         <div className="foot">
+          <label className="language-picker">
+            <span>{t("common.language")}</span>
+            <select value={locale} onChange={(event) => setLocale(event.target.value === "fr" ? "fr" : "en")}>
+              <option value="fr" lang="fr">Français</option>
+              <option value="en" lang="en">English</option>
+            </select>
+          </label>
           {health ? `v${health.version} · pi ${health.pi_version ?? "?"}` : "…"}
         </div>
       </aside>

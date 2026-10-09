@@ -33,7 +33,7 @@ const FILE_EVENTS_LINES_SCAN = 3000;
 const FILE_TOOLS = new Set(["edit", "write"]);
 
 function cap(s: string): string {
-  return s.length > TEXT_CAP ? s.slice(0, TEXT_CAP) + "\n… (tronqué)" : s;
+  return s.length > TEXT_CAP ? s.slice(0, TEXT_CAP) + "\n…" : s;
 }
 
 function countLines(s: string | undefined): number {

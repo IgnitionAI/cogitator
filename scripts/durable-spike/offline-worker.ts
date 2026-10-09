@@ -1,26 +1,34 @@
 import assert from 'node:assert/strict';
 import { writeFileSync, unlinkSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 
 // Fixed profile supervisor; only a bounded, trusted Node test, no shell or descendants.
 const [workspace, receipt, socket, mode] = process.argv.slice(2);
 assert(workspace && receipt && socket && (mode === 'interrupt' || mode === 'complete'));
+let commandClosed = false;
+process.once('exit', () => {
+  if (commandClosed) writeFileSync(join(dirname(receipt), 'worker.exited'), 'exited');
+});
 let stopping = false;
 const command = spawn(process.execPath, ['--test', '--experimental-test-isolation=none', '--test-timeout=10000', 'offline.test.mjs'], {
   cwd: workspace, env: { FIXTURE_DELAY: mode === 'interrupt' ? '8000' : '0' }, stdio: ['ignore', 'pipe', 'pipe'],
 });
 const server = createServer(connection => {
+  connection.on('error', () => connection.destroy());
   connection.once('data', data => {
     if (data.toString() !== 'stop') return connection.destroy();
     stopping = true;
     command.kill('SIGTERM');
-    command.once('exit', () => connection.end('stopped'));
+    command.once('close', () => connection.end('stopped'));
   });
 });
 const deadline = setTimeout(() => { stopping = true; command.kill('SIGKILL'); }, 12000);
-command.on('error', error => { throw error; });
-command.on('exit', code => {
+command.on('error', () => { stopping = true; });
+server.on('error', () => { stopping = true; command.kill('SIGKILL'); });
+command.on('close', code => {
+  commandClosed = true;
   writeFileSync(receipt, stopping ? 'terminated' : code === 0 ? 'passed' : 'failed');
   clearTimeout(deadline);
   server.close();

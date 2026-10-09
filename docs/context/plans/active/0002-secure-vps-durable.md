@@ -295,6 +295,8 @@ Implementation order and stop conditions:
 
 The isolated SDK spike is implemented in `scripts/durable-spike/`, with exact SDK pins and its own lockfile; root runtime dependencies and the existing classic graph remain unchanged. [P0 evidence](../../../durable-spike.md) records the bounded supported profile and 15 actual SIGKILL/reopen scenarios, including revision-recorded disposable Git clones, a real offline Node test, grant rejection/binding and frozen-profile checks. Missing legacy/herdr support stays explicit rather than silently broadening capabilities.
 
+The first implementation review identified local proof gaps: absence-aware file reads, exit-before-cleanup ordering, an edit-recovery false positive, incomplete synthetic grant scope checks, and an insufficiently specific required-preset/MCP inventory. These require correction and repeat review before accepting the implementation evidence; the design-review approval above does not override code-review findings.
+
 P0's fixture-profile checks do not implement a remote backend or certify rootless containers, real OIDC/MFA, deployed recovery, arbitrary coding presets, or P1–P5. The first external gate remains designation of the authorized target VPS, hostname and configured OIDC owner/application. Those cannot safely be inferred from unrelated SSH aliases or model-provider credentials. Review and verification must continue to report the full request as BLOCKED — NOT PROVEN while these criteria remain unmet.
 
 ## 11. Primary references

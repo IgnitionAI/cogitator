@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { appendFile, readFile } from 'node:fs/promises';
+import { appendFile, readFile, writeFile, rm } from 'node:fs/promises';
 import { fork } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 import { createConnection } from 'node:net';
 import { createHash, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -11,19 +12,44 @@ import { createEditTool } from '@earendil-works/pi-durable/tools';
 
 export const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 
+export async function readOptional(path: string): Promise<string> {
+  try { return await readFile(path, 'utf8'); }
+  catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return '';
+    throw error;
+  }
+}
+
+export async function cleanupWorker(directory: string) {
+  if (!await readOptional(join(directory, 'worker.expected'))) return;
+  for (let attempt = 0; attempt < 160; attempt++) {
+    if (await readOptional(join(directory, 'worker.exited'))) return;
+    await new Promise<void>(resolve => {
+      const connection = createConnection(join(directory, 'w.sock'));
+      connection.setTimeout(100, () => connection.destroy());
+      connection.on('connect', () => connection.end('stop'));
+      connection.on('error', () => {}); // Socket may not yet exist; exit marker is authoritative.
+      connection.on('close', () => resolve());
+      connection.resume();
+    });
+    await delay(100);
+  }
+  throw new Error(`Supervisor did not terminate; preserve fixtures at ${directory}`);
+}
+
 export const Approval = defineDoc<{ digest: string; mission: string; target: string; artifact: string; arguments: string; uses: number; revoked: boolean; denied: boolean; expires: number; intentTask: number }>({
   kind: 'spike.approval', version: 1, scope: 'conversation', history: 'latest', fork: 'initial',
-  initial: () => ({ digest: 'sha256:fixture-only', mission: 'fixture-mission', target: 'fixture',
+  initial: () => ({ digest: digest('fixture_unsafe:v1'), mission: 'fixture-mission', target: 'fixture',
     artifact: digest('immutable fixture\n'), arguments: digest('{}'), uses: 1,
     revoked: false, denied: false, expires: 2000000000000, intentTask: 0 }),
 });
 
 // A deliberately narrow profile: only one known file and exact before/after bytes.
 // Not a replacement for arbitrary shell recovery or a production policy gateway.
-export function fixtureTools(directory: string, crash: boolean, beforeDispatch = false) {
+export function fixtureTools(directory: string, crash: boolean, beforeDispatch = false, editReplay: 'safe' | 'unsafe' = 'safe') {
   const edit = createEditTool();
   const localEdit = defineTool({
-    name: 'fixture_edit', description: 'Reconcile one fixture edit', parameters: Type.Object({}), replay: 'safe',
+    name: 'fixture_edit', description: 'Reconcile one fixture edit', parameters: Type.Object({}), replay: editReplay,
     async execute(_args, api, context) {
       const intent = await api.memo('edit', { before: 'before\n', after: 'after\n' }, context);
       const current = await readFile(join(directory, 'workspace', 'fixture.txt'), 'utf8');
@@ -46,7 +72,7 @@ export function fixtureTools(directory: string, crash: boolean, beforeDispatch =
       const artifact = digest(await readFile(join(directory, 'workspace', 'artifact.txt'), 'utf8'));
       await api.commit(async tx => {
         const grant = await tx.doc(Approval, api.conversationId);
-        assert(grant.uses === 1 && !grant.revoked && !grant.denied && grant.expires > Date.now() && grant.arguments === digest(JSON.stringify(args)) && grant.artifact === artifact, 'No valid fixture grant');
+        assert(grant.mission === 'fixture-mission' && grant.target === 'fixture' && grant.digest === digest('fixture_unsafe:v1') && grant.uses === 1 && !grant.revoked && !grant.denied && grant.expires > Date.now() && grant.arguments === digest(JSON.stringify(args)) && grant.artifact === artifact, 'No valid fixture grant');
         grant.uses = 0;
         grant.intentTask = api.taskId;
       }, context);
@@ -71,10 +97,7 @@ export function fixtureTools(directory: string, crash: boolean, beforeDispatch =
       const receipt = join(directory, `${id}.receipt`);
       const socket = join(directory, 'w.sock');
       if (execution) {
-        let prior = await readFile(receipt, 'utf8').catch(error => {
-          if (error.code !== 'ENOENT') throw error;
-          return '';
-        });
+        let prior = await readOptional(receipt);
         if (!prior) {
           const observed = await new Promise<string>((resolve, reject) => {
             const connection = createConnection(socket);
@@ -87,11 +110,14 @@ export function fixtureTools(directory: string, crash: boolean, beforeDispatch =
           });
           assert.equal(observed, 'stopped');
           await api.details({ observedLiveWorker: id, stopped: true }, context);
+          await cleanupWorker(directory);
           prior = await readFile(receipt, 'utf8');
         }
         assert(prior === 'terminated' || prior === 'passed', 'Unknown worker outcome requires attention');
         if (prior === 'passed') return { content: [{ type: 'text', text: 'previous test passed' }] };
       }
+      await rm(join(directory, 'worker.exited'), { force: true });
+      await writeFile(join(directory, 'worker.expected'), id);
       await new Promise<void>((resolve, reject) => {
         const worker = fork(fileURLToPath(new URL('./offline-worker.ts', import.meta.url)),
           [join(directory, 'workspace'), receipt, socket, crash ? 'interrupt' : 'complete'],

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { fork } from 'node:child_process';
-import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
@@ -13,7 +13,7 @@ import { SqliteStorage } from '@earendil-works/pi-durable/storage/sqlite';
 import { NodeExecutionEnv } from '@earendil-works/pi-durable/env/node';
 import { compatibility, schemaVersion } from './compatibility.js';
 import { cloneFixture, fixtureRepository, git } from './repository.js';
-import { fixtureTools, Approval, digest } from './tools.js';
+import { fixtureTools, Approval, digest, readOptional, cleanupWorker } from './tools.js';
 
 const Frozen = defineDoc({ kind: 'spike.profile', version: 1, scope: 'conversation', history: 'latest', fork: 'initial', initial: () => ({ code: '', revision: '' }) });
 
@@ -26,12 +26,12 @@ async function open(directory: string, slow: boolean, scenario = 'model') {
   const faux = fauxProvider(slow ? { tokensPerSecond: 10, tokenSize: { min: 1, max: 1 } } : {});
   faux.setResponses([fauxAssistantMessage(slow ? 'partial '.repeat(1000) : 'recovered'), fauxAssistantMessage('queued answer')]);
   if (scenario.startsWith('fixture_')) faux.setResponses(slow
-    ? [fauxAssistantMessage(fauxToolCall(scenario === 'fixture_grant_boundary' ? 'fixture_unsafe' : scenario === 'fixture_conflict' ? 'fixture_edit' : scenario, {}), { stopReason: 'toolUse' })]
+    ? [fauxAssistantMessage(fauxToolCall(scenario === 'fixture_grant_boundary' ? 'fixture_unsafe' : (scenario === 'fixture_conflict' || scenario === 'fixture_edit_mutant') ? 'fixture_edit' : scenario, {}), { stopReason: 'toolUse' })]
     : [fauxAssistantMessage('recovered tool')]);
   const models = createModels();
   models.setProvider(faux.provider);
   const registry = createRegistry();
-  const profile = defineExtension({ name: 'fixture-v1', tools: fixtureTools(directory, slow, scenario === 'fixture_grant_boundary') });
+  const profile = defineExtension({ name: 'fixture-v1', tools: fixtureTools(directory, slow, scenario === 'fixture_grant_boundary', scenario === 'fixture_edit_mutant' ? 'unsafe' : 'safe') });
   registry.install(profile);
   const harness = await Harness.open(storage, { models, registry, env: () => new NodeExecutionEnv({ cwd: join(directory, 'workspace') }), settings: { compaction: { enabled: false }, retry: { enabled: false }, progress: { partialIntervalMs: 1 } } }, context);
   const model = faux.getModel();
@@ -54,6 +54,7 @@ async function child(directory: string, mode: string, witness: string) {
   const [phase, scenario = 'model'] = mode.split(':');
   const runtime = await open(directory, phase === 'seed', scenario);
   const { harness, root, storage, faux, registry, profile, preflight } = runtime;
+  if (mode === 'timeout') { setInterval(() => {}, 1000); return; }
   if (scenario.startsWith('profile_')) {
     if (phase === 'seed') {
       if (scenario === 'profile_unknown') await root.configure({ extensions: [defineExtension({ name: 'unknown' })] }, context);
@@ -94,6 +95,9 @@ async function child(directory: string, mode: string, witness: string) {
     if (phase === 'seed') {
       await root.commit(async tx => {
         const grant = await tx.doc(Approval, root.id);
+        if (scenario === 'grant_mission') grant.mission = 'different-mission';
+        if (scenario === 'grant_target') grant.target = 'different-target';
+        if (scenario === 'grant_action') grant.digest = digest('different-action');
         if (scenario === 'grant_expired') grant.expires = 0;
         if (scenario === 'grant_revoked') grant.revoked = true;
         if (scenario === 'grant_denied') grant.denied = true;
@@ -110,10 +114,7 @@ async function child(directory: string, mode: string, witness: string) {
     if (scenario === 'grant_denied') assert.equal(grant.denied, true);
     faux.setResponses([fauxAssistantMessage(fauxToolCall('fixture_unsafe', {}), { stopReason: 'toolUse' }), fauxAssistantMessage('denied')]);
     await (await root.submit({ type: 'input', content: 'protected operation', requestId: 'protected' }, context)).wait(context);
-    assert.equal(await readFile(join(directory, 'effects.txt'), 'utf8').catch(error => {
-      if (error.code !== 'ENOENT') throw error;
-      return '';
-    }), '');
+    assert.equal(await readOptional(join(directory, 'effects.txt')), '');
     assert(JSON.stringify((await root.context(context)).entries).includes('No valid fixture grant'));
     assert.equal((await harness.snapshot(Approval, root.id, context))?.uses, 1);
     await harness.close(context);
@@ -138,16 +139,25 @@ async function child(directory: string, mode: string, witness: string) {
     if (scenario === 'fixture_conflict') {
       assert.equal(await readFile(join(directory, 'workspace', 'fixture.txt'), 'utf8'), 'conflict\n');
       assert(JSON.stringify(results).includes('Conflicting file content requires attention'));
-    } else if (scenario === 'fixture_edit') {
+    } else if (scenario === 'fixture_edit' || scenario === 'fixture_edit_mutant') {
+      const requireReconciled = () => {
+        const message = results[0]?.model?.[0];
+        assert(message?.role === 'toolResult' && message.isError === false, 'Edit must have successful authoritative tool result');
+        assert.deepEqual(message.content, [{ type: 'text', text: 'edit reconciled' }]);
+      };
+      if (scenario === 'fixture_edit_mutant') {
+        assert(JSON.stringify(results).includes('interrupted'));
+        assert.throws(requireReconciled, /successful authoritative tool result/);
+      } else requireReconciled();
       assert.equal(await readFile(join(directory, 'workspace', 'fixture.txt'), 'utf8'), 'after\n');
       assert(!JSON.stringify(results).includes('tool_error'));
     } else if (scenario === 'fixture_unsafe' || scenario === 'fixture_grant_boundary') {
-      assert.equal(await readFile(join(directory, 'effects.txt'), 'utf8').catch(() => ''), scenario === 'fixture_grant_boundary' ? '' : 'effect\n');
+      assert.equal(await readOptional(join(directory, 'effects.txt')), scenario === 'fixture_grant_boundary' ? '' : 'effect\n');
       assert(JSON.stringify(results).includes('interrupted'));
       if (scenario !== 'fixture_grant_boundary') assert(JSON.stringify(results).includes('effect-dispatch'));
       faux.setResponses([fauxAssistantMessage(fauxToolCall('fixture_unsafe', {}), { stopReason: 'toolUse' }), fauxAssistantMessage('denied')]);
       await (await root.submit({ type: 'input', content: 'attempt same action again', requestId: 'repeat-effect' }, context)).wait(context);
-      assert.equal(await readFile(join(directory, 'effects.txt'), 'utf8').catch(() => ''), scenario === 'fixture_grant_boundary' ? '' : 'effect\n');
+      assert.equal(await readOptional(join(directory, 'effects.txt')), scenario === 'fixture_grant_boundary' ? '' : 'effect\n');
       assert(JSON.stringify((await root.context(context)).entries).includes('No valid fixture grant'));
     } else {
       assert(JSON.stringify(results).includes('offline test passed'));
@@ -206,20 +216,22 @@ async function child(directory: string, mode: string, witness: string) {
   process.send?.({ recovered: true });
 }
 
-async function runChild(directory: string, mode: string, witness = 'null') {
+async function runChild(directory: string, mode: string, witness = 'null', timeoutMs = 20000) {
   return new Promise<unknown>((resolve, reject) => {
     const child = fork(fileURLToPath(import.meta.url), ['child', directory, mode, witness], {
       execArgv: ['--import', 'tsx'], env: { PATH: process.env.PATH, HOME: directory, TMPDIR: directory }, silent: true,
     });
     let stderr = '';
     let result: unknown;
-    const timeout = setTimeout(() => { child.kill('SIGKILL'); reject(new Error(`Timed out ${mode}: ${stderr}`)); }, 20000);
+    let failure: Error | undefined;
+    const timeout = setTimeout(() => { failure = new Error(`Timed out ${mode}`); child.kill('SIGKILL'); }, timeoutMs);
     child.stderr?.on('data', chunk => { stderr += String(chunk); });
-    child.on('error', reject);
+    child.on('error', error => { failure = error; });
     child.on('message', message => { result = message; if (mode.startsWith('seed')) child.kill('SIGKILL'); });
-    child.on('exit', (code, signal) => {
+    child.on('close', (code, signal) => {
       clearTimeout(timeout);
-      if (mode.startsWith('seed') ? signal !== 'SIGKILL' : code !== 0) reject(new Error(`${mode}: exit ${code}/${signal}: ${stderr}`));
+      if (failure) reject(failure);
+      else if (mode.startsWith('seed') ? signal !== 'SIGKILL' : code !== 0) reject(new Error(`${mode}: exit ${code}/${signal}: ${stderr}`));
       else if (result === undefined) reject(new Error(`${mode}: no evidence: ${stderr}`));
       else resolve(result);
     });
@@ -238,7 +250,7 @@ if (process.argv[2] === 'child') {
     assert(witness !== null && typeof witness === 'object' && 'ids' in witness);
     await runChild(directory, 'reopen', JSON.stringify(witness.ids));
     console.log('PASS: SIGKILL generation; durable queued request IDs; approval data; committed events; FULL connection setting');
-    for (const scenario of ['fixture_edit', 'fixture_conflict', 'fixture_unsafe', 'fixture_grant_boundary', 'fixture_offline', 'profile_unknown', 'profile_missing', 'acceptance_before', 'acceptance_after', 'grant_expired', 'grant_revoked', 'grant_denied', 'grant_arguments', 'grant_artifact']) {
+    for (const scenario of ['fixture_edit', 'fixture_edit_mutant', 'fixture_conflict', 'fixture_unsafe', 'fixture_grant_boundary', 'fixture_offline', 'profile_unknown', 'profile_missing', 'acceptance_before', 'acceptance_after', 'grant_expired', 'grant_revoked', 'grant_denied', 'grant_arguments', 'grant_artifact', 'grant_mission', 'grant_target', 'grant_action']) {
       const scope = join(directory, scenario);
       await cloneFixture(scope, source, revision);
       const boundary = await runChild(scope, `seed:${scenario}`);
@@ -247,6 +259,15 @@ if (process.argv[2] === 'child') {
       await runChild(scope, `reopen:${scenario}`, JSON.stringify(boundary));
       console.log(`PASS: SIGKILL ${scenario} / reopen`);
     }
+    const failureScope = join(directory, 'failure-cleanup');
+    await cloneFixture(failureScope, source, revision);
+    await runChild(failureScope, 'seed:fixture_offline');
+    await assert.rejects(() => runChild(failureScope, 'timeout', 'null', 300), /Timed out/);
+    await cleanupWorker(failureScope);
+    assert.equal(await readOptional(join(failureScope, 'worker.exited')), 'exited');
+    await assert.rejects(() => readOptional(join(failureScope, 'workspace')), /EISDIR/);
+    await rm(failureScope, { recursive: true });
+    console.log('PASS: timeout waits for harness close; live supervisor cleanup before rm; non-ENOENT read errors propagate');
     const scope = join(directory, 'compat');
     await cloneFixture(scope, source, revision);
     const runtime = await open(scope, false);
@@ -255,5 +276,11 @@ if (process.argv[2] === 'child') {
     await schemaVersion(scope);
     assert.equal(await readFile(join(source, 'fixture.txt'), 'utf8'), 'before\n');
     console.log('P0 LOCAL SUPPORTED PROFILE: PASS — not production integration, isolation, or deployment.');
-  } finally { await rm(directory, { recursive: true, force: true }); }
+  } finally {
+    await cleanupWorker(directory);
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (entry.isDirectory()) await cleanupWorker(join(directory, entry.name));
+    }
+    await rm(directory, { recursive: true, force: true });
+  }
 }

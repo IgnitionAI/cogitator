@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BACKGROUND_CONTEXT as context } from '@earendil-works/chord/context';
@@ -19,31 +21,61 @@ export async function compatibility(directory: string, harness: Harness, root: C
   const skills = loadSkillsFromDir({ dir: skillDir, source: 'durable-spike' });
   assert.equal(skills.skills.length, 1);
   assert.equal(skills.diagnostics.length, 0);
+  const fixtureId = randomUUID();
+  const fixtureSkills = [{ name: 'fixture-skill', description: fixtureId, path: join(skillDir, 'SKILL.md') }];
+  const requests: string[] = [];
+  const backend = createServer((request, response) => {
+    requests.push(`${request.method} ${request.url}`);
+    response.setHeader('content-type', 'application/json');
+    if (request.method !== 'GET' || request.url !== '/api/skills') {
+      response.writeHead(403).end(JSON.stringify({ error: 'Fixture allows only skill listing' }));
+      return;
+    }
+    response.end(JSON.stringify(fixtureSkills));
+  });
+  await new Promise<void>(resolve => backend.listen(0, '127.0.0.1', resolve));
+  const address = backend.address();
+  assert(address && typeof address === 'object' && address.port !== 5320);
+  const backendUrl = `http://127.0.0.1:${address.port}`;
   const client = new Client({ name: 'durable-spike', version: '1.0.0' });
-  const transport = new StdioClientTransport({ command: process.execPath, args: [fileURLToPath(new URL('../../test/fixtures/echo-mcp-server.mjs', import.meta.url))], env: { PATH: process.env.PATH ?? '', HOME: directory } });
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: ['--import', import.meta.resolve('tsx'), fileURLToPath(new URL('../../src/mcp-server.ts', import.meta.url))],
+    env: { PATH: process.env.PATH ?? '', HOME: directory, COGITATOR_URL: backendUrl, COGITATOR_PORT: '0' },
+    stderr: 'pipe',
+  });
+  let serverLog = '';
+  transport.stderr?.on('data', chunk => { serverLog += String(chunk); });
   try {
     await client.connect(transport);
-    assert((await client.listTools()).tools.some(tool => tool.name === 'echo'));
+    assert((await client.listTools()).tools.some(tool => tool.name === 'cogitator_list_skills'));
     const echo = defineTool({
-      name: 'fixture_mcp', description: 'One explicitly allowlisted harmless MCP echo',
-      parameters: Type.Object({ message: Type.String() }), replay: 'safe',
-      async execute(args) {
-        const result = await client.callTool({ name: 'echo', arguments: args });
-        assert.deepEqual(result.content, [{ type: 'text', text: 'ECHO: fixture' }]);
-        return { content: [{ type: 'text', text: 'ECHO: fixture' }] };
+      name: 'cogitator_list_skills', description: 'Required skill discovery through the real Cogitator MCP tool',
+      parameters: Type.Object({}), replay: 'safe',
+      async execute() {
+        const result = await client.callTool({ name: 'cogitator_list_skills', arguments: {} });
+        assert(!result.isError);
+        const content = [{ type: 'text' as const, text: JSON.stringify(fixtureSkills, null, 2) }];
+        assert.deepEqual(result.content, content);
+        return { content };
       },
     });
     const profile = defineExtension({ name: 'fixture-compat-v1', tools: [echo], sections: [section('skills', () => formatSkillsForPrompt(skills.skills))] });
     registry.install(profile);
     await root.configure({ extensions: [profile] }, context);
-    faux.setResponses([fauxAssistantMessage(fauxToolCall('fixture_mcp', { message: 'fixture' }), { stopReason: 'toolUse' }), fauxAssistantMessage('compat done')]);
+    faux.setResponses([fauxAssistantMessage(fauxToolCall('cogitator_list_skills', {}), { stopReason: 'toolUse' }), fauxAssistantMessage('compat done')]);
     assert.equal((await (await root.submit({ type: 'input', content: 'compat', requestId: 'compat' }, context)).wait(context)).status, 'done');
     const entries = (await root.context(context)).entries;
     assert(entries.some(entry => entry.kind === 'pi.system' && JSON.stringify(entry).includes('fixture-skill')));
-    assert(entries.some(entry => entry.kind === 'pi.tool-result' && JSON.stringify(entry).includes('ECHO: fixture')));
+    assert(entries.some(entry => entry.kind === 'pi.tool-result' && JSON.stringify(entry).includes(fixtureId)));
+    assert.deepEqual(requests, ['GET /api/skills']);
+    assert(serverLog.includes(backendUrl), 'Real MCP server must confirm explicit isolated backend URL');
     registry.uninstall(profile);
     assert.equal((await root.agent(context)).tools.length, 0); // Negative case: future adapter must reject this profile.
-  } finally { await client.close(); }
+  } finally {
+    await client.close();
+    await new Promise<void>((resolve, reject) => backend.close(error => error ? reject(error) : resolve()));
+  }
 
   const token = (version: number) => defineDoc({ kind: 'spike.version', version, scope: 'conversation', history: 'latest', fork: 'initial', initial: () => ({ value: 1 }) });
   await root.commit(async tx => { await tx.doc(token(2), root.id); }, context);
@@ -58,7 +90,7 @@ export async function compatibility(directory: string, harness: Harness, root: C
   const id = await root.commit(tx => tx.createTask(task(2), null, { ownership: { kind: 'conversation' } }), context);
   const inspected = (await harness.inspect(context)).tasks.find(item => item.record.id === id);
   assert.deepEqual(inspected?.state, { kind: 'blocked', reason: 'task_too_old' });
-  console.log('PASS: real skill loader / Durable prompt; stdio MCP bridge; missing extension negative case; document/task version rejection');
+  console.log('PASS: real skill loader / Durable prompt; necessary Cogitator list_skills MCP against ephemeral HTTP fixture; missing extension negative case; document/task version rejection');
 }
 
 export async function schemaVersion(directory: string) {

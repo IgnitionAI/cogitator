@@ -21,6 +21,7 @@ Latest local evidence: macOS, Node `v26.10.0`, repeated focused runs, exit zero:
 Fixture source revision: 33288b180e7ff667554325053aae205d17b277bf
 PASS: SIGKILL generation; durable queued request IDs; approval data; committed events; FULL connection setting
 PASS: SIGKILL fixture_edit / reopen
+PASS: SIGKILL fixture_edit_mutant / reopen
 PASS: SIGKILL fixture_conflict / reopen
 PASS: SIGKILL fixture_unsafe / reopen
 PASS: SIGKILL fixture_grant_boundary / reopen
@@ -34,7 +35,11 @@ PASS: SIGKILL grant_revoked / reopen
 PASS: SIGKILL grant_denied / reopen
 PASS: SIGKILL grant_arguments / reopen
 PASS: SIGKILL grant_artifact / reopen
-PASS: real skill loader / Durable prompt; stdio MCP bridge; missing extension negative case; document/task version rejection
+PASS: SIGKILL grant_mission / reopen
+PASS: SIGKILL grant_target / reopen
+PASS: SIGKILL grant_action / reopen
+PASS: timeout waits for harness close; live supervisor cleanup before rm; non-ENOENT read errors propagate
+PASS: real skill loader / Durable prompt; necessary Cogitator list_skills MCP against ephemeral HTTP fixture; missing extension negative case; document/task version rejection
 PASS: SQLite schema 1; future schema rejected
 P0 LOCAL SUPPORTED PROFILE: PASS — not production integration, isolation, or deployment.
 ```
@@ -72,7 +77,9 @@ Reading included complete installed Durable and matching pi-ai READMEs, complete
 
 The offline test announces that it started **before** the crash checkpoint. Unlike the initial spike, harness death intentionally leaves the supervisor and its test alive. A private Unix socket in the temporary state directory lets the recovered tool observe that execution, request termination, and await the test's exit acknowledgment. Only then does it rerun the offline test. The supervisor has a 12-second kill deadline even if recovery fails. These files/socket/receipts belong to the harmless external worker fixture; Durable still owns execution intent and identity. This is not a second task scheduler or a production container-control protocol.
 
-`compatibility.ts` uses the actual existing MCP stdio echo fixture and real MCP client; no application MCP configuration is imported. Temporary runtime, worker state and clones are removed afterward.
+`compatibility.ts` now launches the **actual `src/mcp-server.ts`** through Node/tsx and calls its actual `cogitator_list_skills` implementation through the real MCP client and a Durable tool. The explicit `COGITATOR_URL` points to an isolated HTTP fixture bound to loopback port **0** (OS-selected ephemeral port), never the live default port 5320; fallback `COGITATOR_PORT` is explicitly 0. The fixture permits only `GET /api/skills`, returns unique synthetic skill data, and records all requests. Assertions require exactly that one HTTP request, exact returned data in the committed Durable result, and the real MCP server's startup confirmation of the configured fixture URL. No live HTTP application, user database, model provider, private preset/configuration or external write is used. The HTTP backend is the only mock here; MCP server/client and tool callback are real. This replaces the earlier echo-only mechanics test.
+
+On failure as well as success, `runChild` records timeout/error, sends SIGKILL only to its **owned ChildProcess**, and settles only after `close`. Final cleanup waits for any expected fixture supervisor to stop its owned test and reach its process-exit marker before deleting directories. It uses the private fixture socket, not an arbitrary PID. Cleanup is bounded; if quiescence cannot be established it fails and preserves the directory instead of racing deletion. An executable negative check starts a live supervisor, times out the next harness process, awaits both cleanup boundaries, verifies the supervisor marker, then deletes the scope. The marker is emitted only on supervisor exit after the test's `close`; it cannot certify an abandoned still-running test. A separate EISDIR check proves optional reads propagate non-ENOENT errors; only genuine ENOENT means absent effect evidence.
 
 ## Per-gate evidence
 
@@ -85,7 +92,7 @@ All PASS results below are scoped to this fixed, trusted local profile.
 | Immediately after acceptance crash | **PASS** | Kill after `submit` resolves. Reopen finds the accepted ID before enabling scheduling. Resubmit reuses it, creates one user entry, and completes with one fresh provider invocation. |
 | Durable queued work | **PASS** | Second accepted input is queued while first streams; after kill/reopen first and queued follow-up both settle without new request identities. |
 | Interrupted model response | **PASS** | Kill follows a committed streaming update. Reopen is initially paused with retained live message; SDK converts committed partial into an aborted entry and completes the interrupted request and queued request. This is checkpoint retry, not restoration of the original network stream. |
-| Recorded file edit in disposable clone | **PASS** | Memo records exact before/after bytes; real SDK edit writes the clone; kill before tool-result commit; recovery reads actual after bytes and completes without reapplying the edit. Source repo's file remains unchanged. |
+| Recorded file edit in disposable clone | **PASS** | Memo records exact before/after bytes; real SDK edit writes the clone; kill before tool-result commit; recovery reads actual after bytes and requires a real `toolResult` with `isError === false` and exactly `edit reconciled` content, not just unchanged bytes. A stored-unsafe replay-policy mutant produces SDK `interrupted`; the same success assertion is proved to throw on that mutant. The edit is not reapplied. Source repo's file remains unchanged. |
 | Conflicting edit recovery | **PASS** | After kill, fixture bytes are changed to a third value. Recovery produces the explicit conflict error and leaves conflicting bytes untouched rather than overwriting or claiming success. |
 | Real interrupted offline test / live worker | **PASS** | Real cloned Node test starts and remains alive after harness kill. Replay observes the existing supervisor via socket, requests stop, waits for test exit, records `observedLiveWorker` in committed tool details, then reruns successfully. Unknown outcomes are not declared safe. |
 | Unsafe success before result receipt | **PASS** | Grant consumption and intent task association commit atomically; dispatch details commit; effect file is appended; process dies before result receipt. SDK emits `interrupted`, retaining dispatch details, without reexecuting the effect. Count remains one. |
@@ -93,12 +100,14 @@ All PASS results below are scoped to this fixed, trusted local profile.
 | Model attempts same unsafe effect again | **PASS** | Scripted later tool invocation fails consumed-grant validation. Counts remain one for success-before-receipt and zero for consumption-before-dispatch. |
 | Approval data and atomicity | **PASS** | Synthetic mission/target/digest/artifact/argument/expiry/revocation/denial/uses document round-trips through SIGKILL; consumption and intent association survive atomically. |
 | Expired / revoked / denied grants across restart | **PASS** | Each state is durably written, process killed, reopened state checked, and protected tool attempted. All reject without an effect or consuming the grant. |
+| Approval mission/target/action binding | **PASS** | Dispatch validates the fixed expected mission, target and SHA-256 action identity before consuming the grant. Three independently persisted mismatches survive kill/reopen and reject without effect or consumption. These are fixture-only scope bindings, not authenticated owner authorization. |
 | Approved argument mismatch | **PASS** | Persisted approved argument SHA-256 differs from actual tool arguments after restart. Dispatch rejects with no effect and no consumption. |
 | Approved artifact mismatch | **PASS** | Approved artifact SHA-256 persists, file bytes are changed after crash, and dispatch-time hashing rejects those bytes without effect/consumption. |
 | Frozen supported profile preflight | **PASS** | Durable profile contains tool implementation source hash and clone revision; preflight checks those, stored extension selection and installed exact tool names before any submission/resume. Unknown persisted selection and missing installed extension both reject on fresh reopen with scheduler still paused. |
 | Committed events and entry identities | **PASS** | For observed `message_end`, storage lookup equals the emitted committed entry. Final IDs are unique. Event snapshot begins before processing later batches. |
 | Skill loader reuse | **PASS** | Existing public `loadSkillsFromDir` discovers the temporary SKILL.md without diagnostics; formatter metadata becomes a committed Durable system section. |
-| Harmless MCP bridge | **PASS** | Actual stdio handshake, listing and echo call through an explicitly allowlisted Durable tool produce a committed `ECHO: fixture` result. Client closes afterward. |
+| Necessary read-only Cogitator MCP integration | **PASS** | Actual Cogitator stdio server and `cogitator_list_skills` implementation run against an explicit ephemeral HTTP backend fixture. One GET, unique fixture data, startup URL and committed result are asserted. MCP and HTTP services close afterward. Skill discovery is explicitly required by the shipped profiles inventoried below. |
+| Failure cleanup / no false absent-effect evidence | **PASS** | Induced harness timeout waits for child close, live supervisor is stopped through its private socket and awaited before scope removal. ENOENT-only optional reads reject EISDIR; other I/O failures cannot become zero-effect PASS. |
 | SQLite durability configuration | **PASS** | Every open observes adapter default `synchronous=1` (NORMAL), uses public `openNodeSqliteDatabase` to set FULL, verifies `2`, and passes that connection to public `SqliteStorage.open`. Crash tests use this composition. FULL is connection-local and reapplied on reopen. |
 | Schema/document/task versions | **PASS** | Schema 1 opens; isolated future schema 2 rejects. Version-2 document rejects a version-1 token. Version-2 task with only a version-1 definition remains blocked `task_too_old` without dispatch. |
 
@@ -107,18 +116,31 @@ All PASS results below are scoped to this fixed, trusted local profile.
 | Profile / feature | Status |
 | --- | --- |
 | `fixture-v1`: fixed faux provider, one-file reconciled edit, bounded trusted Node offline test, guarded fake effect, frozen host profile | **SUPPORTED / local P0 proven**, only at the operations and failure boundaries above. Genuine clone/revision and real test lifecycle are included. |
-| `fixture-compat-v1`: existing skill metadata loader/formatter plus allowlisted stdio echo | **SUPPORTED / local P0 bridge proven**. Not automatic compatibility for arbitrary MCP servers or skills. |
+| `fixture-compat-v1`: existing skill metadata loader/formatter plus actual Cogitator `cogitator_list_skills` over stdio | **SUPPORTED / local P0 bridge proven**. Not automatic compatibility for arbitrary MCP servers or skills. |
 | General arbitrary coding/toolchain profile | **NOT SUPPORTED by this fixture**. No declaration that arbitrary `bash`, project tests, detached descendants or networked builds are replay-safe. A production profile must constrain those capabilities through P2/P3. |
 | Existing classic presets / Pi extensions | **NOT IMPORTED into Durable**. Classic local runtime remains unchanged; unsupported remote presets must fail closed. |
-| Existing MCP configurations other than fixture echo | **NOT SUPPORTED by this spike**. Need connector-specific scopes, schemas, effect classification, lifecycle and isolation checks. |
+| Existing MCP configurations other than the tested skill-listing route | **NOT SUPPORTED by this spike**. Need connector-specific scopes, schemas, effect classification, lifecycle and isolation checks. |
 | herdr | **UNSUPPORTED**. No adapter or parity claim; Durable child ownership is not herdr compatibility. |
 | SDK missing-extension default | SDK silently omits missing tools; reproduced as a negative check. The fixture's own preflight rejects missing/unknown extension selections before scheduling. This is an adapter responsibility, not an impossible SDK integration. |
+
+## Required shipped-profile inventory (source only)
+
+Inspected `src/default-agent.ts`, `src/mcp-server.ts`, and its URL configuration in `src/config.ts`; no private user configuration was read. All three shipped presets attach the bundled Cogitator stdio server when its built `dist/src/mcp-server.js` exists. They select provider/model from Pi defaults (fallback `openai/gpt-5.4`), and declare `skills: []`; this spike does not resolve user settings or infer additional permissions from an empty skill list.
+
+| Built-in profile | Actual declared dependencies | Supported evidence vs blocked capability |
+| --- | --- | --- |
+| **Majordome** | Cogitator agent CRUD/validation/default selection; schedule CRUD/manual fire/run history; workspace CRUD; conversation creation/listing; provider and skill listing. Setup additionally reads repo/Git state, writes conventions/hooks, creates board cards, and references optional rules-manager/guardrail skills. | **Skill-discovery MCP seam supported** by actual `cogitator_list_skills` in this spike; bounded clone read/edit and fixture test primitives separately supported. **Full Majordome Durable preset blocked**: administrative mutations, cron execution, provisioning/import paths, actual providers, hooks and unrestricted filesystem capabilities have no remote policy/isolation adapter. Prompt confirmation is not authorization. |
+| **Chef de Projet** | Board list/create/update/move/comment/start-work, assignment and conversation links; `gh` as an alternative; check-first `cogitator_list_agents` and `cogitator_list_skills`, agent create/update/validate and skill import. Explicit method files `to-tickets`, `use-delegate`, `use-goal`, `loop-me` under `~/.agents/skills`; delegation/model choices. | **Necessary check-first skill-discovery MCP seam supported**. **Full Chef Durable preset blocked**: GitHub/board writes and job spawning, scoped credentials, agent/preset mutation, imports and those host skill resources have not been adapted/authorized. No private method files or GitHub endpoints were accessed. |
+| **Architecte de Skills** | Read/write `~/.agents/skills/<name>/SKILL.md` and references/scripts, Agent Skills frontmatter validation, and **`cogitator_list_skills` to verify discovery** (or file reread). | **Necessary actual validation/listing MCP seam plus loader metadata supported** using synthetic skill data. **Full Architecte Durable preset blocked**: writes to the owner's global skill directory and arbitrary generated scripts are deliberately unavailable; no remote publication/approval path was implemented. |
+| **herdr / generated subagent definitions** | Actual MCP tool descriptions identify herdr definitions created/deleted by preset mutations; no source in this spike supplies an equivalent Durable adapter. | **Unsupported**. No identity, lifecycle, ownership, delegation or format-parity claim. |
+
+The read-only MCP route is therefore a necessary common integration, not renamed echo. The explicit fixture profile offers only that one Durable bridge tool even though the real MCP server advertises administrative methods; those methods are not exposed to the faux model and the HTTP fixture denies other routes/methods. This is a test boundary, **not proof of a production capability firewall**. Full shipped presets remain blocked for Durable remote import until their individually listed dependencies pass later gates; they continue unchanged in classic local mode. Passing the local P0 seam does not mean any shipped preset may silently drop its blocked dependencies and claim compatibility.
 
 ## What this does not certify
 
 The previously missing local proof gates are now checks, not external blockers. Passing this scoped P0 allows work to proceed to later gates; it does not quietly lower their requirements:
 
-- Synthetic approval records are intentionally fixture-created; no authenticated owner decision API, human approval UI, canonical production action format, restoration epoch or real external authorization is implemented here. Fixture argument/artifact validation is real, but it covers a single fixed operation, not arbitrary connectors or concurrent owner decisions.
+- Synthetic approval records are intentionally fixture-created; no authenticated owner decision API, human approval UI, canonical production action format, restoration epoch or real external authorization is implemented here. Fixture mission/target/action/argument/artifact validation is real, but it covers a single fixed operation, not arbitrary connectors or concurrent owner decisions.
 - SDK interrupted tools return errors to the model and an enclosing input may still settle `done`. That is not proof of mission success. The future authoritative mission projection must preserve `needs_attention`/`action_denied` and known-versus-unknown outcomes independently of model prose. A local fixture error proves the seam, not those P3 API/UI semantics.
 - Runtime code is trusted. Private sockets, file receipts, NodeExecutionEnv, profile hashes and narrow tools are not adversarial worker isolation or TOCTOU protection. An artifact is hashed at this fixed fixture dispatch; arbitrary mutable artifacts still need an immutable publication mechanism. Rootless containers, egress, quotas, secret boundaries and malicious fixtures belong to P2.
 - The SDK has no cross-process lease. Each test uses one harness at a time. Acquire and prove an OS-enforced lease before production scheduling; no concurrent-harness support is inferred from SQLite locking.

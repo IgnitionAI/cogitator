@@ -23,6 +23,8 @@ export async function compatibility(directory: string, harness: Harness, root: C
   assert.equal(skills.diagnostics.length, 0);
   const fixtureId = randomUUID();
   const fixtureSkills = [{ name: 'fixture-skill', description: fixtureId, path: join(skillDir, 'SKILL.md') }];
+  let servedSkills = fixtureSkills;
+  const expectedContent = [{ type: 'text' as const, text: JSON.stringify(fixtureSkills, null, 2) }];
   const requests: string[] = [];
   const backend = createServer((request, response) => {
     requests.push(`${request.method} ${request.url}`);
@@ -31,7 +33,7 @@ export async function compatibility(directory: string, harness: Harness, root: C
       response.writeHead(403).end(JSON.stringify({ error: 'Fixture allows only skill listing' }));
       return;
     }
-    response.end(JSON.stringify(fixtureSkills));
+    response.end(JSON.stringify(servedSkills));
   });
   await new Promise<void>(resolve => backend.listen(0, '127.0.0.1', resolve));
   const address = backend.address();
@@ -49,26 +51,41 @@ export async function compatibility(directory: string, harness: Harness, root: C
   try {
     await client.connect(transport);
     assert((await client.listTools()).tools.some(tool => tool.name === 'cogitator_list_skills'));
-    const echo = defineTool({
+    const listSkills = defineTool({
       name: 'cogitator_list_skills', description: 'Required skill discovery through the real Cogitator MCP tool',
       parameters: Type.Object({}), replay: 'safe',
       async execute() {
         const result = await client.callTool({ name: 'cogitator_list_skills', arguments: {} });
         assert(!result.isError);
-        const content = [{ type: 'text' as const, text: JSON.stringify(fixtureSkills, null, 2) }];
-        assert.deepEqual(result.content, content);
-        return { content };
+        assert.deepEqual(result.content, expectedContent);
+        return { content: expectedContent };
       },
     });
-    const profile = defineExtension({ name: 'fixture-compat-v1', tools: [echo], sections: [section('skills', () => formatSkillsForPrompt(skills.skills))] });
+    const profile = defineExtension({ name: 'fixture-compat-v1', tools: [listSkills], sections: [section('skills', () => formatSkillsForPrompt(skills.skills))] });
     registry.install(profile);
     await root.configure({ extensions: [profile] }, context);
     faux.setResponses([fauxAssistantMessage(fauxToolCall('cogitator_list_skills', {}), { stopReason: 'toolUse' }), fauxAssistantMessage('compat done')]);
     assert.equal((await (await root.submit({ type: 'input', content: 'compat', requestId: 'compat' }, context)).wait(context)).status, 'done');
     const entries = (await root.context(context)).entries;
     assert(entries.some(entry => entry.kind === 'pi.system' && JSON.stringify(entry).includes('fixture-skill')));
-    assert(entries.some(entry => entry.kind === 'pi.tool-result' && JSON.stringify(entry).includes(fixtureId)));
-    assert.deepEqual(requests, ['GET /api/skills']);
+    let toolEntries = entries.filter(entry => entry.kind === 'pi.tool-result');
+    const requireMcpSuccess = () => {
+      const message = toolEntries.at(-1)?.model?.[0];
+      assert(message?.role === 'toolResult' && message.isError === false, 'MCP must have successful authoritative tool result');
+      assert.deepEqual(message.content, expectedContent);
+    };
+    assert.equal(toolEntries.length, 1);
+    requireMcpSuccess();
+
+    // A diagnostic can contain expected fixture text even when the actual call failed.
+    servedSkills = [];
+    faux.setResponses([fauxAssistantMessage(fauxToolCall('cogitator_list_skills', {}), { stopReason: 'toolUse' }), fauxAssistantMessage('wrong content observed')]);
+    await (await root.submit({ type: 'input', content: 'wrong-content control', requestId: 'compat-wrong-content' }, context)).wait(context);
+    toolEntries = (await root.context(context)).entries.filter(entry => entry.kind === 'pi.tool-result');
+    assert.equal(toolEntries.length, 2);
+    assert(JSON.stringify(toolEntries.at(-1)).includes(fixtureId), 'Negative control must reproduce the old diagnostic-text false match');
+    assert.throws(requireMcpSuccess, /successful authoritative tool result/);
+    assert.deepEqual(requests, ['GET /api/skills', 'GET /api/skills']);
     assert(serverLog.includes(backendUrl), 'Real MCP server must confirm explicit isolated backend URL');
     registry.uninstall(profile);
     assert.equal((await root.agent(context)).tools.length, 0); // Negative case: future adapter must reject this profile.

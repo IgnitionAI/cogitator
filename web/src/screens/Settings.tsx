@@ -51,12 +51,12 @@ export default function Settings() {
 
   return (
     <>
-      <PageHead title="Settings" sub="État du serveur et configuration globale." />
+      <PageHead title="Paramètres" sub="État du serveur et configuration globale." />
       {loading ? <p role="status">Chargement de la configuration…</p> : null}
       {error && (draft === null || health === null) ? <button type="button" className="btn" disabled={loading} onClick={load}>Réessayer le chargement</button> : null}
       {health?.mcp_adapter_detected ? (
         <div className="warn-banner" role="status">
-          <code>pi-mcp-adapter</code> remplace le support MCP builtin de pi. Vérifie la visibilité des serveurs dans une session.
+          <code>pi-mcp-adapter</code> remplace le support MCP intégré de pi. Vérifie la visibilité des serveurs dans une session.
         </div>
       ) : null}
       {health ? (
@@ -66,7 +66,7 @@ export default function Settings() {
             <tr><td className="muted">Version pi</td><td className="mono">{health.pi_version ?? "introuvable"}</td></tr>
             <tr><td className="muted">Sessions actives</td><td>{health.sessions_active}</td></tr>
             <tr><td className="muted">Base SQLite</td><td className="mono">{health.db.path} (v{health.db.version})</td></tr>
-            <tr><td className="muted">Port</td><td className="mono">127.0.0.1:5320 (COGITATOR_PORT)</td></tr>
+            <tr><td className="muted">Adresse du panneau</td><td className="mono">{window.location.origin}</td></tr>
             <tr><td className="muted">Données</td><td className="mono">~/.cogitator</td></tr>
           </tbody></table>
         </div>
@@ -76,11 +76,11 @@ export default function Settings() {
       {draft !== null ? (
         <>
           <Field label="Configuration JSON (mcpServers)">
-            <textarea className="mono" spellCheck={false} style={{ minHeight: 200 }} value={draft}
+            <textarea className="mono" spellCheck={false} readOnly={busy || loading} aria-busy={busy} style={{ minHeight: 200 }} value={draft}
               onChange={(e) => { setDraft(e.target.value); setSaved(false); }} />
           </Field>
           <div className="toolbar">
-            <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void saveMcp()}>
+            <button type="button" className="btn btn-primary" disabled={busy || loading} onClick={() => void saveMcp()}>
               {busy ? <Spinner /> : null} {busy ? "Enregistrement…" : "Enregistrer la configuration"}
             </button>
             {saved ? <span role="status"><Badge color="var(--success)">Configuration enregistrée</Badge></span> : null}

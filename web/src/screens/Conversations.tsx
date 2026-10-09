@@ -73,7 +73,7 @@ function applyEvent(prev: ChatItem[], ev: SseEvent, st: StreamState): ChatItem[]
       st.streaming = false;
       // purge des bulles assistant restées vides (messages à toolcalls seuls, text_start sans texte)
       const cleaned = prev.filter((p) => p.kind !== "assistant" || p.text.trim() !== "");
-      return [...cleaned, { kind: "status", text: "— tour terminé —" }];
+      return [...cleaned, { kind: "status", text: "Tour terminé" }];
     }
     default:
       return prev;
@@ -182,7 +182,7 @@ export default function Conversations({ initialOpenId, onConsumeInitial }: {
   const [ready, setReady] = useState(false);
 
   const refresh = useCallback(() => {
-    api.conversations().then((r) => setConversations(r.conversations)).catch((e: Error) => setError(e.message)).finally(() => setReady(true));
+    api.conversations().then((r) => { setConversations(r.conversations); setError(null); }).catch((e: Error) => setError(e.message)).finally(() => setReady(true));
   }, []);
 
   useEffect(() => {
@@ -220,9 +220,10 @@ export default function Conversations({ initialOpenId, onConsumeInitial }: {
         }
       />
       <ErrorText error={error} />
+      {error ? <button type="button" className="btn btn-sm" onClick={refresh}>Réessayer</button> : null}
       {!ready ? (
         <Skeleton />
-      ) : conversations.length === 0 ? (
+      ) : error && conversations.length === 0 ? null : conversations.length === 0 ? (
         <Empty
           title="Aucune conversation"
           action={
@@ -247,11 +248,11 @@ export default function Conversations({ initialOpenId, onConsumeInitial }: {
               <Badge color={statusColor(c.status)}>{c.status}</Badge>
               <IconBtn
                 name="trash"
-                label="Fermer la conversation"
+                label={`Supprimer la conversation ${c.title || "sans titre"}`}
                 danger
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (confirm("Fermer cette conversation ? Le fichier .jsonl pi est conservé.")) {
+                  if (confirm("Supprimer cette conversation de Cogitator ? Le fichier .jsonl pi est conservé.")) {
                     api.deleteConversation(c.id).then(refresh).catch((err: Error) => toast(err.message, true));
                   }
                 }}
@@ -297,8 +298,17 @@ export function ChatView(props: {
   const [files, setFiles] = useState<FileChange[]>([]);
   const [diffFor, setDiffFor] = useState<{ path: string } | null>(null);
 
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesError, setFilesError] = useState<string | null>(null);
+  const filesRequest = useRef(0);
   const refreshFiles = useCallback(() => {
-    api.conversationFiles(conversation.id).then((r) => setFiles(r.files)).catch(() => undefined);
+    const current = ++filesRequest.current;
+    setFilesLoading(true);
+    setFilesError(null);
+    api.conversationFiles(conversation.id)
+      .then((r) => { if (current === filesRequest.current) setFiles(r.files); })
+      .catch((e: Error) => { if (current === filesRequest.current) setFilesError(e.message); })
+      .finally(() => { if (current === filesRequest.current) setFilesLoading(false); });
   }, [conversation.id]);
 
   const toggle = (set: Set<number>, setter: (s: Set<number>) => void, i: number) => {
@@ -408,13 +418,14 @@ export function ChatView(props: {
 
   const addFiles = (files: Iterable<File>) => {
     for (const file of files) {
-      if (!file.type.startsWith("image/")) continue;
+      if (!file.type.startsWith("image/")) { toast("Seules les images peuvent être jointes.", true); continue; }
       const reader = new FileReader();
       reader.onload = () => {
         const dataUrl = String(reader.result ?? "");
         const base64 = dataUrl.split(",")[1] ?? "";
         if (base64) setImages((prev) => [...prev, { type: "image" as const, data: base64, mimeType: file.type }]);
       };
+      reader.onerror = () => toast(`Lecture impossible : ${file.name}`, true);
       reader.readAsDataURL(file);
     }
   };
@@ -443,7 +454,7 @@ export function ChatView(props: {
         <div style={{ flex: 1 }} />
         {busy || running || sessionStatus === "active" || sessionStatus === "running" ? (
           <button type="button" className="btn btn-sm btn-danger" onClick={() => api.stopConversation(conversation.id).catch((e: Error) => toast(e.message, true))}>
-            <Icon name="stop" /> Stop
+            <Icon name="stop" /> Arrêter
           </button>
         ) : null}
         <IconBtn
@@ -451,7 +462,7 @@ export function ChatView(props: {
           label="Supprimer la conversation"
           danger
           onClick={() => {
-            if (confirm("Supprimer cette conversation ?")) {
+            if (confirm("Supprimer cette conversation de Cogitator ? Le fichier .jsonl pi est conservé.")) {
               api.deleteConversation(conversation.id).then(props.onDeleted).catch((e: Error) => toast(e.message, true));
             }
           }}
@@ -570,7 +581,6 @@ export function ChatView(props: {
           }}
           title="Charger un skill (/skill:name, expandé par pi dans la session)"
           aria-label="Charger un skill"
-          style={{ width: 150, flexShrink: 0 }}
         >
           <option value="">Skills…</option>
           {skills.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
@@ -606,15 +616,17 @@ export function ChatView(props: {
             <span>Fichiers modifiés</span>
             <span className="muted">{files.length}</span>
           </div>
-          {files.length === 0 ? (
+          {filesLoading ? <p role="status">Chargement des fichiers…</p> : null}
+          {filesError ? <div className="error-text" role="alert">{filesError} <button type="button" className="btn btn-sm" onClick={refreshFiles}>Réessayer</button></div> : null}
+          {!filesLoading && !filesError && files.length === 0 ? (
             <Empty>Aucun fichier modifié pour l'instant.</Empty>
-          ) : (
+          ) : !filesLoading && !filesError ? (
             <div className="chat-side-list">
               {files.map((f) => (
                 <FileRow key={f.path} f={f} onClick={() => setDiffFor({ path: f.path })} />
               ))}
             </div>
-          )}
+          ) : null}
         </aside>
       ) : null}
       </div>
@@ -629,7 +641,7 @@ function NewConversationModal(props: {
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
-  const toast = useToast();
+  const [createError, setCreateError] = useState<string | null>(null);
   const [agents, setAgents] = useState<AgentPreset[]>([]);
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -642,23 +654,37 @@ function NewConversationModal(props: {
   const [prompt, setPrompt] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  const pending = useRef(false);
   useEffect(() => {
-    api.agents().then((r) => {
-      setAgents(r.agents);
-      if (r.agents[0]) setAgentId(r.agents[0].id);
-    }).catch(() => undefined);
-    api.providers().then((r) => {
-      setProviders(r.providers);
-      if (r.providers[0]) setProviderId(r.providers[0].id);
-    }).catch(() => undefined);
-    api.workspaces().then((r) => setWorkspaces(r.workspaces)).catch(() => undefined);
-  }, []);
+    let active = true;
+    setLoading(true);
+    setError(null);
+    Promise.all([api.agents(), api.providers(), api.workspaces()])
+      .then(([a, p, w]) => {
+        if (!active) return;
+        setAgents(a.agents);
+        setAgentId(a.agents[0]?.id ?? "");
+        setProviders(p.providers);
+        setProviderId(p.providers[0]?.id ?? "");
+        setWorkspaces(w.workspaces);
+      })
+      .catch((e: Error) => { if (active) setError(e.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [retry]);
 
   const provider = providers.find((p) => p.id === providerId);
   const models = provider?.models ?? [];
 
+  const canCreate = !loading && !error && (mode === "agent" ? Boolean(agentId) : Boolean(providerId && (model || models[0]?.id)));
   const create = async () => {
+    if (pending.current || !canCreate) return;
+    pending.current = true;
     setBusy(true);
+    setCreateError(null);
     try {
       const body: Record<string, unknown> = {
         workspace_id: workspaceId || undefined,
@@ -673,18 +699,23 @@ function NewConversationModal(props: {
       const r = await api.createConversation(body);
       props.onCreated(r.conversation.id);
     } catch (e) {
-      toast((e as Error).message, true);
+      setCreateError((e as Error).message);
     } finally {
+      pending.current = false;
       setBusy(false);
     }
   };
 
   return (
-    <Modal title="Nouvelle conversation" onClose={props.onClose}>
+    <Modal title="Nouvelle conversation" onClose={() => { if (!pending.current) props.onClose(); }}>
+      {createError ? <p className="error-text" role="alert">{createError}</p> : null}
+      {loading ? <p role="status">Chargement des agents et fournisseurs…</p> : null}
+      {error ? <div className="error-text" role="alert">{error} <button type="button" className="btn btn-sm" onClick={() => setRetry((n) => n + 1)}>Réessayer</button></div> : null}
+      <fieldset disabled={busy || loading || Boolean(error)} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <Field label="Mode">
         <select value={mode} onChange={(e) => setMode(e.target.value as "agent" | "free")}>
-          <option value="agent">Agent (preset)</option>
-          <option value="free">Provider libre</option>
+          <option value="agent">Agent configuré</option>
+          <option value="free">Fournisseur libre</option>
         </select>
       </Field>
       {mode === "agent" ? (
@@ -695,7 +726,7 @@ function NewConversationModal(props: {
         </Field>
       ) : (
         <div className="form-row">
-          <Field label="Provider">
+          <Field label="Fournisseur">
             <select value={providerId} onChange={(e) => { setProviderId(e.target.value); setModel(""); }}>
               {providers.map((p) => <option key={p.id} value={p.id}>{p.id} {p.auth.ready ? "✓" : "⚠"}</option>)}
             </select>
@@ -707,7 +738,7 @@ function NewConversationModal(props: {
             </select>
           </Field>
           {mode === "free" ? (
-            <Field label="Thinking (optionnel)">
+            <Field label="Réflexion (optionnel)">
               <select value={thinking} onChange={(e) => setThinking(e.target.value)}>
                 <option value="">(défaut)</option>
                 {THINKING_LEVELS.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -725,11 +756,13 @@ function NewConversationModal(props: {
       <Field label="Prompt initial (optionnel)">
         <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Premier message…" />
       </Field>
+      {!loading && !error && !canCreate ? <p role="status" className="muted">{mode === "agent" ? "Aucun agent disponible. Configure un agent dans Équipe / Agents ou choisis le mode Fournisseur libre." : "Aucun modèle disponible. Configure un fournisseur et ses modèles dans les paramètres."}</p> : null}
       <div className="toolbar">
-        <button type="button" className="btn btn-primary" onClick={() => void create()} disabled={busy}>
-          {busy ? <><Spinner /> Création…</> : "Créer"}
+        <button type="button" className="btn btn-primary" onClick={() => void create()} disabled={busy || !canCreate}>
+          {busy ? <><Spinner /> Création…</> : "Créer la conversation"}
         </button>
       </div>
+      </fieldset>
     </Modal>
   );
 }

@@ -7,8 +7,12 @@ export function Modal(props: { title: string; onClose: () => void; children: Rea
 
   useEffect(() => {
     const dialog = dialogRef.current;
+    const opener = document.activeElement;
     dialog?.showModal();
-    return () => dialog?.close();
+    return () => {
+      dialog?.close();
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    };
   }, []);
 
   return (
@@ -56,14 +60,12 @@ export function Badge(props: { color?: string; children: ReactNode }) {
 
 export function statusColor(status: string): string {
   switch (status) {
-    case "active": return "#4cb782";
-    case "idle": return "#80858d";
-    case "spawning": return "#e2a336";
-    case "dead": case "error": case "timeout": return "#eb5757";
-    case "ok": return "#5e6ad2";
-    case "skipped": case "killed": return "#e2a336";
-    case "running": return "#f2994a";
-    default: return "#80858d";
+    case "active": case "ok": return "var(--success)";
+    case "idle": return "var(--subtle)";
+    case "spawning": case "skipped": case "killed": return "var(--todo)";
+    case "dead": case "error": case "timeout": return "var(--urgent)";
+    case "running": return "var(--progress)";
+    default: return "var(--subtle)";
   }
 }
 

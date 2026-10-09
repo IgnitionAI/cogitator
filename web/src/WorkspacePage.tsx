@@ -9,13 +9,13 @@ import { ChatView } from "./screens/Conversations";
 import { Icon, type IconName } from "./icons";
 
 const TABS: Array<{ id: string; label: string; icon: IconName }> = [
-  { id: "board", label: "Board", icon: "board" },
+  { id: "board", label: "Tableau", icon: "board" },
   { id: "activity", label: "Activité", icon: "activity" },
-  { id: "feed", label: "Feed", icon: "feed" },
+  { id: "feed", label: "Journal", icon: "feed" },
   { id: "files", label: "Fichiers", icon: "tree" },
   { id: "conversations", label: "Conversations", icon: "chat" },
   { id: "team", label: "Équipe", icon: "users" },
-  { id: "pm", label: "Chef de Projet", icon: "bot" },
+  { id: "pm", label: "Chef de projet", icon: "bot" },
 ];
 
 export default function WorkspacePage(props: {
@@ -159,7 +159,7 @@ export default function WorkspacePage(props: {
               .catch((e: Error) => toast(e.message, true));
           }}
         >
-          <Icon name="spark" size={14} /> Setup projet
+          <Icon name="spark" size={14} /> Initialiser le projet
         </button>
       </div>
       <div className="ws-tabs" role="tablist" aria-label="Workspace">
@@ -216,7 +216,7 @@ export default function WorkspacePage(props: {
           <div style={{ maxWidth: 860 }}>
             <FeedList feed={feed} onOpenEvent={(e) => setDiffFor({ convId: e.conversationId, path: e.path })} />
           </div>
-        ) : <Empty>Aucune activité.</Empty>
+        ) : <Empty>Les modifications des agents apparaîtront ici.</Empty>
       ) : null}
 
       {tab === "files" ? <TreePanel workspaceId={workspace.id} modifiedPaths={modified} /> : null}
@@ -265,7 +265,7 @@ export default function WorkspacePage(props: {
               </button>
             ))}
           </div>
-        ) : <Empty>Aucune conversation dans ce workspace.</Empty>
+        ) : <Empty>Aucune conversation dans ce workspace. Ouvre l’onglet Chef de projet pour commencer.</Empty>
       ) : null}
       </> : null}
       </div>)}
@@ -291,13 +291,13 @@ function TeamTab(props: {
     .filter((m) => m.assigned.length > 0 || m.convs.length > 0);
 
   if (members.length === 0) {
-    return <Empty>Personne sur ce projet pour l'instant — assigne des agents aux cartes du board ou lance une conversation.</Empty>;
+    return <Empty>Personne sur ce projet pour l’instant. Assigne un agent à une carte du tableau ou ouvre l’onglet Chef de projet.</Empty>;
   }
 
   const COLS: Array<{ id: string; label: string }> = [
     { id: "in_progress", label: "En cours" },
     { id: "todo", label: "À faire" },
-    { id: "backlog", label: "Backlog" },
+    { id: "backlog", label: "À planifier" },
     { id: "done", label: "Terminé" },
   ];
 
@@ -322,7 +322,7 @@ function TeamTab(props: {
                   const n = assigned.filter((c) => c.status === col.id).length;
                   return n > 0 ? <span key={col.id} className="team-stat">{col.label} : <strong>{n}</strong></span> : null;
                 })}
-                {convs.length > 0 ? <span className="team-stat">💬 {convs.length}</span> : null}
+                {convs.length > 0 ? <span className="team-stat">{convs.length} conversation(s)</span> : null}
               </span>
               {active.length > 0 ? (
                 <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
@@ -339,7 +339,7 @@ function TeamTab(props: {
               {lastActivity > 0 ? <span className="muted">activité : {new Date(lastActivity).toLocaleString()}</span> : null}
             </div>
             <div className="actions">
-              <button className="btn btn-sm" onClick={() => props.onTalk(agent)}>💬 Lui parler</button>
+              <button className="btn btn-sm" onClick={() => props.onTalk(agent)}>Ouvrir une conversation</button>
             </div>
           </div>
         );

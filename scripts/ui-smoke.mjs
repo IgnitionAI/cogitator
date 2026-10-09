@@ -17,6 +17,7 @@ try {
   await page.evaluate(() => [...document.querySelectorAll('button')].find(b => b.textContent.includes('Nouvelle conversation')).click());
   await page.waitForSelector('dialog[open]');
   assert(await page.evaluate(() => document.querySelector('dialog').contains(document.activeElement)));
+  await page.waitForSelector('dialog textarea:not(:disabled)');
   await page.evaluate(() => document.querySelector('dialog textarea').focus());
   await page.keyboard.type('Brouillon de test non envoyé');
   assert(await page.evaluate(() => document.activeElement === document.querySelector('dialog textarea')));
@@ -24,7 +25,7 @@ try {
   await page.waitForFunction(() => !document.querySelector('dialog'));
   console.log('PASS: modal focus, typing, Escape');
 
-  await page.evaluate(() => [...document.querySelectorAll('.nav-item')].find(b => b.textContent.trim() === 'Settings').click());
+  await page.evaluate(() => [...document.querySelectorAll('.nav-item')].find(b => b.textContent.trim() === 'Paramètres').click());
   await page.waitForSelector('textarea');
   await page.evaluate(() => { const input = document.querySelector('textarea'); input.focus(); input.select(); });
   await page.keyboard.type('{');

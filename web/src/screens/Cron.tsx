@@ -29,21 +29,21 @@ export default function Cron() {
     <>
       <PageHead
         title="Cron"
-        sub="Tâches planifiées : un prompt tiré contre un agent, à heure fixe. Le cron ne tourne que si le serveur Cogitator tourne."
-        actions={<button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> Nouvelle tâche</button>}
+        sub="Exécute un prompt avec un agent à heure fixe. Le serveur Cogitator doit rester démarré."
+        actions={<button type="button" className="btn btn-primary" disabled={loading || !!error} onClick={() => setEditing("new")}><Icon name="plus" /> Nouvelle tâche</button>}
       />
       <p className="muted">Expressions cron : fuseau local du serveur. Dates affichées : fuseau du navigateur ({Intl.DateTimeFormat().resolvedOptions().timeZone}).</p>
       <ErrorText error={error} />
       {error ? <button type="button" className="btn" onClick={refresh}>Réessayer</button> : null}
       {loading ? <p role="status">Chargement…</p> : error && tasks.length === 0 ? null : tasks.length === 0 ? (
-        <Empty title="Aucune tâche" action={<button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> Nouvelle tâche</button>}>
-          Planifie un prompt contre un agent. Le serveur doit rester allumé.
+        <Empty title="Aucune tâche" action={<button type="button" className="btn btn-primary" disabled={loading || !!error} onClick={() => setEditing("new")}><Icon name="plus" /> Nouvelle tâche</button>}>
+          Choisis un agent, un workspace et une fréquence. Le serveur doit rester démarré.
         </Empty>
       ) : (
-        <div className="table-wrap">
+        <div className="table-wrap" role="region" aria-label="Tâches planifiées" tabIndex={0}>
         <table>
           <thead>
-            <tr><th>Nom</th><th>Expression</th><th>Agent</th><th>Prochain run</th><th>Dernier run</th><th>Activée</th><th></th></tr>
+            <tr><th>Nom</th><th>Expression</th><th>Agent</th><th>Prochaine exécution</th><th>Dernière exécution</th><th>Activée</th><th scope="col">Actions</th></tr>
           </thead>
           <tbody>
             {tasks.map((t) => (
@@ -64,14 +64,14 @@ export default function Cron() {
                   />
                 </td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  <button className="btn btn-sm" onClick={() => setRunsFor(t.id)}>Runs</button>{" "}
-                  <button className="btn btn-sm" onClick={() => setEditing(t)}>Éditer</button>{" "}
-                  <IconBtn name="play" label={`Lancer ${t.name} maintenant`} onClick={() => api.fireSchedule(t.id).then(() => toast(`Run lancé : ${t.name}`)).catch((e: Error) => toast(e.message, true))} />
+                  <button className="btn btn-sm" onClick={() => setRunsFor(t.id)}>Historique</button>{" "}
+                  <button className="btn btn-sm" onClick={() => setEditing(t)}>Modifier</button>{" "}
+                  <IconBtn name="play" label={`Lancer ${t.name} maintenant`} onClick={() => api.fireSchedule(t.id).then(() => toast(`Exécution lancée : ${t.name}`)).catch((e: Error) => toast(e.message, true))} />
                   <button
                     className="btn btn-sm btn-danger"
-                    onClick={() => { if (confirm(`Supprimer la tâche "${t.name}" (et son historique de runs) ?`)) api.deleteSchedule(t.id).then(refresh).catch((e: Error) => toast(e.message, true)); }}
+                    onClick={() => { if (confirm(`Supprimer la tâche "${t.name}" (et son historique d’exécution) ?`)) api.deleteSchedule(t.id).then(refresh).catch((e: Error) => toast(e.message, true)); }}
                   >
-                    Suppr.
+                    Supprimer
                   </button>
                 </td>
               </tr>
@@ -111,11 +111,11 @@ function RunsModal({ task, onClose }: { task: CronTask; onClose: () => void }) {
   }, [load]);
 
   return (
-    <Modal title={`Runs — ${task.name}`} onClose={onClose} wide>
+    <Modal title={`Exécutions : ${task.name}`} onClose={onClose} wide>
       <ErrorText error={error} />
       {error ? <button type="button" className="btn" onClick={load}>Réessayer</button> : null}
-      {loading ? <p role="status">Chargement des runs…</p> : error && runs.length === 0 ? null : runs.length === 0 ? <Empty>Aucun run pour l'instant.</Empty> : (
-        <div className="table-wrap"><table>
+      {loading ? <p role="status">Chargement des exécutions…</p> : error && runs.length === 0 ? null : runs.length === 0 ? <Empty>Aucune exécution pour le moment.</Empty> : (
+        <div className="table-wrap" role="region" aria-label="Historique des exécutions" tabIndex={0}><table>
           <thead><tr><th>Début</th><th>Fin</th><th>Statut</th><th>Session</th><th>Erreur</th></tr></thead>
           <tbody>
             {runs.map((r) => (
@@ -123,7 +123,7 @@ function RunsModal({ task, onClose }: { task: CronTask; onClose: () => void }) {
                 <td className="muted">{new Date(r.started_at).toLocaleString()}</td>
                 <td className="muted">{r.finished_at ? new Date(r.finished_at).toLocaleString() : "…"}</td>
                 <td><Badge color={statusColor(r.status)}>{r.status}</Badge></td>
-                <td className="mono" style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{r.session_file ?? "—"}</td>
+                <td className="mono" title={r.session_file ?? undefined} style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{r.session_file ?? "—"}</td>
                 <td className="error-text" style={{ margin: 0 }}>{r.error}</td>
               </tr>
             ))}
@@ -141,7 +141,7 @@ function TaskEditor(props: {
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const toast = useToast();
+  const [actionError, setActionError] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: props.task?.name ?? "",
     cron_expr: props.task?.cron_expr ?? "0 9 * * *",
@@ -156,27 +156,31 @@ function TaskEditor(props: {
   const [busy, setBusy] = useState(false);
   const save = async () => {
     if (busy || !form.agent_id || !form.workspace_id || !form.cron_expr.trim()) return;
+    setActionError(null);
     setBusy(true);
     try {
       if (props.task) await api.updateSchedule(props.task.id, form);
       else await api.createSchedule(form);
       props.onSaved();
     } catch (e) {
-      toast((e as Error).message, true);
+      setActionError(e instanceof Error ? e.message : "Opération impossible. Réessaie.");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal title={props.task ? `Éditer — ${props.task.name}` : "Nouvelle tâche cron"} onClose={props.onClose}>
+    <Modal title={props.task ? `Modifier : ${props.task.name}` : "Nouvelle tâche cron"} onClose={() => { if (!busy) props.onClose(); }}>
+      <fieldset className="form-fields" disabled={busy}>
+      <ErrorText error={actionError} />
+      {props.agents.length === 0 || props.workspaces.length === 0 ? <p role="status" className="muted">Crée un agent et un workspace avant de planifier une tâche.</p> : null}
       <div className="form-row">
         <Field label="Nom"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
-        <Field label="Expression cron" hint="5 champs : min heure jour mois jour-sem — ex: 0 9 * * 1-5. Fuseau local du serveur (pas celui du navigateur).">
+        <Field label="Expression cron" hint="5 champs : min heure jour mois jour de semaine, ex. 0 9 * * 1-5. Fuseau local du serveur (pas celui du navigateur).">
           <input value={form.cron_expr} onChange={(e) => setForm({ ...form, cron_expr: e.target.value })} className="mono" />
         </Field>
       </div>
-      <Field label="Prompt tiré à l'exécution">
+      <Field label="Prompt envoyé à l’exécution">
         <textarea value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} />
       </Field>
       <div className="form-row">
@@ -194,27 +198,30 @@ function TaskEditor(props: {
       <div className="form-row">
         <Field label="Sortie">
           <select value={form.output_policy} onChange={(e) => setForm({ ...form, output_policy: e.target.value })}>
-            <option value="append_session">Session dédiée (append)</option>
-            <option value="new_session">Nouvelle session par run</option>
+            <option value="append_session">Réutiliser la session dédiée</option>
+            <option value="new_session">Nouvelle session à chaque exécution</option>
           </select>
         </Field>
-        <Field label="Si run précédent actif">
+        <Field label="Si une exécution est déjà active">
           <select value={form.busy_policy} onChange={(e) => setForm({ ...form, busy_policy: e.target.value })}>
-            <option value="skip">skip</option>
-            <option value="queue">queue</option>
-            <option value="kill">kill</option>
+            <option value="skip">Ignorer cette exécution</option>
+            <option value="queue">Mettre en attente</option>
+            <option value="kill">Arrêter l’exécution précédente</option>
           </select>
         </Field>
       </div>
       <label style={{ display: "flex", gap: 8, marginBottom: 14, fontSize: 13 }}>
         <input type="checkbox" style={{ width: "auto" }} checked={form.catchup} onChange={(e) => setForm({ ...form, catchup: e.target.checked })} />
-        Catchup (1 run de rattrapage si des exécutions ont été manquées)
+        Rattraper une exécution manquée au redémarrage
       </label>
       <div className="toolbar">
         <button className="btn btn-primary" disabled={busy || !form.agent_id || !form.workspace_id || !form.name.trim() || !form.prompt.trim() || !form.cron_expr.trim()} onClick={() => void save()}>
-          {busy ? "Sauvegarde…" : "Sauvegarder"}
+          {busy ? "Enregistrement…" : "Enregistrer la tâche"}
         </button>
+        <button type="button" className="btn" disabled={busy} onClick={props.onClose}>Annuler</button>
       </div>
+      </fieldset>
+      {busy ? <p role="status" className="muted">Opération en cours. Attends la fin avant de fermer.</p> : null}
     </Modal>
   );
 }

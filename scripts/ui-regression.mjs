@@ -97,7 +97,7 @@ try {
   assert(await page.$('button.card'));
   console.log('PASS: workspace navigation current, tabs keyboard/panels, native conversation button');
 
-  await clickText('[role=tab]', 'Board');
+  await clickText('[role=tab]', 'Tableau');
   await clickText('.board-title', card.title);
   await page.waitForSelector('dialog[open]');
   const launchDisabled = await page.evaluate(() => {
@@ -108,12 +108,13 @@ try {
   assert.equal(launchDisabled, false);
   await page.keyboard.type('Titre non enregistré');
   assert(await page.evaluate(() => [...document.querySelectorAll('dialog button')].find(b => b.textContent.includes('Lancer'))?.disabled));
+  page.once('dialog', dialog => dialog.accept());
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.querySelector('dialog[open]'));
   console.log('PASS: board launch requires saved configuration');
 
   await page.setViewport({ width: 320, height: 750 });
-  await clickText('[role=tab]', 'Chef de Projet');
+  await clickText('[role=tab]', 'Chef de projet');
   await page.waitForFunction(() => document.querySelectorAll('.tab-chat .msg').length >= 80);
   assert(await page.$eval('.tab-chat .chat-input', e => { const r = e.getBoundingClientRect(); return r.top > 0 && r.bottom <= innerHeight + 1; }));
   assert.equal(writes.filter(w => w.path === '/api/conversations').length, 0);

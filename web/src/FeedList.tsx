@@ -29,9 +29,10 @@ export function FeedList(props: { feed: FeedEvent[]; onOpenEvent: (event: FeedEv
               className="feed-row"
               onClick={() => props.onOpenEvent(event)}
               title={event.path}
+              aria-label={`Voir les modifications de ${event.path}, ${event.conversationTitle || "Conversation sans titre"}, ${new Date(event.at).toLocaleString("fr-FR")}`}
             >
               <span className="feed-time">{new Date(event.at).toLocaleTimeString("fr-FR", TIME_FORMAT)}</span>
-              <span className="feed-conv">{event.conversationTitle}</span>
+              <span className="feed-conv">{event.conversationTitle || "Sans titre"}</span>
               <span className="feed-path mono">{event.path.split("/").slice(-2).join("/")}</span>
               <span className="file-stats">
                 {event.additions > 0 ? <span className="add">+{event.additions}</span> : null}

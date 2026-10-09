@@ -15,6 +15,7 @@ Style: **Linear-grade app shell** (sidebar + lists + chat). Canvas near-black, i
 | `--subtle` | `#80858d` | Meta, placeholders (≥4.5:1 on raised) |
 | `--border` | `#1f2023` | Structure |
 | `--border-strong` | `#2c2e33` | Hover / strong edge |
+| `--control-border` | `#636873` | Input boundaries (≥3:1 on raised and popover) |
 | `--accent` | `#5e6ad2` | Primary action, selection, user bubble |
 | `--accent-hover` | `#606cd0` | Primary hover (white text ≥4.5:1) |
 | `--accent-text` | `#8792ed` | Links / accent text on dark surfaces |
@@ -39,7 +40,9 @@ Inter 400 / 500 / 600, self-hosted. One family. Fixed rem scale, not fluid.
 
 ## Layout
 
-Sidebar 220px + main. Spacing scale: 4 / 8 / 12 / 16 / 24. Radius 6px chrome, 8px popovers. Shadows only on popovers. Break at 768px: sidebar becomes a drawer.
+Sidebar 220px + main. Spacing scale: 4 / 8 / 12 / 16 / 24. Radius 6px chrome, 8px popovers. Shadows only on popovers, with an 8px blur. Break at 768px: sidebar becomes a drawer with contained keyboard focus and Escape dismissal. Returning to desktop closes the drawer and restores access to the main content.
+
+On mobile, body/control labels are at least 14px, inputs use 16px, and interactive rows/buttons have a 44px minimum height. Chat places the message above its attachment, skill and send controls. Tabs retain their width and scroll horizontally instead of shrinking their labels.
 
 ## Components
 
@@ -47,7 +50,7 @@ Sidebar 220px + main. Spacing scale: 4 / 8 / 12 / 16 / 24. Radius 6px chrome, 8p
 - **Buttons**: hairline or solid accent. Press `scale(0.97)` 150ms. Hover is color only.
 - **Lists**: default for collections. Cards only for workspace units that carry nested fields.
 - **Badge**: chip with a colored dot, never a filled pill.
-- **Modal**: dialog semantics, Escape, focus trap, restore. Enter `scale(0.97)+fade` 180ms.
+- **Modal**: native dialog semantics, Escape, focus trap, explicit focus restoration to the opener. Enter `scale(0.97)+fade` 180ms. Width constrained to the viewport. Pending writes prevent dismissal; failures remain inline inside the dialog.
 - **Empty**: title + one sentence + the primary action.
 - **Toast**: live region, dismissible, no side stripe.
 

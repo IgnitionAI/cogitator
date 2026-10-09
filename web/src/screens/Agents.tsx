@@ -24,7 +24,7 @@ export default function Agents() {
     <>
       <PageHead
         title="Agents"
-        sub="Un agent = provider + modèle + thinking + skills + MCP + prompt de scope + subagents."
+        sub="Un agent = fournisseur + modèle + thinking + skills + MCP + prompt de scope + subagents."
         actions={
           <>
             <button type="button" className="btn" onClick={() => setShowImport(true)}><Icon name="download" /> Importer des skills</button>
@@ -36,13 +36,13 @@ export default function Agents() {
       {error ? <button type="button" className="btn" onClick={refresh}>Réessayer</button> : null}
       {loading ? <p role="status">Chargement…</p> : error && agents.length === 0 ? null : agents.length === 0 ? (
         <Empty title="Aucun agent" action={<button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> Nouvel agent</button>}>
-          Crée un preset pour matérialiser une config complète en flags pi.
+          Crée un agent avec son modèle, ses outils et ses instructions pi.
         </Empty>
       ) : (
         <div className="cards">
           {agents.map((a) => (
             <div key={a.id} className="card" style={{ cursor: "default" }}>
-              <h4>{a.name} {a.is_default ? <Badge color="#9a6700">★ défaut</Badge> : null}</h4>
+              <h2>{a.name} {a.is_default ? <Badge color="var(--todo)">Par défaut</Badge> : null}</h2>
               <div className="meta">
                 <span>{a.skills.length} skill(s) · {a.mcp_servers.length} MCP · {a.subagents?.length ?? 0} subagent(s)</span>
                 {a.description ? <span>{a.description.slice(0, 90)}</span> : null}
@@ -53,9 +53,9 @@ export default function Agents() {
                 onChanged={() => { refresh(); toast(`${a.name} : modèle mis à jour`); }}
               />
               <div className="actions">
-                <button className="btn btn-sm" onClick={() => setEditing(a)}>Éditer</button>{" "}
+                <button className="btn btn-sm" onClick={() => setEditing(a)}>Modifier</button>{" "}
                 {!a.is_default ? (
-                  <button className="btn btn-sm" onClick={() => api.setDefaultAgent(a.id).then(refresh).catch((e: Error) => toast(e.message, true))}>Définir défaut</button>
+                  <button className="btn btn-sm" onClick={() => api.setDefaultAgent(a.id).then(refresh).catch((e: Error) => toast(e.message, true))}>Définir par défaut</button>
                 ) : null}{" "}
                 <button
                   className="btn btn-sm btn-danger"
@@ -116,7 +116,7 @@ function QuickModel(props: {
 
   return (
     <div style={{ marginTop: 8 }}>
-      <p className="muted">Provider et modèle : chaque changement est enregistré immédiatement.</p>
+      <p className="muted">Fournisseur et modèle : chaque changement est enregistré immédiatement.</p>
       <div className="form-row">
       <select
         value={agent.provider}
@@ -124,13 +124,14 @@ function QuickModel(props: {
           const nextProvider = providers.find((p) => p.id === e.target.value);
           void switchTo(e.target.value, nextProvider?.models[0]?.id ?? "");
         }}
-        aria-label={`Provider de ${agent.name}`}
+        aria-label={`Fournisseur de ${agent.name}`}
         disabled={busy}
-        title="Provider"
+        title="Fournisseur"
       >
+        {!provider ? <option value={agent.provider}>{agent.provider} (indisponible)</option> : null}
         {providers.map((p) => (
           <option key={p.id} value={p.id}>
-            {p.id} {p.auth.ready ? "✓" : "⚠"}
+            {p.id} {p.auth.ready === true ? "(prêt)" : p.auth.ready === false ? "(authentification requise)" : "(état inconnu)"}
           </option>
         ))}
       </select>
@@ -141,7 +142,7 @@ function QuickModel(props: {
         disabled={busy}
         title="Modèle"
       >
-        {models.length === 0 ? <option value={agent.model}>{agent.model}</option> : null}
+        {!models.some((m) => m.id === agent.model) ? <option value={agent.model}>{agent.model}</option> : null}
         {models.map((m) => (
           <option key={m.id} value={m.id}>{m.id}</option>
         ))}
@@ -153,12 +154,15 @@ function QuickModel(props: {
 
 function ImportSkillsModal(props: { onClose: () => void }) {
   const toast = useToast();
+  const [actionError, setActionError] = useState<string | null>(null);
   const [source, setSource] = useState("");
   const [overwrite, setOverwrite] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ imported: string[]; skipped: string[] } | null>(null);
 
   const run = async () => {
+    if (busy) return;
+    setActionError(null);
     setBusy(true);
     setResult(null);
     try {
@@ -166,14 +170,16 @@ function ImportSkillsModal(props: { onClose: () => void }) {
       setResult(r);
       toast(`${r.imported.length} skill(s) importé(s)${r.skipped.length ? `, ${r.skipped.length} ignoré(s)` : ""}`);
     } catch (e) {
-      toast((e as Error).message, true);
+      setActionError(e instanceof Error ? e.message : "Opération impossible. Réessaie.");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal title="Importer des skills" onClose={props.onClose}>
+    <Modal title="Importer des skills" onClose={() => { if (!busy) props.onClose(); }}>
+      <fieldset className="form-fields" disabled={busy}>
+      <ErrorText error={actionError} />
       <Field label="Source" hint="Repo GitHub (IgnitionAI/skills), chemin local, ou commande CLI : npx aiblueprint-cli@latest skills update">
         <input value={source} onChange={(e) => setSource(e.target.value)} placeholder="IgnitionAI/skills" />
       </Field>
@@ -191,13 +197,17 @@ function ImportSkillsModal(props: { onClose: () => void }) {
         <button className="btn btn-primary" disabled={!source.trim() || busy} onClick={() => void run()}>
           {busy ? "Import…" : "Importer vers ~/.agents/skills"}
         </button>
+        <button type="button" className="btn" disabled={busy} onClick={props.onClose}>Annuler</button>
       </div>
+      </fieldset>
+      {busy ? <p role="status" className="muted">Opération en cours. Attends la fin avant de fermer.</p> : null}
     </Modal>
   );
 }
 
 function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
+  const [actionError, setActionError] = useState<string | null>(null);
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [skills, setSkills] = useState<SkillRef[]>([]);
   const [form, setForm] = useState({
@@ -245,11 +255,12 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
     if (busy) return;
     const errors = [
       ...form.mcp_servers.flatMap((m, i) => !m.name.trim() || !(m.command?.trim() || m.url?.trim()) ? [`MCP ${i + 1} : nom et commande ou URL requis. Retire la ligne si elle est inutile.`] : []),
-      ...form.subagents.flatMap((s, i) => !s.name.trim() || !s.provider.trim() || !s.model.trim() ? [`Subagent ${i + 1} : nom, provider et modèle requis. Retire la ligne si elle est inutile.`] : []),
+      ...form.subagents.flatMap((s, i) => !s.name.trim() || !s.provider.trim() || !s.model.trim() ? [`Subagent ${i + 1} : nom, fournisseur et modèle requis. Retire la ligne si elle est inutile.`] : []),
     ];
     if (errors.length) { setChecks({ errors, warnings: [] }); return; }
     setChecks(null);
     setSaveNotice(null);
+    setActionError(null);
     setBusy(true);
     let persisted = false;
     try {
@@ -275,44 +286,46 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
       setSaveNotice(v.errors.length ? "Agent enregistré et appliqué, mais invalide : corrige les erreurs puis sauvegarde à nouveau." : "Agent enregistré, appliqué et validé.");
       setChecks(v);
       if (v.errors.length === 0) {
-        toast(props.agent ? "Agent mis à jour + appliqué (herdr)" : "Agent créé + appliqué (herdr)");
+        toast(props.agent ? "Agent mis à jour et appliqué" : "Agent créé et appliqué");
         props.onSaved();
       }
     } catch (e) {
       if (persisted) setSaveNotice("Agent enregistré et appliqué, mais validation indisponible. La sauvegarde n’a pas été annulée.");
-      toast((e as Error).message, true);
+      setActionError(e instanceof Error ? e.message : "Opération impossible. Réessaie.");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal title={props.agent ? `Éditer — ${props.agent.name}` : "Nouvel agent"} onClose={props.onClose} wide>
+    <Modal title={props.agent ? `Modifier : ${props.agent.name}` : "Nouvel agent"} onClose={() => { if (!busy) props.onClose(); }} wide>
+      <fieldset className="form-fields" disabled={busy}>
+      <ErrorText error={actionError} />
       <ErrorText error={loadError} />
-      {loadError ? <button type="button" className="btn" onClick={loadOptions}>Réessayer le chargement des providers et skills</button> : null}
-      {optionsLoading ? <p role="status">Chargement des providers et skills…</p> : null}
+      {loadError ? <button type="button" className="btn" onClick={loadOptions}>Réessayer le chargement des fournisseurs et skills</button> : null}
+      {optionsLoading ? <p role="status">Chargement des fournisseurs et skills…</p> : null}
       <div className="form-grid">
         <Field label="Nom">
           <input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="RAG Expert" />
         </Field>
-        <Field label="Provider">
+        <Field label="Fournisseur">
           <select value={form.provider} onChange={(e) => setForm((f) => ({ ...f, provider: e.target.value, model: "" }))}>
-            {providers.map((p) => <option key={p.id} value={p.id}>{p.id} {p.auth.ready ? "✓" : "⚠"}</option>)}
+            {providers.map((p) => <option key={p.id} value={p.id}>{p.id} {p.auth.ready === true ? "(prêt)" : p.auth.ready === false ? "(authentification requise)" : "(état inconnu)"}</option>)}
           </select>
         </Field>
         <Field label="Modèle">
           <select value={form.model} onChange={(e) => set("model", e.target.value)}>
-            <option value="">(défaut du provider)</option>
+            <option value="">(défaut du fournisseur)</option>
             {models.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
           </select>
         </Field>
-        <Field label="Thinking">
+        <Field label="Niveau de raisonnement">
           <select value={form.thinking} onChange={(e) => set("thinking", e.target.value)}>
             <option value="">(défaut)</option>
             {THINKING_LEVELS.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </Field>
-        <Field label="Tools allowlist (vide = tous)" hint="Séparés par des virgules">
+        <Field label="Outils autorisés (vide = tous)" hint="Séparés par des virgules">
           <input value={form.tools} onChange={(e) => set("tools", e.target.value)} placeholder="read, bash, edit, write" />
         </Field>
         <Field label="Description">
@@ -366,8 +379,8 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
           <div key={i} className="subagent-box">
             <div className="form-grid">
               <input aria-label={`Nom du subagent ${i + 1}`} placeholder="name (slug)" value={s.name} onChange={(e) => patchSub(i, { name: e.target.value })} />
-              <select aria-label={`Provider du subagent ${i + 1}`} value={s.provider} onChange={(e) => patchSub(i, { provider: e.target.value, model: "" })}>
-                <option value="">provider…</option>
+              <select aria-label={`Fournisseur du subagent ${i + 1}`} value={s.provider} onChange={(e) => patchSub(i, { provider: e.target.value, model: "" })}>
+                <option value="">fournisseur…</option>
                 {providers.map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}
               </select>
               <input aria-label={`Modèle du subagent ${i + 1}`} placeholder="model" value={s.model} onChange={(e) => patchSub(i, { model: e.target.value })} />
@@ -389,7 +402,7 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
       <p className="muted">La validation serveur intervient après enregistrement et application des définitions.</p>
       {saveNotice ? <p role="status">{saveNotice}</p> : null}
       {checks ? (
-        <div className="checks">
+        <div className="checks" role="status">
           {checks.errors.map((e) => <div key={e} className="err">✗ {e}</div>)}
           {checks.warnings.map((w) => <div key={w} className="warn">⚠ {w}</div>)}
           {checks.errors.length === 0 ? <div style={{ color: "var(--success)" }}>✓ Valide</div> : null}
@@ -398,9 +411,12 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
 
       <div className="toolbar">
         <button className="btn btn-primary" onClick={() => void save()} disabled={busy || optionsLoading || !!loadError || !form.name.trim() || !form.provider || !(form.model || models[0]?.id)}>
-          {busy ? "Sauvegarde + Apply…" : "Sauvegarder + Apply"}
+          {busy ? "Enregistrement et application…" : "Enregistrer et appliquer"}
         </button>
+        <button type="button" className="btn" disabled={busy} onClick={props.onClose}>Annuler</button>
       </div>
+      </fieldset>
+      {busy ? <p role="status" className="muted">Opération en cours. Attends la fin avant de fermer.</p> : null}
     </Modal>
   );
 }

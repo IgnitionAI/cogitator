@@ -16,9 +16,9 @@ const NAV = [
   { id: "conversations", icon: "chat", label: "Conversations" },
   { id: "workspaces", icon: "folder", label: "Workspaces" },
   { id: "agents", icon: "bot", label: "Agents" },
-  { id: "providers", icon: "plug", label: "Providers" },
+  { id: "providers", icon: "plug", label: "Fournisseurs" },
   { id: "cron", icon: "clock", label: "Cron" },
-  { id: "settings", icon: "settings", label: "Settings" },
+  { id: "settings", icon: "settings", label: "Paramètres" },
 ] as const satisfies ReadonlyArray<{ id: string; icon: IconName; label: string }>;
 
 type ScreenId = (typeof NAV)[number]["id"];
@@ -32,6 +32,7 @@ export default function App() {
   const [pendingConv, setPendingConv] = useState<string | null>(null);
   const [navOpen, setNavOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
+  const sidebar = useRef<HTMLElement>(null);
   const activeScreen = openWorkspace ? "workspaces" : screen;
 
   useEffect(() => {
@@ -48,11 +49,28 @@ export default function App() {
 
   useEffect(() => {
     if (!navOpen) return;
-    const close = (event: KeyboardEvent) => { if (event.key === "Escape") setNavOpen(false); };
-    document.addEventListener("keydown", close);
+    const desktop = window.matchMedia("(min-width: 769px)");
+    const closeOnDesktop = () => { if (desktop.matches) setNavOpen(false); };
+    const links = sidebar.current?.querySelectorAll<HTMLButtonElement>("button");
+    sidebar.current?.querySelector<HTMLButtonElement>("[aria-current=page]")?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setNavOpen(false);
+      if (event.key !== "Tab" || !links?.length) return;
+      const first = links[0];
+      const last = links[links.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault(); first.focus();
+      }
+    };
+    desktop.addEventListener("change", closeOnDesktop);
+    document.addEventListener("keydown", onKeyDown);
     return () => {
-      document.removeEventListener("keydown", close);
-      menuButton.current?.focus();
+      desktop.removeEventListener("change", closeOnDesktop);
+      document.removeEventListener("keydown", onKeyDown);
+      if (!desktop.matches) menuButton.current?.focus();
     };
   }, [navOpen]);
 
@@ -83,16 +101,20 @@ export default function App() {
 
   return (
     <div className={`app ${navOpen ? "nav-open" : ""}`}>
-      <a className="skip-link" href="#main">Aller au contenu</a>
-      <header className="topbar">
+      <a className="skip-link" href="#main" inert={navOpen}>Aller au contenu</a>
+      <header className="topbar" inert={navOpen}>
         <button ref={menuButton} type="button" className="icon-btn" aria-label={navOpen ? "Fermer le menu" : "Ouvrir le menu"} aria-expanded={navOpen} aria-controls="sidebar" onClick={() => setNavOpen((open) => !open)}>
           <Icon name="menu" />
         </button>
         <span className="brand-inline">Cogitator</span>
       </header>
       <div className="nav-scrim" onClick={() => setNavOpen(false)} />
-      <aside id="sidebar" className="sidebar">
-        <div className="brand"><img src="/favicon.png" alt="Cogitator" className="brand-logo" style={{ width: 26, height: 26, borderRadius: 6, flexShrink: 0, objectFit: "cover", boxShadow: "0 0 14px rgba(94,106,210,.35)" }} />Cogita<em>tor</em></div>
+      <aside ref={sidebar} id="sidebar" className="sidebar" role={navOpen ? "dialog" : undefined} aria-modal={navOpen || undefined} aria-label="Navigation principale">
+        <div className="brand">
+          <img src="/favicon.png" alt="" className="brand-logo" width={26} height={26} />
+          <span>Cogita<em>tor</em></span>
+          <button type="button" className="icon-btn nav-close" aria-label="Fermer le menu" onClick={() => setNavOpen(false)}><Icon name="close" /></button>
+        </div>
         <nav aria-label="Principal">
           {NAV.map((n) => (
             <button

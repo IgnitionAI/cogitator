@@ -63,7 +63,7 @@ export function Markdown(props: { text: string }) {
         i++;
       }
       i++; // ferme ```
-      blocks.push(<pre key={key++} className="md-pre">{buf.join("\n")}</pre>);
+      blocks.push(<pre key={key++} className="md-pre" tabIndex={0} aria-label="Bloc de code">{buf.join("\n")}</pre>);
       continue;
     }
 
@@ -114,10 +114,10 @@ export function Markdown(props: { text: string }) {
       const [head, ...body] = rows;
       if (head) {
         blocks.push(
-          <div key={key++} className="md-table-wrap">
+          <div key={key++} className="md-table-wrap" tabIndex={0} role="region" aria-label="Tableau">
             <table className="md-table">
               <thead>
-                <tr>{head.map((c, j) => <th key={j}>{renderInline(c.trim(), `t${key}h${j}`)}</th>)}</tr>
+                <tr>{head.map((c, j) => <th key={j} scope="col">{renderInline(c.trim(), `t${key}h${j}`)}</th>)}</tr>
               </thead>
               <tbody>
                 {body.map((r, ri) => (

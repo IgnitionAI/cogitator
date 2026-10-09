@@ -4,7 +4,7 @@ import type { AgentPreset, BoardCard, Conversation } from "./types";
 import { Field, Modal, useToast } from "./ui";
 
 const COLUMNS: Array<{ id: string; label: string }> = [
-  { id: "backlog", label: "Backlog" },
+  { id: "backlog", label: "À planifier" },
   { id: "todo", label: "À faire" },
   { id: "in_progress", label: "En cours" },
   { id: "done", label: "Terminé" },
@@ -15,7 +15,7 @@ const PRIORITIES: Array<{ id: string; label: string; color: string }> = [
   { id: "urgent", label: "Urgente", color: "#eb5757" },
   { id: "high", label: "Haute", color: "#f2994a" },
   { id: "medium", label: "Moyenne", color: "#8a8f98" },
-  { id: "low", label: "Basse", color: "#62666d" },
+  { id: "low", label: "Basse", color: "var(--subtle)" },
 ];
 
 const LABEL_COLORS = ["#5e6ad2", "#4cb782", "#e2a336", "#eb5757", "#38bdf8", "#c084fc"];
@@ -61,13 +61,13 @@ export function BoardPanel(props: {
   return (
     <>
       <div className="toolbar" style={{ marginBottom: 12 }}>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>+ Carte</button>
+        <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>Ajouter une carte</button>
         <button type="button" className="btn btn-sm" disabled={loading} onClick={refresh}>Actualiser</button>
         <span className="muted" style={{ fontSize: 12 }}>
           {cards.length} carte(s) · source : cogitator.board.json (visible dans l'arborescence, manipulable par les agents)
         </span>
       </div>
-      {loading ? <p role="status">Chargement du board…</p> : null}
+      {loading ? <p role="status">Chargement du tableau…</p> : null}
       {error ? <div role="alert" className="error-text">{error} <button type="button" className="btn btn-sm" onClick={refresh}>Réessayer</button></div> : null}
       <div className="board" aria-busy={loading}>
         {COLUMNS.map((col) => {
@@ -77,6 +77,7 @@ export function BoardPanel(props: {
               <div className="board-col-head">
                 {col.label} <span className="muted">{colCards.length}</span>
               </div>
+              {!loading && !error && colCards.length === 0 ? <p className="muted">Aucune carte</p> : null}
               {colCards.map((c) => {
                 const prio = PRIORITIES.find((p) => p.id === c.priority);
                 return (
@@ -140,7 +141,7 @@ export default function BoardModal(props: {
   onClose: () => void;
 }) {
   return (
-    <Modal title={`Board — ${props.workspaceName}`} onClose={props.onClose} wide>
+    <Modal title={`Tableau : ${props.workspaceName}`} onClose={props.onClose} wide>
       <BoardPanel workspaceId={props.workspaceId} agents={props.agents} />
     </Modal>
   );
@@ -151,7 +152,7 @@ function NewCardModal(props: {
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const toast = useToast();
+  const [error, setError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("medium");
@@ -161,18 +162,21 @@ function NewCardModal(props: {
     if (pendingRef.current || !title.trim()) return;
     pendingRef.current = true;
     setPending(true);
+    setError(null);
     try {
       await api.boardCreateCard(props.workspaceId, { title: title.trim(), description, priority });
       props.onCreated();
     } catch (e) {
-      toast((e as Error).message, true);
+      setError((e as Error).message);
     } finally {
       pendingRef.current = false;
       setPending(false);
     }
   };
   return (
-    <Modal title="Nouvelle carte" onClose={props.onClose}>
+    <Modal title="Nouvelle carte" onClose={() => { if (!pendingRef.current) props.onClose(); }}>
+      {error ? <p className="error-text" role="alert">{error}</p> : null}
+      <fieldset disabled={pending} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <Field label="Titre"><input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus /></Field>
       <Field label="Description"><textarea value={description} onChange={(e) => setDescription(e.target.value)} /></Field>
       <Field label="Priorité">
@@ -181,8 +185,9 @@ function NewCardModal(props: {
         </select>
       </Field>
       <div className="toolbar">
-        <button className="btn btn-primary" disabled={pending || !title.trim()} onClick={() => void create()}>{pending ? "Création…" : "Créer"}</button>
+        <button className="btn btn-primary" disabled={pending || !title.trim()} onClick={() => void create()}>{pending ? "Création…" : "Créer la carte"}</button>
       </div>
+      </fieldset>
     </Modal>
   );
 }
@@ -213,6 +218,7 @@ function CardDetail(props: {
   onOpenConversation?: (id: string) => void;
 }) {
   const toast = useToast();
+  const [error, setError] = useState<string | null>(null);
   const { card, workspaceId } = props;
   const [form, setForm] = useState(() => cardForm(card));
   const [savedForm, setSavedForm] = useState(() => cardForm(card));
@@ -247,12 +253,13 @@ function CardDetail(props: {
   }, [workspaceId, card.id, card.updated_at, linkedConversations, activityRetry]);
 
   const save = async () => {
-    if (pendingRef.current) return;
+    if (pendingRef.current || !form.title.trim() || !dirty) return;
     pendingRef.current = true;
     setPending(true);
+    setError(null);
     try {
       const result = await api.boardUpdateCard(workspaceId, card.id, {
-        title: form.title.trim() || card.title,
+        title: form.title.trim(),
         description: form.description,
         priority: form.priority,
         status: form.status,
@@ -267,7 +274,7 @@ function CardDetail(props: {
       props.onChanged();
       toast("Carte mise à jour");
     } catch (e) {
-      toast((e as Error).message, true);
+      setError((e as Error).message);
     } finally {
       pendingRef.current = false;
       setPending(false);
@@ -279,12 +286,13 @@ function CardDetail(props: {
     if (!text || pendingRef.current) return;
     pendingRef.current = true;
     setPending(true);
+    setError(null);
     try {
       await api.boardComment(workspaceId, card.id, { text, author: "user" });
       setComment("");
       props.onChanged();
     } catch (e) {
-      toast((e as Error).message, true);
+      setError((e as Error).message);
     } finally {
       pendingRef.current = false;
       setPending(false);
@@ -296,7 +304,8 @@ function CardDetail(props: {
   const otherCards = props.cards.filter((c) => c.id !== card.id);
 
   return (
-    <Modal title={card.title} onClose={props.onClose} wide>
+    <Modal title={card.title} onClose={() => { if (!pendingRef.current && ((!dirty && !comment.trim()) || confirm("Fermer sans enregistrer les modifications de cette carte ?"))) props.onClose(); }} wide>
+      {error ? <p className="error-text" role="alert">{error}</p> : null}
       <fieldset disabled={pending} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <div className="form-row">
         <Field label="Titre"><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
@@ -321,7 +330,8 @@ function CardDetail(props: {
           </select>
         </Field>
       </div>
-      <Field label={`Conversations liées (${form.conversation_ids.length})`}>
+      <fieldset className="field" style={{ border: 0, padding: 0, minWidth: 0 }}><legend className="field-label">Conversations liées ({form.conversation_ids.length})</legend>
+        {props.conversations.length === 0 ? <p className="muted">Aucune conversation à lier dans ce workspace.</p> : null}
         <div className="link-list">
           {props.conversations.map((c) => (
             <label key={c.id} style={{ display: "flex", gap: 6, fontSize: 12.5, padding: "2px 4px" }}>
@@ -335,7 +345,7 @@ function CardDetail(props: {
             </label>
           ))}
         </div>
-      </Field>
+      </fieldset>
       {activityLoading ? <p role="status">Chargement de l’activité liée…</p> : null}
       {activityError ? <div role="alert" className="error-text">{activityError} <button type="button" className="btn btn-sm" onClick={() => setActivityRetry((n) => n + 1)}>Réessayer</button></div> : null}
       {activity ? (
@@ -346,30 +356,34 @@ function CardDetail(props: {
         </div>
       ) : null}
       <div className="form-row">
+        <div>
         <Field label={`Bloque (${form.blocks.length})`}>
           <select value="" onChange={(e) => { if (e.target.value) setForm({ ...form, blocks: toggleIn(form.blocks, e.target.value) }); }}>
             <option value="">+ ajouter…</option>
             {otherCards.filter((c) => !form.blocks.includes(c.id)).map((c) => <option key={c.id} value={c.id}>{c.title.slice(0, 50)}</option>)}
           </select>
+        </Field>
           <div className="link-chips">{form.blocks.map((id) => (
-            <button type="button" key={id} className="chip" onClick={() => setForm({ ...form, blocks: form.blocks.filter((x) => x !== id) })}>
+            <button type="button" key={id} className="chip" aria-label={`Retirer le lien vers ${props.cards.find((c) => c.id === id)?.title ?? id}`} onClick={() => setForm({ ...form, blocks: form.blocks.filter((x) => x !== id) })}>
               {props.cards.find((c) => c.id === id)?.title ?? id} ×
             </button>
           ))}</div>
-        </Field>
+        </div>
+        <div>
         <Field label={`Bloqué par (${form.blocked_by.length})`}>
           <select value="" onChange={(e) => { if (e.target.value) setForm({ ...form, blocked_by: toggleIn(form.blocked_by, e.target.value) }); }}>
             <option value="">+ ajouter…</option>
             {otherCards.filter((c) => !form.blocked_by.includes(c.id)).map((c) => <option key={c.id} value={c.id}>{c.title.slice(0, 50)}</option>)}
           </select>
+        </Field>
           <div className="link-chips">{form.blocked_by.map((id) => (
-            <button type="button" key={id} className="chip" onClick={() => setForm({ ...form, blocked_by: form.blocked_by.filter((x) => x !== id) })}>
+            <button type="button" key={id} className="chip" aria-label={`Retirer le blocage par ${props.cards.find((c) => c.id === id)?.title ?? id}`} onClick={() => setForm({ ...form, blocked_by: form.blocked_by.filter((x) => x !== id) })}>
               {props.cards.find((c) => c.id === id)?.title ?? id} ×
             </button>
           ))}</div>
-        </Field>
+        </div>
       </div>
-      <Field label={`Commentaires (${card.comments.length})`}>
+      <fieldset className="field" style={{ border: 0, padding: 0, minWidth: 0 }}><legend className="field-label">Commentaires ({card.comments.length})</legend>
         <div className="comments">
           {card.comments.map((cm) => (
             <div key={cm.id} className="comment">
@@ -382,27 +396,28 @@ function CardDetail(props: {
           ))}
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <input value={comment} placeholder="Commenter…" onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void addComment(); }} />
+          <input aria-label="Nouveau commentaire" value={comment} placeholder="Commenter…" onChange={(e) => setComment(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) void addComment(); }} />
           <button className="btn btn-sm" disabled={pending || !comment.trim()} onClick={() => void addComment()}>Envoyer</button>
         </div>
-      </Field>
+      </fieldset>
       <div className="toolbar">
-        <button className="btn btn-primary" disabled={pending} onClick={() => void save()}>{pending ? "En cours…" : "Sauvegarder"}</button>
+        <button className="btn btn-primary" disabled={pending || !dirty || !form.title.trim()} onClick={() => void save()}>{pending ? "En cours…" : "Sauvegarder"}</button>
         <button
           className="btn"
           disabled={pending || dirty || !form.assignee_agent_id}
-          title={dirty ? "Sauvegarde les modifications avant de lancer l’agent" : form.assignee_agent_id ? "Spawn une conversation avec l'agent assigné, dans ce workspace" : "Assigne un agent d'abord"}
+          title={dirty ? "Sauvegarde les modifications avant de lancer l’agent" : form.assignee_agent_id ? "Créer une conversation avec l’agent assigné dans ce workspace" : "Assigne un agent d'abord"}
           onClick={() => {
             if (pendingRef.current || dirty || !form.assignee_agent_id) return;
             pendingRef.current = true;
             setPending(true);
+            setError(null);
             api.boardStartWork(props.workspaceId, card.id)
               .then((r) => {
                 toast(`Agent lancé sur #${r.card.number} — conversation #${r.conversation.id.slice(0, 8)}`);
                 props.onOpenConversation?.(r.conversation.id);
                 props.onChanged();
               })
-              .catch((e: Error) => toast(e.message, true))
+              .catch((e: Error) => setError(e.message))
               .finally(() => { pendingRef.current = false; setPending(false); });
           }}
         >
@@ -411,9 +426,13 @@ function CardDetail(props: {
         <button
           className="btn btn-danger"
           onClick={() => {
-            if (confirm("Supprimer cette carte ?")) {
-              api.boardDeleteCard(workspaceId, card.id).then(props.onDeleted).catch((e: Error) => toast(e.message, true));
-            }
+            if (pendingRef.current || !confirm("Supprimer cette carte ? Cette action est irréversible.")) return;
+            pendingRef.current = true;
+            setPending(true);
+            setError(null);
+            api.boardDeleteCard(workspaceId, card.id).then(props.onDeleted)
+              .catch((e: Error) => setError(e.message))
+              .finally(() => { pendingRef.current = false; setPending(false); });
           }}
         >
           Supprimer

@@ -15,7 +15,7 @@ export interface TreeNode {
 export function FileRow(props: { f: FileChange; onClick?: () => void }) {
   const { f } = props;
   return (
-    <div className={`file-row ${props.onClick ? "clickable" : ""}`} title={f.path} role={props.onClick ? "button" : undefined} tabIndex={props.onClick ? 0 : undefined} onClick={props.onClick} onKeyDown={props.onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); props.onClick?.(); } } : undefined}>
+    <div className={`file-row ${props.onClick ? "clickable" : ""}`} title={f.path} aria-label={props.onClick ? `Voir les modifications de ${f.path}` : undefined} role={props.onClick ? "button" : undefined} tabIndex={props.onClick ? 0 : undefined} onClick={props.onClick} onKeyDown={props.onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); props.onClick?.(); } } : undefined}>
       <span className={`file-kind ${f.kind === "write" ? "W" : "E"}`}>{f.kind === "write" ? "W" : "E"}</span>
       <span className="file-path mono">{f.path.split("/").slice(-2).join("/")}</span>
       <span className="file-stats">
@@ -45,7 +45,7 @@ export function FileDiffModal(props: { conversationId: string; path: string; onC
 
   const shortName = props.path.split("/").slice(-2).join("/");
   return (
-    <Modal title={`Diff — ${shortName}`} onClose={props.onClose} wide>
+    <Modal title={`Modifications : ${shortName}`} onClose={props.onClose} wide>
       {error ? <div className="error-text" role="alert">{error} <button type="button" className="btn btn-sm" onClick={() => setRetry((n) => n + 1)}>Réessayer</button></div> : null}
       {!error && operations === null ? <div className="muted" role="status" style={{ padding: 12 }}>Chargement…</div> : null}
       {operations !== null && operations.length === 0 ? (
@@ -71,7 +71,7 @@ export function FileDiffModal(props: { conversationId: string; path: string; onC
       ))}
       {operations !== null && operations.length > 0 ? (
         <div className="muted" style={{ fontSize: 11.5, marginTop: 10 }}>
-          Reconstruit depuis les toolcalls de la session — l'état actuel du fichier sur disque peut différer.
+          Reconstruit depuis les appels d’outils de la session ; l'état actuel du fichier sur disque peut différer.
         </div>
       ) : null}
     </Modal>
@@ -80,7 +80,7 @@ export function FileDiffModal(props: { conversationId: string; path: string; onC
 
 /** Ligne de fichier cliquable : chevron d'affordance diff. */
 function DiffAffordance() {
-  return <span className="chevron afford">▸</span>;
+  return <span className="chevron afford" aria-hidden="true">▸</span>;
 }
 
 export function TreePanel(props: {
@@ -155,7 +155,7 @@ export function TreePanel(props: {
         >
           <span className="tree-icon">{n.type === "dir" ? (open.has(n.path) ? "▾" : "▸") : ""}</span>
           <span className={`tree-name ${n.type}`}>{n.name}</span>
-          {props.modifiedPaths?.has(n.path) ? <span className="tree-dot" title="modifié dans une conversation" /> : null}
+          {props.modifiedPaths?.has(n.path) ? <span className="tree-dot" role="img" aria-label="Modifié dans une conversation" /> : null}
           {n.type === "file" && n.size !== undefined ? (
             <span className="tree-size">{n.size > 1024 ? `${Math.round(n.size / 1024)} Ko` : `${n.size} o`}</span>
           ) : null}
@@ -177,14 +177,14 @@ export function TreePanel(props: {
           {fileLoading ? <p role="status">Chargement du fichier…</p> : null}
           {!fileLoading && !error && !content ? (
             <div className="muted" style={{ padding: 14, fontSize: 12.5 }}>
-              Clique un fichier pour le lire (read-only). Les points marquent les fichiers modifiés par les agents.
+              Sélectionne un fichier pour le lire sans le modifier. Les points marquent les fichiers modifiés par les agents.
             </div>
           ) : null}
           {content ? (
             <>
               <div className="tree-viewer-head mono">{selected}</div>
-              <pre className="tree-content">{content.content}</pre>
-              {content.truncated ? <div className="muted" style={{ padding: 8, fontSize: 11.5 }}>(tronqué)</div> : null}
+              <pre className="tree-content" tabIndex={0} aria-label={`Contenu de ${selected}`}>{content.content}</pre>
+              {content.truncated ? <div className="muted" style={{ padding: 8, fontSize: 11.5 }}>Aperçu tronqué. Ouvre le fichier sur disque pour le lire en entier.</div> : null}
             </>
           ) : null}
         </div>
@@ -200,7 +200,7 @@ export function FileTreeModal(props: {
   onClose: () => void;
 }) {
   return (
-    <Modal title={`Arborescence — ${props.workspaceName}`} onClose={props.onClose} wide>
+    <Modal title={`Arborescence : ${props.workspaceName}`} onClose={props.onClose} wide>
       <TreePanel workspaceId={props.workspaceId} modifiedPaths={props.modifiedPaths} />
     </Modal>
   );

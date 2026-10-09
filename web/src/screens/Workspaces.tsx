@@ -87,7 +87,7 @@ export default function Workspaces({ onOpenWorkspace }: { onOpenWorkspace?: (w: 
         <div className="cards">
           {workspaces.map((w) => (
             <div key={w.id} className="card">
-              <h4>{w.name}</h4>
+              <h2>{w.name}</h2>
               <div className="meta">
                 <span className="mono">{w.dir}</span>
                 <span>{w.conversation_count ?? 0} conversation(s)</span>
@@ -201,7 +201,7 @@ export default function Workspaces({ onOpenWorkspace }: { onOpenWorkspace?: (w: 
 }
 
 function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) {
-  const toast = useToast();
+  const [actionError, setActionError] = useState<string | null>(null);
   const [browse, setBrowse] = useState<BrowseResult | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -222,23 +222,26 @@ function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) 
 
   const add = async () => {
     if (!selected || busy || loading || browseError) return;
+    setActionError(null);
     setBusy(true);
     try {
       await api.createWorkspace({ dir: selected, name: name.trim() || undefined });
       props.onAdded();
     } catch (e) {
-      toast((e as Error).message, true);
+      setActionError(e instanceof Error ? e.message : "Opération impossible. Réessaie.");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal title="Ajouter un workspace" onClose={props.onClose}>
+    <Modal title="Ajouter un workspace" onClose={() => { if (!busy) props.onClose(); }}>
+      <fieldset className="form-fields" disabled={busy}>
+      <ErrorText error={actionError} />
       <div className="mono" style={{ marginBottom: 8 }}>
         {browse ? (
           <>
-            <button type="button" className="btn btn-sm" disabled={loading || !browse.parent} onClick={() => browse.parent && load(browse.parent)}>⬆ parent</button>{" "}
+            <button type="button" className="btn btn-sm" disabled={loading || !browse.parent} onClick={() => browse.parent && load(browse.parent)}><Icon name="back" size={14} /> Dossier parent</button>{" "}
             {browse.path}
           </>
         ) : "Chargement…"}
@@ -247,6 +250,7 @@ function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) 
       {browseError ? <button type="button" className="btn" onClick={() => load(requestedPath)}>Réessayer</button> : null}
       {loading ? <p role="status">Chargement des dossiers…</p> : null}
       <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 6, marginBottom: 12 }}>
+        {!loading && !browseError && browse && !browse.entries.some((e) => e.type === "dir") ? <p className="muted" style={{ padding: 12 }}>Aucun sous-dossier. Tu peux ajouter le dossier actuel.</p> : null}
         {browse?.entries.filter((e) => e.type === "dir").map((e) => (
           <button
             type="button"
@@ -261,19 +265,23 @@ function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) 
               background: selected === e.path ? "var(--raised)" : "transparent",
             }}
           >
-            📁 {e.name}
+            <Icon name="folder" size={14} /> {e.name}
           </button>
         ))}
       </div>
-      <Field label="Nom (optionnel — défaut : nom du dossier)">
+      <p className="muted">Sélectionne un dossier, puis ouvre-le pour parcourir ses sous-dossiers.</p>
+      <Field label="Nom (optionnel, nom du dossier par défaut)">
         <input value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
       <div className="toolbar">
         <button className="btn" disabled={!selected || loading} onClick={() => selected && load(selected)}>Ouvrir le dossier sélectionné</button>
         <button className="btn btn-primary" disabled={!selected || busy || loading || !!browseError} onClick={() => void add()}>
-          {busy ? "Ajout…" : `Choisir ${selected ? selected.split("/").pop() : ""}`}
+          {busy ? "Ajout…" : `Ajouter ${selected ? (selected.split("/").pop() || "/") : ""}`}
         </button>
+        <button type="button" className="btn" disabled={busy} onClick={props.onClose}>Annuler</button>
       </div>
+      </fieldset>
+      {busy ? <p role="status" className="muted">Opération en cours. Attends la fin avant de fermer.</p> : null}
     </Modal>
   );
 }

@@ -6,6 +6,7 @@ import "@fontsource/inter/600.css";
 import App from "./App";
 import { ToastProvider } from "./ui";
 import "./styles.css";
+import "./chat.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

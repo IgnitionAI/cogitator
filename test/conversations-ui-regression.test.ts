@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
 import type { HistoryEntry, SseEvent } from "../web/src/types";
+import * as generativeUI from "../src/generative-ui.js";
 
 // Executes the real component handlers with local hook/API doubles; never contacts the backend.
 function chatHarness() {
@@ -35,7 +36,7 @@ function chatHarness() {
   const jsx = (type: string, props: Record<string, unknown>): Node => ({ type, props });
   const exports: Record<string, (props: unknown) => Node> = {};
   const code = ts.transpileModule(readFileSync("web/src/screens/Conversations.tsx", "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
   runInNewContext(code, {
     exports,
@@ -59,6 +60,8 @@ function chatHarness() {
         },
       } };
       if (name === "../ui") return { useToast: () => () => {}, statusColor: () => "" };
+      if (name === "../../../src/generative-ui") return generativeUI;
+      if (name === "../ChatMessage") return { AssistantContent: "AssistantContent", UserContent: "UserContent" };
       return {};
     },
   });
@@ -94,7 +97,7 @@ function chatHarness() {
   const messages = () => {
     const transcript = find(render(), (node) => node.props.className === "chat-scroll")!;
     const timeline = (transcript.props.children as unknown[])[4] as Node[];
-    return Array.from(timeline, (node) => ((node.props.children as Node[])[0].props.text));
+    return Array.from(timeline, (node) => find(node, (child) => typeof child.props.text === "string")?.props.text);
   };
   return { change, enter, textarea, sendButton, render, find, attach, scrollEffect, loadHistory, historySucceeds, emit, messages, sends: () => sends, resolve: () => resolveSend(), reject: () => rejectSend(new Error("offline")) };
 }
@@ -123,6 +126,9 @@ test("failed send preserves draft; IME and repeat Enter do not submit; success k
   await settle();
   assert.equal(chat.textarea().props.value, "");
   assert.equal(chat.find(chat.render(), (node) => node.props["aria-label"] === "Historique de la conversation")?.props["aria-live"], "off");
+  assert.equal(chat.find(chat.render(), (node) => node.type === "button" && node.props.className === "btn btn-sm btn-danger"), undefined, "a live idle process does not need a Stop control");
+  chat.loadHistory();
+  chat.emit({ type: "agent_start" });
   assert.ok(chat.find(chat.render(), (node) => node.type === "button" && node.props.className === "btn btn-sm btn-danger"));
 });
 

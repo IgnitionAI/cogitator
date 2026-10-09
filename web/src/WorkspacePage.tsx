@@ -238,10 +238,10 @@ export default function WorkspacePage(props: {
         pmConv ? (
           <div className="tab-chat">
             <ChatView
+              embedded
               conversation={pmConv}
               onClose={() => setTab("board")}
               onDeleted={() => { setPmConv(null); setTab("board"); }}
-             
             />
           </div>
         ) : (

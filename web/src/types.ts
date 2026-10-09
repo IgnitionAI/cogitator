@@ -194,12 +194,20 @@ export interface SseEvent {
   error?: string;
   taskId?: string;
   runId?: string;
+  toolCallId?: string;
+  toolName?: string;
+  args?: unknown;
+  result?: { content?: Array<{ type: string; text?: string }> };
+  partialResult?: { content?: Array<{ type: string; text?: string }> };
+  isError?: boolean;
   assistantMessageEvent?: {
     type: string;
     contentIndex?: number;
     delta?: string;
     content?: string;
     toolName?: string;
+    id?: string;
+    toolCall?: { id: string; name: string; arguments: unknown };
   };
 }
 

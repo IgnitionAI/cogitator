@@ -171,6 +171,11 @@ test("messages démarre la session paresseuse ; stop → abort ; model → setMo
   assert.deepEqual(client.modelsSet, [["openai", "gpt-5.4"]]);
   const after2 = await (await fetch(`${base}/api/conversations/${conversation.id}`)).json();
   assert.equal(after2.conversation.provider, "openai");
+  assert.equal(after2.live, true);
+  assert.equal(after2.streaming, false, "a live process is not necessarily running a turn");
+  client.state.isStreaming = true;
+  assert.equal((await (await fetch(`${base}/api/conversations/${conversation.id}`)).json()).streaming, true);
+  client.state.isStreaming = false;
 });
 
 test("DELETE ferme la conversation (process stoppé, .jsonl conservé)", async () => {

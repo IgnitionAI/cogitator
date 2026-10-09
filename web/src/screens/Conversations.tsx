@@ -8,23 +8,26 @@ import { Badge, Empty, ErrorText, Field, IconBtn, Modal, PageHead, Skeleton, Spi
 import { FileDiffModal, FileRow } from "../FileViews";
 import { Markdown } from "../markdown";
 import { Icon } from "../icons";
+import { ToolResult } from "../ToolResult";
+import { AssistantContent, UserContent } from "../ChatMessage";
+import { parseUIResponse, uiRequestKey, type UIResponse } from "../../../src/generative-ui";
 
 
-type ChatItem =
+let nextChatItemKey = 0;
+type ChatItem = (
   | { kind: "user"; text: string }
   | { kind: "skill"; name: string; text: string; rest?: string }
   | { kind: "assistant"; text: string }
   | { kind: "thinking"; text: string }
-  | { kind: "tool"; text: string; args?: string; result?: string; isError?: boolean; state: "running" | "done" }
-  | { kind: "status"; text: string };
+  | { kind: "tool"; id?: string; text: string; args?: string; result?: string; isError?: boolean; state: "running" | "done" }
+  | { kind: "status"; text: string }
+) & { key?: number };
 
 interface StreamState {
   assistantIndex: number | null;
   streaming: boolean;
   /** contentIndex pi → index dans la timeline (pour toolcall_end) */
   toolByContent: Record<number, number>;
-  /** nombre d'assistants déjà pourvus d'un bloc thinking (anti double-insertion) */
-  thinkingInserted: number;
 }
 
 function patchAt(prev: ChatItem[], index: number, patch: Partial<ChatItem>): ChatItem[] {
@@ -58,15 +61,34 @@ function applyEvent(prev: ChatItem[], ev: SseEvent, st: StreamState): ChatItem[]
         case "toolcall_start": {
           const index = prev.length;
           if (ame.contentIndex !== undefined) st.toolByContent[ame.contentIndex] = index;
-          return [...prev, { kind: "tool", text: ame.toolName ?? "outil", state: "running" }];
+          return [...prev, { kind: "tool", id: ame.id, text: ame.toolName ?? "outil", state: "running" }];
         }
         case "toolcall_end": {
           const index = ame.contentIndex !== undefined ? st.toolByContent[ame.contentIndex] : undefined;
-          return index !== undefined ? patchAt(prev, index, { state: "done" }) : prev;
+          // La génération des arguments est terminée, pas l’exécution de l’outil.
+          return index !== undefined && ame.toolCall ? patchAt(prev, index, {
+            id: ame.toolCall.id, text: ame.toolCall.name, args: JSON.stringify(ame.toolCall.arguments, null, 2),
+          }) : prev;
         }
         default:
           return prev;
       }
+    }
+    case "tool_execution_start":
+    case "tool_execution_update":
+    case "tool_execution_end": {
+      if (!ev.toolCallId) return prev;
+      const index = prev.findIndex((item) => item.kind === "tool" && item.id === ev.toolCallId);
+      const result = ev.type === "tool_execution_end" ? ev.result : ev.partialResult;
+      const text = result?.content?.filter((block) => block.type === "text" && typeof block.text === "string").map((block) => block.text).join("\n");
+      const patch = {
+        ...(ev.args !== undefined ? { args: JSON.stringify(ev.args, null, 2) } : {}),
+        ...(text !== undefined ? { result: text } : {}),
+        ...(ev.type === "tool_execution_end" ? { state: "done" as const, isError: ev.isError === true } : {}),
+      };
+      return index >= 0 ? patchAt(prev, index, patch) : [...prev, {
+        kind: "tool", id: ev.toolCallId, text: ev.toolName ?? "outil", state: "running", ...patch,
+      }];
     }
     case "agent_end": {
       st.assistantIndex = null;
@@ -101,65 +123,51 @@ function entriesToItems(entries: HistoryEntry[]): ChatItem[] {
     }
     else if (e.type === "assistant") items.push({ kind: "assistant", text: e.text });
     else if (e.type === "thinking") items.push({ kind: "thinking", text: e.text });
-    else items.push({ kind: "tool", text: e.name, args: e.args, result: e.result, isError: e.isError, state: "done" });
+    else items.push({ kind: "tool", id: e.id, text: e.name, args: e.args, result: e.result, isError: e.isError, state: "done" });
   }
-  return items;
+  return items.map((item) => ({ ...item, key: ++nextChatItemKey }));
 }
 
-/** Préserve le live ; une réponse en cours peut chevaucher un snapshot plus court ou plus long. */
-function mergeInitialHistory(history: ChatItem[], live: ChatItem[], assistantIndex: number | null): ChatItem[] {
-  // ponytail: recherche O(n²) sur le chevauchement ; utiliser des IDs de messages si les timelines deviennent grandes.
-  let overlap = Math.min(history.length, live.length);
-  while (overlap > 0) {
-    const matches = live.slice(0, overlap).every((item, index) => {
-      const historical = history[history.length - overlap + index]!;
-      if (item.kind !== historical.kind) return false;
-      if (item.text === historical.text) return true;
-      return index === assistantIndex && item.kind === "assistant"
-        && item.text.length > 0 && historical.text.length > 0
-        && (item.text.startsWith(historical.text) || historical.text.startsWith(item.text));
-    });
-    if (matches) break;
-    overlap -= 1;
+/** Recover missed entries without rolling back live deltas or losing unsaved local echoes. */
+function reconcile(prev: ChatItem[], entries: HistoryEntry[], st: StreamState, initial = false): ChatItem[] {
+  const history = entriesToItems(entries);
+  const matches = (item: ChatItem, saved: ChatItem) => {
+    if (saved.kind !== item.kind) return false;
+    if (item.kind === "tool" && saved.kind === "tool" && item.id && saved.id) return item.id === saved.id;
+    return saved.text === item.text || (item.kind === "assistant" && (saved.text.startsWith(item.text) || item.text.startsWith(saved.text)));
+  };
+  let cursor = 0;
+  const first = prev[0];
+  if (initial && first) {
+    const anchor = history.reduce((found, saved, index) => matches(first, saved) ? index : found, -1);
+    cursor = anchor < 0 ? history.length : anchor;
   }
-  const prefix = history.length - overlap;
-  const retainedLive = live.map((item, index) => index < overlap ? { ...history[prefix + index], ...item } as ChatItem : item);
-  return [...history.slice(0, prefix), ...retainedLive];
-}
-
-/**
- * Réconcilie la timeline live avec les entrées du .jsonl après un tour :
- * injecte le raisonnement (thinking) et le détail args/résultat des outils.
- * L'appariement est ordinal (nième tool, nième thinking) — suffisant car les deux
- * sources suivent le même ordre chronologique. `st.thinkingInserted` évite les
- * double-insertions lors des tours suivants.
- */
-function reconcile(prev: ChatItem[], entries: HistoryEntry[], st: StreamState): ChatItem[] {
-  const tools = entries.filter((e): e is Extract<HistoryEntry, { type: "tool" }> => e.type === "tool");
-  const thinkings = entries.filter((e): e is Extract<HistoryEntry, { type: "thinking" }> => e.type === "thinking");
-  const out: ChatItem[] = [];
-  let ti = 0;
-  let thi = 0;
-  let assistantOrdinal = 0;
-  for (const item of prev) {
-    if (item.kind === "assistant") {
-      assistantOrdinal += 1;
-      if (assistantOrdinal > st.thinkingInserted && thi < thinkings.length) {
-        out.push({ kind: "thinking", text: thinkings[thi]!.text });
-        thi += 1;
-        st.thinkingInserted = assistantOrdinal;
+  const out: ChatItem[] = history.slice(0, cursor);
+  const positions = new Map<number, number>();
+  // ponytail: chronological O(n²) matching in the bounded history window; use message IDs if this grows.
+  for (const [index, item] of prev.entries()) {
+    if (item.kind === "status") continue;
+    let match = history.findIndex((saved, position) => position >= cursor && matches(item, saved));
+    // A missing interior delta is not a prefix; fall back to the next chronological assistant.
+    if (match < 0 && item.kind === "assistant") match = history.findIndex((saved, position) => position >= cursor && saved.kind === "assistant");
+    let recovered = item;
+    if (match >= 0) {
+      out.push(...history.slice(cursor, match));
+      const saved = history[match]!;
+      if (item.kind === "assistant" && saved.kind === "assistant" && !(st.streaming && st.assistantIndex === index)) {
+        recovered = item.text.startsWith(saved.text) ? item : { ...saved, key: item.key };
+      } else if (item.kind === "tool" && saved.kind === "tool") {
+        recovered = { ...saved, ...item, args: item.args ?? saved.args };
+        if (saved.result !== undefined && (item.state === "running" || item.result === undefined)) recovered = { ...recovered, result: saved.result, isError: saved.isError, state: "done" };
       }
+      cursor = match + 1;
     }
-    if (item.kind === "tool" && ti < tools.length) {
-      const t = tools[ti]!;
-      ti += 1;
-      if (item.args === undefined || item.result === undefined) {
-        out.push({ ...item, text: t.name, args: t.args, result: t.result, isError: t.isError, state: "done" });
-        continue;
-      }
-    }
-    out.push(item);
+    positions.set(index, out.length);
+    out.push(recovered);
   }
+  out.push(...history.slice(cursor));
+  st.assistantIndex = st.assistantIndex === null ? null : positions.get(st.assistantIndex) ?? null;
+  st.toolByContent = Object.fromEntries(Object.entries(st.toolByContent).flatMap(([content, index]) => positions.has(index) ? [[content, positions.get(index)!]] : []));
   return out;
 }
 
@@ -201,7 +209,6 @@ export default function Conversations({ initialOpenId, onConsumeInitial }: {
           conversation={open}
           onClose={() => { setOpenId(null); refresh(); }}
           onDeleted={() => { setOpenId(null); refresh(); }}
-         
         />
         {showNew ? <NewConversationModal onClose={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); setOpenId(id); refresh(); }} /> : null}
       </>
@@ -270,6 +277,7 @@ export function ChatView(props: {
   conversation: Conversation;
   onClose: () => void;
   onDeleted: () => void;
+  embedded?: boolean;
 }) {
   const { conversation } = props;
   const toast = useToast();
@@ -278,7 +286,10 @@ export function ChatView(props: {
   const [images, setImages] = useState<ImageContentInput[]>([]);
   const [skills, setSkills] = useState<SkillRef[]>([]);
   const [busy, setBusy] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [showLatest, setShowLatest] = useState(false);
   const busyRef = useRef(false);
+  const eventRevision = useRef(0);
   const draftRevision = useRef(0);
   const nearBottom = useRef(true);
   const [connection, setConnection] = useState<EventConnectionState>("connecting");
@@ -290,7 +301,7 @@ export function ChatView(props: {
   const scrollRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const streamRef = useRef<StreamState>({ assistantIndex: null, streaming: false, toolByContent: {}, thinkingInserted: 0 });
+  const streamRef = useRef<StreamState>({ assistantIndex: null, streaming: false, toolByContent: {} });
   const [streaming, setStreaming] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [openThinking, setOpenThinking] = useState<Set<number>>(new Set());
@@ -325,7 +336,7 @@ export function ChatView(props: {
     setInput(value);
   };
 
-  const loadHistory = useCallback((replaceIfEmpty: boolean) => {
+  const loadHistory = useCallback(() => {
     api.history(conversation.id).then((r) => {
       setHistoryError(null);
       setHistoryReady(true);
@@ -333,17 +344,12 @@ export function ChatView(props: {
       historyHydrated.current = true;
       let streamBeforeHydration: StreamState | undefined;
       setTimeline((prev) => {
-        if (!firstHydration && prev.length > 0) return replaceIfEmpty ? prev : reconcile(prev, r.entries, streamRef.current);
-        // Capturer après les événements déjà en file, une seule fois même si React rejoue l'updater.
+        // Capture after queued events, once even when React replays the updater.
         streamBeforeHydration ??= { ...streamRef.current, toolByContent: { ...streamRef.current.toolByContent } };
-        const { assistantIndex, toolByContent } = streamBeforeHydration;
-        const merged = mergeInitialHistory(entriesToItems(r.entries), prev, assistantIndex);
-        const offset = merged.length - prev.length;
-        // Les événements suivants doivent continuer à cibler les mêmes bulles live après l'insertion.
-        streamRef.current.assistantIndex = assistantIndex === null ? null : assistantIndex + offset;
-        streamRef.current.toolByContent = Object.fromEntries(Object.entries(toolByContent).map(([content, index]) => [content, index + offset]));
-        streamRef.current.thinkingInserted = r.entries.filter((e) => e.type === "assistant").length;
-        return merged;
+        const state = { ...streamBeforeHydration, toolByContent: { ...streamBeforeHydration.toolByContent } };
+        const recovered = reconcile(prev, r.entries, state, firstHydration);
+        Object.assign(streamRef.current, state);
+        return recovered;
       });
     }).catch((e: Error) => {
       setHistoryError(`Historique indisponible : ${e.message}`);
@@ -354,9 +360,9 @@ export function ChatView(props: {
 
   // historique puis SSE + liste des skills (invocables via /skill:name, expandé par pi)
   useEffect(() => {
-    loadHistory(true);
+    loadHistory();
     // l'historique peut ne pas être flushé au montage (prompt initial) : on re-tente une fois
-    const refetch = setTimeout(() => loadHistory(true), 3000);
+    const refetch = setTimeout(() => loadHistory(), 3000);
     api.skills().then((r) => {
       const seen = new Set<string>();
       setSkills(r.skills.filter((s) => (seen.has(s.name) ? false : (seen.add(s.name), true))));
@@ -365,20 +371,29 @@ export function ChatView(props: {
       `/api/conversations/${conversation.id}/events`,
       (e) => {
         const ev = e as SseEvent;
-        setTimeline((prev) => applyEvent(prev, ev, streamRef.current));
+        eventRevision.current++;
+        setTimeline((prev) => applyEvent(prev, ev, streamRef.current).map((item) => item.key === undefined ? { ...item, key: ++nextChatItemKey } : item));
         if (ev.type === "agent_start" || ev.type === "turn_start" || ev.type === "message_update") setRunning(true);
         if (ev.type === "message_update" && ev.assistantMessageEvent?.type === "text_start") setStreaming(true);
         if (ev.type === "agent_end") {
           setStreaming(false);
           setRunning(false);
-          loadHistory(false); // réconcilie : thinking + args/résultats des outils du tour
+          loadHistory();
         }
       },
       {
         // à chaque (re)connexion : combler le trou d'événements via l'historique
         onOpen: () => {
-          loadHistory(false);
-          api.conversation(conversation.id).then((r) => setSessionStatus(r.live ? r.conversation.status : "idle")).catch(() => undefined);
+          const revision = eventRevision.current;
+          api.conversation(conversation.id).then((r) => {
+            setSessionStatus(r.live ? r.conversation.status : "idle");
+            if (revision === eventRevision.current && (typeof r.streaming === "boolean" || !r.live)) {
+              const active = r.live && r.streaming === true;
+              setRunning(active);
+              setStreaming(active);
+              streamRef.current.streaming = active;
+            }
+          }).catch(() => undefined).finally(() => loadHistory());
         },
         onStateChange: setConnection,
       },
@@ -400,21 +415,44 @@ export function ChatView(props: {
     const sentRevision = draftRevision.current;
     busyRef.current = true;
     setBusy(true);
+    setSendError(null);
     try {
       await api.sendMessage(conversation.id, text, toSend.length ? toSend : undefined);
       // Ne supprimer que le brouillon envoyé, jamais les modifications faites pendant la requête.
       if (draftRevision.current === sentRevision) setInput("");
       setImages((prev) => prev.filter((image) => !toSend.includes(image)));
       // écho local : le flux SSE de pi ne contient pas les messages utilisateur
-      setTimeline((prev) => [...prev, { kind: "user", text: text || "image(s) jointe(s)" }]);
+      setTimeline((prev) => [...prev, { kind: "user", text: text || "image(s) jointe(s)", key: ++nextChatItemKey }]);
     } catch (e) {
-      toast((e as Error).message, true);
+      setSendError(`Envoi impossible : ${(e as Error).message}. Ton brouillon est conservé, réessaie avec Envoyer.`);
     } finally {
       busyRef.current = false;
       setBusy(false);
       taRef.current?.focus();
     }
   };
+
+  const sendInteraction = async (text: string) => {
+    if (busyRef.current) throw new Error("Un envoi est en cours. Réessaie dans un instant.");
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      await api.sendMessage(conversation.id, text);
+      setTimeline((prev) => [...prev, { kind: "user", text, key: ++nextChatItemKey }]);
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  };
+
+  const responses = new Map<string, UIResponse>();
+  for (const item of timeline) {
+    if (item.kind !== "user") continue;
+    const response = parseUIResponse(item.text);
+    if (response) responses.set(uiRequestKey(response.request), response);
+  }
+  const statusText = running ? "En cours" : ({ idle: "Prêt", active: "Prêt", running: "En cours", spawning: "Démarrage", dead: "Session arrêtée", error: "Erreur" }[sessionStatus] ?? sessionStatus);
+  const connectionText = connection === "connected" ? "Connecté" : connection === "reconnecting" ? "Reconnexion…" : connection === "closed" ? "Connexion interrompue" : "Connexion…";
 
   const addFiles = (files: Iterable<File>) => {
     for (const file of files) {
@@ -430,18 +468,18 @@ export function ChatView(props: {
     }
   };
 
+  const Title = props.embedded ? "h2" : "h1";
   return (
     <div className="chat">
-      <div className="chat-head">
-        <button type="button" className="btn btn-sm" onClick={props.onClose}>
-          <Icon name="back" /> Retour
+      <header className="chat-head">
+        <button type="button" className="btn btn-sm chat-back" aria-label={props.embedded ? "Retour au tableau" : "Retour aux conversations"} onClick={props.onClose}>
+          <Icon name="back" /> <span className="chat-back-label">Retour</span>
         </button>
-        <h1>{conversation.title || "Sans titre"}</h1>
-        <span className="muted mono">{conversation.provider}/{conversation.model}</span>
-        <Badge color={statusColor(sessionStatus)}>{sessionStatus}</Badge>
-        <span className="muted" role="status">
-          {connection === "connected" ? "Connecté" : connection === "reconnecting" ? "Reconnexion…" : connection === "closed" ? "Connexion interrompue" : "Connexion…"}
-        </span>
+        <div className="chat-heading">
+          <Title>{conversation.title || "Sans titre"}</Title>
+          <div className="chat-context"><span className="mono">{conversation.provider} / {conversation.model}</span><span className="chat-connection" role="status">{connectionText}</span></div>
+        </div>
+        <span className={`chat-state ${running ? "is-running" : sessionStatus === "error" || sessionStatus === "dead" ? "is-error" : ""}`} role="status"><Icon name={running ? "activity" : sessionStatus === "error" || sessionStatus === "dead" ? "warning" : "check"} size={14} />{statusText}</span>
         <button
           type="button"
           className={`btn btn-sm ${filesPanel ? "btn-primary" : ""}`}
@@ -451,8 +489,7 @@ export function ChatView(props: {
         >
           <Icon name="files" /> Fichiers{files.length > 0 ? ` (${files.length})` : ""}
         </button>
-        <div style={{ flex: 1 }} />
-        {busy || running || sessionStatus === "active" || sessionStatus === "running" ? (
+        {busy || running || sessionStatus === "running" ? (
           <button type="button" className="btn btn-sm btn-danger" onClick={() => api.stopConversation(conversation.id).catch((e: Error) => toast(e.message, true))}>
             <Icon name="stop" /> Arrêter
           </button>
@@ -467,28 +504,29 @@ export function ChatView(props: {
             }
           }}
         />
-      </div>
+      </header>
       <div className="chat-body">
       <div className="chat-main">
       <div className="chat-scroll" ref={scrollRef} role="log" aria-label="Historique de la conversation" aria-live="off" tabIndex={0}
         onScroll={(e) => {
           const node = e.currentTarget;
           nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight <= 80;
+          setShowLatest(!nearBottom.current);
         }}
       >
         <ErrorText error={historyError} />
-        {historyError ? <button type="button" className="btn btn-sm" onClick={() => loadHistory(true)}>Réessayer l’historique</button> : null}
+        {historyError ? <button type="button" className="btn btn-sm" onClick={() => loadHistory()}>Réessayer l’historique</button> : null}
         {!historyReady && timeline.length === 0 ? <Skeleton /> : null}
         {historyReady && !historyError && timeline.length === 0 ? (
-        <Empty title="Session prête">
-          Envoie un message. Le menu Skills charge un skill, ou tape <code>/skill:nom</code>.
+        <Empty title="Que souhaites-tu construire ?">
+          Décris le résultat attendu. L’agent peut répondre avec du texte, utiliser ses outils ou te proposer une interface interactive.
         </Empty>
       ) : null}
         {timeline.map((m, i) => {
-          if (m.kind === "status") return <div key={i} className="msg-status">{m.text}</div>;
+          if (m.kind === "status") return <div key={m.key ?? i} className="msg-status">{m.text}</div>;
           if (m.kind === "skill") {
             return (
-              <div key={i} className="skill-card">
+              <div key={m.key ?? i} className="skill-card">
                 <button type="button" className="skill-head" aria-expanded={expanded.has(i)} onClick={() => toggle(expanded, setExpanded, i)}>
                   <span className="skill-pill"><Icon name="spark" size={14} /></span>
                   <span className="skill-name">{m.name}</span>
@@ -502,7 +540,7 @@ export function ChatView(props: {
           }
           if (m.kind === "thinking") {
             return (
-              <div key={i} className="msg-thinking">
+              <div key={m.key ?? i} className="msg-thinking">
                 <button type="button" className="thinking-head" aria-expanded={openThinking.has(i)} onClick={() => toggle(openThinking, setOpenThinking, i)}>
                   <span className={`chevron ${openThinking.has(i) ? "open" : ""}`}>▸</span>
                   Réflexion · {m.text.length.toLocaleString()} caractères
@@ -511,38 +549,12 @@ export function ChatView(props: {
               </div>
             );
           }
-          if (m.kind === "tool") {
-            return (
-              <div key={i} className={`tool-chip ${m.state} ${m.isError ? "error" : ""}`}>
-                <button type="button" className="tool-head" aria-expanded={expanded.has(i)} onClick={() => toggle(expanded, setExpanded, i)}>
-                  <span className={`tool-dot ${m.state}`} />
-                  <span className="tool-name">{m.text}</span>
-                  {m.result !== undefined ? (
-                    <span className="tool-meta">{m.isError ? "erreur" : "ok"}</span>
-                  ) : m.state === "done" ? null : (
-                    <span className="tool-meta">en cours…</span>
-                  )}
-                  <span className={`chevron ${expanded.has(i) ? "open" : ""}`}>▸</span>
-                </button>
-                {expanded.has(i) ? (
-                  <div className="tool-detail">
-                    <div className="tool-label">Arguments</div>
-                    <pre>{m.args ?? "(disponible à la fin du tour)"}</pre>
-                    {m.result !== undefined ? (
-                      <>
-                        <div className="tool-label">Résultat</div>
-                        <pre className={m.isError ? "error" : ""}>{m.result}</pre>
-                      </>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            );
-          }
+          if (m.kind === "tool") return <ToolResult key={m.key ?? i} name={m.text} args={m.args} result={m.result} isError={m.isError} state={m.state} />;
           const isLastAssistant = m.kind === "assistant" && i === timeline.length - 1;
           return (
-            <div key={i} className={`msg msg-${m.kind}`} role="article" aria-label={m.kind === "user" ? "Message de vous" : "Message de l’agent"}>
-              <Markdown text={m.text} />
+            <div key={m.key ?? i} className={`msg msg-${m.kind}`} role="article" aria-label={m.kind === "user" ? "Message de vous" : "Message de l’agent"}>
+              <div className="message-label"><Icon name={m.kind === "user" ? "users" : "bot"} size={14} />{m.kind === "user" ? "Vous" : "Agent"}</div>
+              {m.kind === "assistant" ? <AssistantContent text={m.text} responses={responses} disabled={busy || running} streaming={streaming && i === streamRef.current.assistantIndex} onSubmit={sendInteraction} /> : <UserContent text={m.text} />}
               {isLastAssistant && streaming ? <span className="caret" /> : null}
             </div>
           );
@@ -559,6 +571,13 @@ export function ChatView(props: {
           </div>
         ) : null}
       </div>
+      {showLatest ? <button type="button" className="btn btn-sm chat-latest" onClick={() => {
+        nearBottom.current = true;
+        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+        setShowLatest(false);
+      }}><Icon name="download" size={14} /> Derniers messages</button> : null}
+      <div className="composer">
+      <ErrorText error={sendError} />
       <div className="chat-input">
         <input
           ref={fileRef}
@@ -571,25 +590,12 @@ export function ChatView(props: {
             e.target.value = "";
           }}
         />
-        <IconBtn name="paperclip" label="Joindre une image" onClick={() => fileRef.current?.click()} />
-        <select
-          value=""
-          onChange={(e) => {
-            if (!e.target.value) return;
-            updateInput((v) => `/skill:${e.target.value} ${v}`.trimEnd() + " ");
-            taRef.current?.focus();
-          }}
-          title="Charger un skill (/skill:name, expandé par pi dans la session)"
-          aria-label="Charger un skill"
-        >
-          <option value="">Skills…</option>
-          {skills.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
-        </select>
         <textarea
           ref={taRef}
           aria-label="Message à l’agent"
           value={input}
-          placeholder="Message… (Entrée = envoyer, Maj+Entrée = nouvelle ligne, collage d'image accepté)"
+          placeholder="Décris ta demande…"
+          aria-describedby="composer-hint"
           onChange={(e) => updateInput(e.target.value)}
           onPaste={(e) => {
             const files = Array.from(e.clipboardData?.files ?? []);
@@ -605,9 +611,22 @@ export function ChatView(props: {
             }
           }}
         />
+        <div className="composer-tools">
+          <IconBtn name="paperclip" label="Joindre une image" onClick={() => fileRef.current?.click()} />
+          <select value="" aria-label="Charger un skill" title="Charger un skill dans le message" onChange={(e) => {
+            if (!e.target.value) return;
+            updateInput((value) => `/skill:${e.target.value} ${value}`.trimEnd() + " ");
+            taRef.current?.focus();
+          }}>
+            <option value="">Skills…</option>
+            {skills.map((skill) => <option key={skill.name} value={skill.name}>{skill.name}</option>)}
+          </select>
+        </div>
         <button type="button" className="btn btn-primary" onClick={() => void send()} disabled={busy || (!input.trim() && images.length === 0)}>
-          {busy ? <Spinner /> : <Icon name="send" />} Envoyer
+          {busy ? <Spinner /> : <Icon name="send" />} <span className="composer-send-label">Envoyer</span>
         </button>
+      </div>
+      <div id="composer-hint" className="composer-hint"><span>Entrée pour envoyer <span aria-hidden="true">·</span> Maj + Entrée pour une nouvelle ligne</span><span>{running ? "L’agent travaille" : "Les réponses interactives sont transmises à l’agent"}</span></div>
       </div>
       </div>
       {filesPanel ? (

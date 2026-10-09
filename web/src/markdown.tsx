@@ -1,4 +1,4 @@
-import { createElement, type ReactNode } from "react";
+import { createElement, useState, type ReactNode } from "react";
 
 /**
  * Mini-rendu markdown (sous-ensemble : headings, gras/italique/code inline,
@@ -45,25 +45,52 @@ function splitRow(line: string): string[] {
   return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|");
 }
 
+function CodeBlock({ text, language }: { text: string; language: string }) {
+  const [copy, setCopy] = useState<"idle" | "pending" | "done" | "error">("idle");
+  async function copyCode() {
+    setCopy("pending");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopy("done");
+    } catch {
+      setCopy("error");
+    }
+  }
+  return <div className="md-code-block">
+    <div className="md-code-head">
+      <span>{language || "Texte"}</span>
+      <button type="button" className="btn btn-sm" disabled={copy === "pending"} onClick={copyCode}>
+        {copy === "error" ? "Réessayer la copie" : "Copier le code"}
+      </button>
+      <span role="status" className={copy === "error" ? "is-error" : undefined}>{copy === "done" ? "Copié" : copy === "pending" ? "Copie…" : copy === "error" ? "Copie impossible. Réessaie ou sélectionne le texte." : ""}</span>
+    </div>
+    <pre className="md-pre" tabIndex={0} aria-label="Bloc de code"><code>{text}</code></pre>
+  </div>;
+}
+
 export function Markdown(props: { text: string }) {
   const lines = props.text.split("\n");
   const blocks: ReactNode[] = [];
   let i = 0;
   let key = 0;
+  let headingBase: number | null = null;
 
   while (i < lines.length) {
     const line = lines[i]!;
 
     // bloc de code ```lang ... ```
-    if (line.trim().startsWith("```")) {
+    const fence = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      const marker = fence[1]!;
+      const closing = new RegExp(`^\\s*${marker[0]}{${marker.length},}\\s*$`);
       const buf: string[] = [];
       i++;
-      while (i < lines.length && !lines[i]!.trim().startsWith("```")) {
+      while (i < lines.length && !closing.test(lines[i]!)) {
         buf.push(lines[i]!);
         i++;
       }
       i++; // ferme ```
-      blocks.push(<pre key={key++} className="md-pre" tabIndex={0} aria-label="Bloc de code">{buf.join("\n")}</pre>);
+      blocks.push(<CodeBlock key={key++} text={buf.join("\n")} language={fence[2]!.trim()} />);
       continue;
     }
 
@@ -76,10 +103,20 @@ export function Markdown(props: { text: string }) {
     // heading
     const hm = line.match(/^(#{1,6})\s+(.*)$/);
     if (hm) {
-      const level = hm[1]!.length;
+      headingBase ??= hm[1]!.length;
+      const level = hm[1]!.length <= headingBase ? 2 : 3;
       const cls = level <= 2 ? "md-h2" : "md-h3";
       blocks.push(createElement(`h${level}`, { key: key++, className: cls }, renderInline(hm[2]!, `h${key}`)));
       i++;
+      continue;
+    }
+
+    if (/^\s*>/.test(line)) {
+      const quote: string[] = [];
+      while (i < lines.length && /^\s*>/.test(lines[i]!)) {
+        quote.push(lines[i++]!.replace(/^\s*> ?/, ""));
+      }
+      blocks.push(<blockquote key={key++} className="md-quote"><Markdown text={quote.join("\n")} /></blockquote>);
       continue;
     }
 
@@ -96,7 +133,12 @@ export function Markdown(props: { text: string }) {
       }
       blocks.push(
         <List key={key++} className="md-list" start={start}>
-          {items.map((it, j) => <li key={j}>{renderInline(it, `l${key}-${j}`)}</li>)}
+          {items.map((it, j) => {
+            const task = it.match(/^\[([ xX])\]\s+(.*)$/);
+            return <li key={j} className={task ? "md-task" : undefined}>{task
+              ? <label><input type="checkbox" checked={task[1]!.toLowerCase() === "x"} disabled />{renderInline(task[2]!, `l${key}-${j}`)}</label>
+              : renderInline(it, `l${key}-${j}`)}</li>;
+          })}
         </List>,
       );
       continue;
@@ -115,6 +157,7 @@ export function Markdown(props: { text: string }) {
       if (head) {
         blocks.push(
           <div key={key++} className="md-table-wrap" tabIndex={0} role="region" aria-label="Tableau">
+            <p className="md-scroll-hint">Défilement horizontal si nécessaire.</p>
             <table className="md-table">
               <thead>
                 <tr>{head.map((c, j) => <th key={j} scope="col">{renderInline(c.trim(), `t${key}h${j}`)}</th>)}</tr>
@@ -134,7 +177,7 @@ export function Markdown(props: { text: string }) {
     // paragraphe (lignes consécutives non vides)
     const buf: string[] = [line];
     i++;
-    while (i < lines.length && lines[i]!.trim() !== "" && !/^(#{1,6}\s|\s*([-_*•]|\d+\.)\s|```|\s*\|)/.test(lines[i]!)) {
+    while (i < lines.length && lines[i]!.trim() !== "" && !/^(#{1,6}\s|\s*([-_*•]|\d+\.)\s|\s*(`{3,}|~{3,}|>)|\s*\|)/.test(lines[i]!)) {
       buf.push(lines[i]!);
       i++;
     }

@@ -16,7 +16,7 @@ Style: **Linear-grade app shell** (sidebar + lists + chat). Canvas near-black, i
 | `--border` | `#1f2023` | Structure |
 | `--border-strong` | `#2c2e33` | Hover / strong edge |
 | `--control-border` | `#636873` | Input boundaries (≥3:1 on raised and popover) |
-| `--accent` | `#5e6ad2` | Primary action, selection, user bubble |
+| `--accent` | `#5e6ad2` | Primary action, selected controls |
 | `--accent-hover` | `#606cd0` | Primary hover (white text ≥4.5:1) |
 | `--accent-text` | `#8792ed` | Links / accent text on dark surfaces |
 | `--todo` | `#e2a336` | Warning / pending |
@@ -53,6 +53,8 @@ On mobile, body/control labels are at least 14px, inputs use 16px, and interacti
 - **Modal**: native dialog semantics, Escape, focus trap, explicit focus restoration to the opener. Enter `scale(0.97)+fade` 180ms. Width constrained to the viewport. Pending writes prevent dismissal; failures remain inline inside the dialog.
 - **Empty**: title + one sentence + the primary action.
 - **Toast**: live region, dismissible, no side stripe.
+- **Chat**: shared standalone/workspace surface in `web/src/chat.css`; 760px reading column, 75ch prose, neutral user surface, native tool disclosures, copyable code. Composer and latest-message control stay outside the transcript's scrolling area.
+- **Generated UI**: bounded native forms, choices, checklists and tables; theme-owned rendering only. Submissions are explicit messages, never execution permissions. Focus moves to the inline error or successful summary. See `docs/chat-generative-ui.md`.
 
 ## Motion
 
@@ -62,8 +64,8 @@ On mobile, body/control labels are at least 14px, inputs use 16px, and interacti
 | Hover color | 100ms `ease` |
 | Button press | 150ms `--ease-out-quad`, scale 0.97 |
 | Modal / toast / panel | 180–220ms `--ease-out-expo`, transform+opacity |
-| Chat message | 200ms fade + 6px rise |
-| Running tool | opacity pulse, linear |
+| Chat message | No entrance animation; stable streaming and history replay |
+| Running tool | Explicit icon and text state, no perpetual pulse |
 
 `prefers-reduced-motion: reduce` keeps opacity, drops movement. Hover scale gated on `(hover: hover) and (pointer: fine)`.
 

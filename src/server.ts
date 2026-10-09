@@ -635,10 +635,10 @@ function conversationRoutes(deps: Deps): Route[] {
       }
       sendJson(ctx.res, 201, { conversation: conv });
     }],
-    ["GET", "/api/conversations/:id", (ctx) => {
+    ["GET", "/api/conversations/:id", async (ctx) => {
       const conv = requireConversation(deps, ctx);
       if (!conv) return;
-      sendJson(ctx.res, 200, { conversation: conv, live: pool.isLive(conv.id) });
+      sendJson(ctx.res, 200, { conversation: conv, live: pool.isLive(conv.id), streaming: await pool.isStreaming(conv.id) });
     }],
     ["GET", "/api/conversations/:id/events", async (ctx) => {
       const conv = requireConversation(deps, ctx);

@@ -46,18 +46,18 @@ try {
       await page.waitForSelector('[role=alert]');
       await page.type('.chat-input textarea', 'Message envoyé');
       await page.click('.chat-input .btn-primary');
-      await page.waitForFunction(() => document.querySelector('.msg-user')?.textContent === 'Message envoyé');
+      await page.waitForFunction(() => document.querySelector('.msg-user .md')?.textContent === 'Message envoyé');
       await page.evaluate(() => {
         window.emitUiEvent({ type: 'message_update', assistantMessageEvent: { type: 'text_start' } });
         window.emitUiEvent({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'Réponse live' } });
       });
-      await page.waitForFunction(() => document.querySelector('.msg-assistant')?.textContent === 'Réponse live');
+      await page.waitForFunction(() => document.querySelector('.msg-assistant .md')?.textContent === 'Réponse live');
       recovered = true;
       await page.evaluate(() => [...document.querySelectorAll('button')].find(b => b.textContent === 'Réessayer l’historique').click());
       await page.waitForFunction(() => document.querySelectorAll('.msg').length >= 4 && !document.querySelector('[role=alert]'));
-      assert.deepEqual(await page.$$eval('.msg', elements => elements.map(e => e.textContent)), ['Ancienne question', 'Ancienne réponse', 'Message envoyé', 'Réponse live']);
+      assert.deepEqual(await page.$$eval('.msg', elements => elements.map(e => e.querySelector('.md')?.textContent)), ['Ancienne question', 'Ancienne réponse', 'Message envoyé', 'Réponse live']);
       await page.evaluate(() => window.emitUiEvent({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: ' complète' } }));
-      await page.waitForFunction(() => [...document.querySelectorAll('.msg-assistant')].at(-1)?.textContent === 'Réponse live complète');
+      await page.waitForFunction(() => [...document.querySelectorAll('.msg-assistant .md')].at(-1)?.textContent === 'Réponse live complète');
       assert.equal(await page.$$eval('.msg-assistant', elements => elements.length), 2);
       await new Promise(resolve => setTimeout(resolve, 250));
       await page.screenshot({ path: '/tmp/cogitator-stream-recovered.png' });

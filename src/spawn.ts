@@ -8,6 +8,8 @@ export interface SpawnConfig {
   model: string;
   thinking?: string | null;
   systemPrompt?: string;
+  /** Contrat UI copié à la création ; absent des anciens snapshots. */
+  uiInstructions?: string;
   skills?: string[];
   tools?: string[] | null;
   /** Serveurs MCP du preset — transportés via env et enregistrés par l'extension au session_start (ADR-002) */
@@ -47,9 +49,10 @@ export function buildArgs(c: SpawnConfig, tmpDir: string, convId: string): strin
   mkdirSync(tmpDir, { recursive: true });
   // pi n'accepte pas la forme --flag=valeur : tout passe en deux éléments
   const args = ["--model", modelArg(c)];
-  if (c.systemPrompt) {
+  const systemPrompt = [c.systemPrompt, c.uiInstructions].filter(Boolean).join("\n\n");
+  if (systemPrompt) {
     const file = join(tmpDir, `${convId}.prompt.md`);
-    writeFileSync(file, c.systemPrompt);
+    writeFileSync(file, systemPrompt);
     args.push("--append-system-prompt", file);
   }
   if (c.skills?.length) {

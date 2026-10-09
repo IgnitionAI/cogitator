@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { setConversationSession, type ConversationRow } from "./conversations.js";
 import type { Db } from "./db.js";
+import { UI_INSTRUCTIONS, UI_PRESENTATION_POLICY } from "./generative-ui.js";
 import { MCP_ENV_VAR, encodeMcpEnv } from "./mcp-env.js";
 import type { Paths } from "./paths.js";
 import { PiPool } from "./pool.js";
@@ -33,7 +34,8 @@ export function makeSpawner(opts: SpawnerOptions): Spawner {
       const mcpEnv = encodeMcpEnv(spawn.mcpServers ?? []);
       const result = await pool.ensure(conv.id, {
         cwd: conv.workspace_dir ?? homedir(),
-        args: buildArgs(spawn, tmpDir, conv.id),
+        // Host presentation capability: also available to legacy sessions, without rewriting their snapshot.
+        args: buildArgs({ ...spawn, uiInstructions: `${spawn.uiInstructions ?? UI_INSTRUCTIONS}\n\n${UI_PRESENTATION_POLICY}` }, tmpDir, conv.id),
         resumeSessionFile: conv.session_file,
         env: mcpEnv ? { [MCP_ENV_VAR]: mcpEnv } : undefined,
       });

@@ -77,6 +77,11 @@ export class PiPool {
     return Boolean(h && !h.dead);
   }
 
+  async isStreaming(convId: string): Promise<boolean> {
+    const handle = this.handles.get(convId);
+    return handle && !handle.dead ? this.streaming(handle) : false;
+  }
+
   private async streaming(h: Handle): Promise<boolean> {
     try {
       return (await h.client.getState()).isStreaming === true;

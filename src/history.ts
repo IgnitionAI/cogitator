@@ -50,6 +50,7 @@ export function readEntries(sessionFile: string, limit = 300): HistoryEntry[] {
       role?: string;
       content?: unknown;
       toolCallId?: string;
+      isError?: boolean;
     };
     const content = msg.content;
 
@@ -88,7 +89,7 @@ export function readEntries(sessionFile: string, limit = 300): HistoryEntry[] {
       if (index !== undefined && out[index]?.type === "tool") {
         const tool = out[index] as Extract<HistoryEntry, { type: "tool" }>;
         tool.result = capped;
-        tool.isError = entry.isError === true || blockIsError(content);
+        tool.isError = msg.isError === true || entry.isError === true || blockIsError(content);
       }
     }
   }

@@ -42,12 +42,14 @@ Erreurs : JSON `{ "error": string }`, codes HTTP standards. Écritures sensibles
 |---|---|---|
 | GET | `/api/conversations?workspace_id=&include=all` | Liste (métadonnées depuis la base + titre depuis le `.jsonl`) |
 | POST | `/api/conversations` | Spawn. Body : `{ workspace_id? }` + soit `{ agent_id }` soit `{ provider, model, thinking?, system_prompt?, skills?, tools? }` (ad hoc), `prompt?` initial |
-| GET | `/api/conversations/:id` | Détail + snapshot de config de spawn |
+| GET | `/api/conversations/:id` | `{ conversation, live, streaming }` : détail et snapshot, présence du processus, état de génération lu via le pool (`live` ne signifie pas qu’un tour est en cours) |
 | GET | `/api/conversations/:id/events` | **SSE** — événements pi (tokens, tool calls, status) |
 | POST | `/api/conversations/:id/messages` | Envoyer un message `{ text, images? }` |
 | POST | `/api/conversations/:id/stop` | Interrompre le tour en cours |
 | POST | `/api/conversations/:id/model` | Changer de modèle en cours de session (natif pi) |
 | DELETE | `/api/conversations/:id` | Fermer + retirer du pool (le `.jsonl` reste) |
+
+Les réponses aux composants interactifs utilisent le même `POST /messages` : une enveloppe `cogitator-response` dans `text`, sans endpoint d’action ni autorisation d’exécution supplémentaire. Le contrat de rendu et la politique de présentation automatique sont fournis au démarrage/reprise par le spawner, y compris pour les anciennes sessions ; leurs snapshots et transcriptions ne sont pas réécrits. Voir [le contrat d’UI générative](../chat-generative-ui.md).
 
 ## Schedules (cron)
 

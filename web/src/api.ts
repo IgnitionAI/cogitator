@@ -48,7 +48,7 @@ export const api = {
 
   conversations: (workspaceId?: string) =>
     req<{ conversations: Conversation[] }>("GET", `/api/conversations${workspaceId ? `?workspace_id=${workspaceId}` : ""}`),
-  conversation: (id: string) => req<{ conversation: Conversation; live: boolean }>("GET", `/api/conversations/${id}`),
+  conversation: (id: string) => req<{ conversation: Conversation; live: boolean; streaming: boolean }>("GET", `/api/conversations/${id}`),
   createConversation: (b: ConversationWrite) => req<{ conversation: Conversation }>("POST", "/api/conversations", b),
   deleteConversation: (id: string) => req<{ ok: true }>("DELETE", `/api/conversations/${id}`),
   sendMessage: (id: string, text: string, images?: ImageContentInput[]) =>

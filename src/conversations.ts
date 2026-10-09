@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "./db.js";
 import type { SpawnConfig } from "./spawn.js";
+import { UI_INSTRUCTIONS } from "./generative-ui.js";
 
 /** Longueur max du titre dérivé d'un message (contrainte d'affichage de l'UI). */
 const TITLE_MAX = 80;
@@ -61,7 +62,7 @@ export function createConversation(db: Db, input: CreateConversationInput): Conv
     input.spawn.provider,
     input.spawn.model,
     input.spawn.thinking ?? null,
-    JSON.stringify(input.spawn),
+    JSON.stringify({ ...input.spawn, uiInstructions: UI_INSTRUCTIONS }),
   );
   return getConversation(db, id)!;
 }

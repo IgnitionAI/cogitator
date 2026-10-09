@@ -139,6 +139,14 @@ async function layout() {
       if (e && e.scrollWidth > e.clientWidth + 1) problems.push(`${e.tagName}.${e.className}: overflow`);
     }
     for (const e of document.querySelectorAll('[role=tab]')) if (e.scrollWidth > e.clientWidth + 1) problems.push('tab label overflow');
+    const skillSelect = document.querySelector('.composer-tools select');
+    if (skillSelect) {
+      const style = getComputedStyle(skillSelect);
+      const canvas = document.createElement('canvas').getContext('2d');
+      canvas.font = style.font;
+      const labelWidth = canvas.measureText(skillSelect.selectedOptions[0].text).width;
+      if (labelWidth + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + 20 > skillSelect.clientWidth) problems.push('skill selector label clipped');
+    }
     return problems;
   }), []);
 }

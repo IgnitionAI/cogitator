@@ -72,7 +72,7 @@
 .composer .chat-input:focus-within { border-color: var(--accent-text); }
 .composer .chat-input textarea { grid-column: 1 / -1; grid-row: 1; min-height: 64px; height: 64px; max-height: 200px; padding: 4px; resize: vertical; font-size: 14px; line-height: 1.6; }
 .composer-tools { grid-row: 2; grid-column: 1; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
-.composer-tools select { width: 116px; border-color: transparent; background: transparent; min-height: 32px; padding-inline: 4px; font-size: 12px; }
+.composer-tools select { width: 150px; border-color: transparent; background: transparent; min-height: 32px; padding-inline: 4px; font-size: 12px; }
 .composer .chat-input > .btn-primary { grid-row: 2; grid-column: 2; align-self: end; }
 .composer-hint { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; color: var(--subtle); font-size: 11px; margin-top: 8px; }
 .chat .chat-side { margin-top: 16px; border-radius: var(--radius-pop); }
@@ -144,7 +144,7 @@
   .composer .chat-input { padding: 8px; }
   .composer .chat-input textarea { font-size: 16px; min-height: 56px; height: 56px; }
   .composer-tools { gap: 4px; }
-  .composer-tools select { width: 90px; font-size: 16px; min-height: 44px; }
+  .composer-tools select { width: 150px; font-size: 16px; min-height: 44px; }
   .composer .chat-input > .btn-primary { width: 44px; height: 44px; padding: 0; }
   .composer-send-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .composer-hint { font-size: 11px; }

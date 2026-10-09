@@ -44,6 +44,37 @@ PASS: SQLite schema 1; future schema rejected
 P0 LOCAL SUPPORTED PROFILE: PASS — not production integration, isolation, or deployment.
 ```
 
+## One-shot verification and full-scope status
+
+The implementation sequence was analyze → plan/issue → implement → independent Standards/Spec reviews → verify. Review findings were corrected before repeating the affected reviews. Final source reviewed: `eab75bb`, following implementation commits `916584c` and `359f4c3`; comparison baseline remains `bd128d2`. No remaining local review finding was identified. Source commits are local; this workflow has not pushed, published a release or deployed an application.
+
+Fresh final verification on 2026-10-09:
+
+| Criterion / authoritative check | Result / output |
+| --- | --- |
+| `npm run build` | **PASS**, exit 0; includes application typecheck and frontend/server build. |
+| `npm test` | **PASS**, exit 0; 105 tests, 105 passed, 0 failed/cancelled/skipped/todo. |
+| `npm --prefix scripts/durable-spike ci --ignore-scripts` | **PASS**, exit 0; 90 installed packages, 91 audited, reported 0 vulnerabilities. This is an install/audit result, not a security certification. |
+| `npm run durable:spike` after that fresh install | **PASS**, exit 0; 19 SIGKILL/reopen scenarios plus failure cleanup, negative controls, actual MCP bridge and SQLite/version checks. |
+| `npm pack --dry-run --json --ignore-scripts` | **PASS**; `@ignitionai/cogitator@0.3.0`, 76 files, CLI/frontend present, no spike files. This is a dry-run, not npm publication. |
+| `git diff bd128d2 HEAD --name-only` | **PASS**; no changes to `src/`, `web/`, `extensions/` or the root `package-lock.json`. Existing classic runtime and FR/EN UI source are preserved. |
+| `git diff --check` and `git diff bd128d2...HEAD --check` | **PASS**, no whitespace errors. |
+| Process read-back after checks | **PASS**; no matching spike/offline-worker or temporary Cogitator MCP subprocess remained. |
+| `gh issue view 7 --repo IgnitionAI/cogitator --json state,url` | **PASS** for tracking integrity: issue remains **OPEN**, not closed as completed. |
+
+Full approved scope:
+
+| Phase | Status | Remaining evidence / blocker |
+| --- | --- | --- |
+| P0 local SDK compatibility/recovery assessment | **PASS**, bounded to the explicit fixtures and unsupported-profile inventory in this report. | Not production preset adaptation, power-loss testing or an OS isolation certificate. |
+| P1 real owner access boundary | **NOT PROVEN / not implemented** | Designate target VPS, public hostname, configured OIDC application/provider and owner identity. Actual MFA and REST/SSE/files negative tests remain required. |
+| P2 isolated execution | **NOT PROVEN / not implemented** | Rootless Linux worker/secret/path/egress/CI/resource boundaries require implementation and evidence on the selected environment. Local Docker availability is not equivalent. |
+| P3 durable missions and UX | **NOT PROVEN / not implemented** | Production runtime lease, preset/connector adapters, admission, approvals, budgets, statuses and chat integration are absent; fixture records are not a substitute. |
+| P4 scheduling and operations | **NOT PROVEN / not implemented** | Scheduler repair/deduplication, production cancellation, safe upgrades and restart behavior remain to implement and exercise. |
+| P5 deployed acceptance | **NOT PROVEN / not deployed** | Authorized target/domain/IdP and off-host backup destination are missing; capacity, restore/reboot/security tests and a controlled 24-hour soak have not run. |
+
+**Overall: BLOCKED — NOT PROVEN.** [Issue #7](https://github.com/IgnitionAI/cogitator/issues/7) stays open. This run does not treat absent production code as a passed gate or infer authorization to repurpose another SSH host. Do not send credentials in chat; provision them through the eventual host/IdP secret channel after designating the deployment resources.
+
 ## Pins and provenance
 
 Exact development-only pins in private `scripts/durable-spike/package.json`:

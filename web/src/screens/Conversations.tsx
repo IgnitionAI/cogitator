@@ -227,7 +227,7 @@ export default function Conversations({ initialOpenId, onConsumeInitial }: {
           </button>
         }
       />
-      <ErrorText error={error ? localizeText(error) : null} />
+      <ErrorText error={error} />
       {error ? <button type="button" className="btn btn-sm" onClick={refresh}>{t("chat.retry")}</button> : null}
       {!ready ? (
         <Skeleton />
@@ -261,7 +261,7 @@ export default function Conversations({ initialOpenId, onConsumeInitial }: {
                 onClick={(e) => {
                   e.stopPropagation();
                   if (confirm(t("chat.deleteConfirm"))) {
-                    api.deleteConversation(c.id).then(refresh).catch((err: Error) => toast(localizeText(err.message), true));
+                    api.deleteConversation(c.id).then(refresh).catch((err: Error) => toast(err.message, true));
                   }
                 }}
               />
@@ -491,7 +491,7 @@ export function ChatView(props: {
           <Icon name="files" /> {t("chat.files")}{files.length > 0 ? ` (${formatNumber(files.length)})` : ""}
         </button>
         {busy || running || sessionStatus === "running" ? (
-          <button type="button" className="btn btn-sm btn-danger" onClick={() => api.stopConversation(conversation.id).catch((e: Error) => toast(localizeText(e.message), true))}>
+          <button type="button" className="btn btn-sm btn-danger" onClick={() => api.stopConversation(conversation.id).catch((e: Error) => toast(e.message, true))}>
             <Icon name="stop" /> {t("chat.stop")}
           </button>
         ) : null}
@@ -501,7 +501,7 @@ export function ChatView(props: {
           danger
           onClick={() => {
             if (confirm(t("chat.deleteConfirm"))) {
-              api.deleteConversation(conversation.id).then(props.onDeleted).catch((e: Error) => toast(localizeText(e.message), true));
+              api.deleteConversation(conversation.id).then(props.onDeleted).catch((e: Error) => toast(e.message, true));
             }
           }}
         />
@@ -515,7 +515,7 @@ export function ChatView(props: {
           setShowLatest(!nearBottom.current);
         }}
       >
-        <ErrorText error={historyError ? t("chat.historyError", { error: localizeText(historyError) }) : null} />
+        <ErrorText error={historyError ? t("chat.historyError", { error: historyError }) : null} />
         {historyError ? <button type="button" className="btn btn-sm" onClick={() => loadHistory()}>{t("chat.retryHistory")}</button> : null}
         {!historyReady && timeline.length === 0 ? <Skeleton /> : null}
         {historyReady && !historyError && timeline.length === 0 ? (
@@ -578,7 +578,7 @@ export function ChatView(props: {
         setShowLatest(false);
       }}><Icon name="download" size={14} /> {t("chat.latest")}</button> : null}
       <div className="composer">
-      <ErrorText error={sendError ? t("chat.sendError", { error: localizeText(sendError) }) : null} />
+      <ErrorText error={sendError ? t("chat.sendError", { error: sendError }) : null} />
       <div className="chat-input">
         <input
           ref={fileRef}

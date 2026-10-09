@@ -75,7 +75,7 @@ async function instrument(target, storage = {}) {
       const respond = (data, status = 200) => request.respond({ status, contentType: 'application/json', body: JSON.stringify(data) });
       if (request.method() !== 'GET') {
         await new Promise(resolve => setTimeout(resolve, 350));
-        if (failWrites) return await respond({ error: rawError }, 503);
+        if (failWrites) return await respond({ error: path === '/api/mcp' ? 'serveur demo: command ou url requis' : rawError }, 503);
         assert(path.endsWith('/messages'), `Unexpected successful mutation fixture: ${path}`);
         history.push({ type: 'user', text: JSON.parse(request.postData()).text });
         return await respond({ ok: true });
@@ -192,11 +192,31 @@ try {
       await nav(3); await clickText('main table button', text('screens.apiKey')); await page.waitForSelector('dialog[open] input');
       await page.type('dialog input', 'not-a-credential-fixture');
       await page.evaluate(() => { window.retainedDialog = document.querySelector('dialog'); window.retainedInput = document.querySelector('dialog input'); });
+      language = lang === 'en' ? 'fr' : 'en';
+      await page.select('dialog .language-picker select', language);
+      await page.waitForFunction(next => document.documentElement.lang === next, {}, language);
+      await expectText('dialog button', text('screens.save'));
+      assert.equal(await page.$eval('dialog input', e => e.value), 'not-a-credential-fixture');
+      assert(await page.evaluate(() => window.retainedDialog === document.querySelector('dialog') && window.retainedInput === document.querySelector('dialog input')));
+      await page.select('dialog .language-picker select', lang); language = lang;
       await crossTab(lang === 'en' ? 'fr' : 'en');
       assert(await page.evaluate(() => window.retainedDialog === document.querySelector('dialog') && window.retainedInput === document.querySelector('dialog input')));
       await expectText('dialog button', text('screens.save')); await crossTab(lang);
       await clickText('dialog button', text('screens.save')); await page.waitForSelector('dialog input:disabled'); await page.keyboard.press('Escape'); assert(await page.$('dialog[open]'));
       await page.waitForSelector('dialog [role=alert]'); assert.equal(await page.$eval('dialog input', e => e.value), 'not-a-credential-fixture'); await expectText('dialog [role=alert]', rawError); await closeDialog();
+    });
+    await check(`${lang} MCP save retains localized validation detail and draft`, async () => {
+      await nav(5);
+      const draft = '{"mcpServers":{"demo":{}}}';
+      await page.$eval('main textarea', e => { e.focus(); e.select(); });
+      await page.keyboard.type(draft);
+      await clickText('main button', text('screens.saveConfig'));
+      await expectText('main [role=alert]', text('screens.saveRejectedDetail', { error: text('diagnostic.serverCommand', { name: 'demo' }) }));
+      assert.equal(await page.$eval('main textarea', e => e.value), draft);
+      await locale(lang === 'en' ? 'fr' : 'en');
+      await expectText('main [role=alert]', text('diagnostic.serverCommand', { name: 'demo' }));
+      assert.equal(await page.$eval('main textarea', e => e.value), draft);
+      await locale(lang);
     });
     await check(`${lang} seven workspace tabs and board details`, async () => {
       await nav(1); await page.click('.card .btn'); await page.waitForSelector('[role=tablist]'); assert.equal(await page.$$eval('[role=tab]', e => e.length), 7);

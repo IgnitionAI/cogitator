@@ -1,4 +1,4 @@
-import { t as translate, localizeText, formatNumber } from "../i18n";
+import { t as translate, formatNumber } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { Health } from "../types";
@@ -17,10 +17,7 @@ export default function Settings() {
     setError(null);
     Promise.all([
       api.health().then(setHealth),
-      fetch("/api/mcp").then(async (res) => {
-        if (!res.ok) throw new Error(translate("screens.mcpUnavailable"));
-        setDraft(JSON.stringify(await res.json(), null, 2));
-      }),
+      api.mcp().then((config) => setDraft(JSON.stringify(config, null, 2))),
     ]).catch((e: Error) => setError(e.message)).finally(() => setLoading(false));
   }, []);
   useEffect(load, [load]);
@@ -38,13 +35,10 @@ export default function Settings() {
     }
     setBusy(true);
     try {
-      const res = await fetch("/api/mcp", {
-        method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(config),
-      });
-      if (!res.ok) throw new Error(translate("screens.saveRejected"));
+      await api.saveMcp(config);
       setSaved(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : translate("screens.saveFailed"));
+      setError(e instanceof Error ? translate("screens.saveRejectedDetail", { error: e.message }) : translate("screens.saveFailed"));
     } finally {
       setBusy(false);
     }
@@ -88,7 +82,7 @@ export default function Settings() {
           </div>
         </>
       ) : null}
-      <ErrorText error={error ? localizeText(error) : null} />
+      <ErrorText error={error} />
     </>
   );
 }

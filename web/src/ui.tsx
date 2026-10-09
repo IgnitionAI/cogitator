@@ -1,6 +1,17 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
-import { localizeText, t, useLocale } from "./i18n";
+import { localizeText, setLocale, t, useLocale } from "./i18n";
+
+export function LanguagePicker() {
+  const locale = useLocale();
+  return <label className="language-picker">
+    <span>{t("common.language")}</span>
+    <select value={locale} onChange={(event) => setLocale(event.target.value === "fr" ? "fr" : "en")}>
+      <option value="fr" lang="fr">Français</option>
+      <option value="en" lang="en">English</option>
+    </select>
+  </label>;
+}
 
 export function Modal(props: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   const titleId = useId();
@@ -30,6 +41,7 @@ export function Modal(props: { title: string; onClose: () => void; children: Rea
       >
         <div className="modal-head">
           <h2 id={titleId}>{props.title}</h2>
+          <LanguagePicker />
           <button type="button" className="icon-btn" aria-label={t("common.close")} onClick={props.onClose}>
             <Icon name="close" />
           </button>

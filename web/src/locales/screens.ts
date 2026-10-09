@@ -419,17 +419,13 @@ export const screensMessages = {
     "fr": "Configuration enregistrée",
     "en": "Configuration saved"
   },
-  "screens.mcpUnavailable": {
-    "fr": "Configuration MCP indisponible.",
-    "en": "MCP configuration unavailable."
-  },
   "screens.invalidJson": {
     "fr": "JSON invalide. Vérifie les virgules, guillemets et accolades, puis réessaie.",
     "en": "Invalid JSON. Check commas, quotes and braces, then try again."
   },
-  "screens.saveRejected": {
-    "fr": "Enregistrement refusé. Vérifie la configuration MCP puis réessaie.",
-    "en": "Save rejected. Check the MCP configuration and try again."
+  "screens.saveRejectedDetail": {
+    "fr": "Enregistrement refusé : {error}",
+    "en": "Save rejected: {error}"
   },
   "screens.saveFailed": {
     "fr": "Enregistrement impossible. Réessaie sans quitter la page.",

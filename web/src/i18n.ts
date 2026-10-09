@@ -74,7 +74,7 @@ export function t(key: TranslationKey, values?: Values): string {
 }
 
 export function formatNumber(value: number, options?: Intl.NumberFormatOptions): string {
-  return new Intl.NumberFormat(locale, options).format(value);
+  return new Intl.NumberFormat(locale, options ?? { maximumSignificantDigits: 21 }).format(value);
 }
 
 export function formatDate(value: string | number | Date, options: Intl.DateTimeFormatOptions = { dateStyle: "short", timeStyle: "short" }): string {

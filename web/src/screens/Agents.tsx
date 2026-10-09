@@ -33,7 +33,7 @@ export default function Agents() {
           </>
         }
       />
-      <ErrorText error={error ? localizeText(error) : null} />
+      <ErrorText error={error} />
       {error ? <button type="button" className="btn" onClick={refresh}>{translate("screens.retry")}</button> : null}
       {loading ? <p role="status">{translate("screens.loading")}</p> : error && agents.length === 0 ? null : agents.length === 0 ? (
         <Empty title={translate("screens.noAgents")} action={<button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> {translate("screens.newAgent")}</button>}>
@@ -56,13 +56,13 @@ export default function Agents() {
               <div className="actions">
                 <button className="btn btn-sm" onClick={() => setEditing(a)}>{translate("screens.edit")}</button>{" "}
                 {!a.is_default ? (
-                  <button className="btn btn-sm" onClick={() => api.setDefaultAgent(a.id).then(refresh).catch((e: Error) => toast(localizeText(e.message), true))}>{translate("screens.setDefault")}</button>
+                  <button className="btn btn-sm" onClick={() => api.setDefaultAgent(a.id).then(refresh).catch((e: Error) => toast(e.message, true))}>{translate("screens.setDefault")}</button>
                 ) : null}{" "}
                 <button
                   className="btn btn-sm btn-danger"
                   onClick={() => {
                     if (confirm(translate("screens.deleteAgent", { name: a.name }))) {
-                      api.deleteAgent(a.id).then(refresh).catch((e: Error) => toast(localizeText(e.message), true));
+                      api.deleteAgent(a.id).then(refresh).catch((e: Error) => toast(e.message, true));
                     }
                   }}
                 >
@@ -109,7 +109,7 @@ function QuickModel(props: {
       });
       props.onChanged();
     } catch (e) {
-      toast(localizeText((e as Error).message), true);
+      toast((e as Error).message, true);
     } finally {
       setBusy(false);
     }
@@ -180,7 +180,7 @@ function ImportSkillsModal(props: { onClose: () => void }) {
   return (
     <Modal title={translate("screens.importSkills")} onClose={() => { if (!busy) props.onClose(); }}>
       <fieldset className="form-fields" disabled={busy}>
-      <ErrorText error={actionError ? localizeText(actionError) : null} />
+      <ErrorText error={actionError} />
       <Field label={translate("screens.source")} hint={translate("screens.sourceHint")}>
         <input value={source} onChange={(e) => setSource(e.target.value)} placeholder="IgnitionAI/skills" />
       </Field>
@@ -301,8 +301,8 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
   return (
     <Modal title={props.agent ? translate("screens.editNamed", { name: props.agent.name }) : translate("screens.newAgent")} onClose={() => { if (!busy) props.onClose(); }} wide>
       <fieldset className="form-fields" disabled={busy}>
-      <ErrorText error={actionError ? localizeText(actionError) : null} />
-      <ErrorText error={loadError ? localizeText(loadError) : null} />
+      <ErrorText error={actionError} />
+      <ErrorText error={loadError} />
       {loadError ? <button type="button" className="btn" onClick={loadOptions}>{translate("screens.retryOptions")}</button> : null}
       {optionsLoading ? <p role="status">{translate("screens.loadingOptions")}</p> : null}
       <div className="form-grid">

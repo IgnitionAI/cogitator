@@ -1,4 +1,4 @@
-import { t as translate, localizeText, formatNumber } from "../i18n";
+import { t as translate, formatNumber } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { ProviderView } from "../types";
@@ -31,7 +31,7 @@ export default function Providers() {
         sub={translate("screens.providersSub")}
         actions={<button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}><Icon name="plus" /> {translate("screens.addProvider")}</button>}
       />
-      <ErrorText error={error ? localizeText(error) : null} />
+      <ErrorText error={error} />
       {error ? <button type="button" className="btn" onClick={refresh}>{translate("screens.retry")}</button> : null}
       {loading ? <p role="status">{translate("screens.loading")}</p> : error && providers.length === 0 ? null : providers.length === 0 ? (
         <Empty title={translate("screens.noProviders")} action={<button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}><Icon name="plus" /> {translate("screens.addProvider")}</button>}>
@@ -58,7 +58,7 @@ export default function Providers() {
                       className="btn btn-sm btn-danger"
                       onClick={() => {
                         if (confirm(translate("screens.deleteProvider", { name: p.id }))) {
-                          api.deleteProvider(p.id).then(refresh).catch((e: Error) => toast(localizeText(e.message), true));
+                          api.deleteProvider(p.id).then(refresh).catch((e: Error) => toast(e.message, true));
                         }
                       }}
                     >
@@ -110,7 +110,7 @@ function AddProviderModal(props: { onClose: () => void; onSaved: () => void }) {
   return (
     <Modal title={translate("screens.newProvider")} onClose={() => { if (!busy) props.onClose(); }}>
       <fieldset className="form-fields" disabled={busy}>
-      <ErrorText error={actionError ? localizeText(actionError) : null} />
+      <ErrorText error={actionError} />
       <Field label={translate("screens.providerId")}>
         <input value={id} onChange={(e) => setId(e.target.value)} placeholder="ollama" />
       </Field>
@@ -145,7 +145,7 @@ function KeyModal(props: { providerId: string; onClose: () => void; onSaved: () 
   return (
     <Modal title={translate("screens.keyFor", { name: props.providerId })} onClose={() => { if (!busy) props.onClose(); }}>
       <fieldset className="form-fields" disabled={busy}>
-      <ErrorText error={actionError ? localizeText(actionError) : null} />
+      <ErrorText error={actionError} />
       <Field label={translate("screens.newKey")} hint={translate("screens.oauthHint")}>
         <input type="password" autoComplete="new-password" spellCheck={false} value={key} onChange={(e) => setKey(e.target.value)} />
       </Field>

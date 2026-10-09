@@ -1,4 +1,4 @@
-import { t as translate, localizeText, formatNumber } from "../i18n";
+import { t as translate, formatNumber } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { AgentPreset, FeedEvent, FileChange, Workspace } from "../types";
@@ -78,7 +78,7 @@ export default function Workspaces({ onOpenWorkspace }: { onOpenWorkspace?: (w: 
           </button>
         }
       />
-      <ErrorText error={error ? localizeText(error) : null} />
+      <ErrorText error={error} />
       {error ? <button type="button" className="btn" onClick={refresh}>{translate("screens.retry")}</button> : null}
       {loading ? <p role="status">{translate("screens.loading")}</p> : error && workspaces.length === 0 ? null : workspaces.length === 0 ? (
         <Empty title={translate("screens.noWorkspaces")} action={<button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}><Icon name="plus" /> {translate("screens.addFolder")}</button>}>
@@ -106,7 +106,7 @@ export default function Workspaces({ onOpenWorkspace }: { onOpenWorkspace?: (w: 
                   onChange={(e) => {
                     api.updateWorkspace(w.id, { default_agent_id: e.target.value || null })
                       .then(refresh)
-                      .catch((err: Error) => toast(localizeText(err.message), true));
+                      .catch((err: Error) => toast(err.message, true));
                   }}
                 >
                   <option value="">{translate("screens.none")}</option>
@@ -138,7 +138,7 @@ export default function Workspaces({ onOpenWorkspace }: { onOpenWorkspace?: (w: 
                   className="btn btn-sm btn-danger"
                   onClick={() => {
                     if (confirm(translate("screens.deleteWorkspace", { name: w.name }))) {
-                      api.deleteWorkspace(w.id).then(refresh).catch((e: Error) => toast(localizeText(e.message), true));
+                      api.deleteWorkspace(w.id).then(refresh).catch((e: Error) => toast(e.message, true));
                     }
                   }}
                 >
@@ -152,7 +152,7 @@ export default function Workspaces({ onOpenWorkspace }: { onOpenWorkspace?: (w: 
       {showAdd ? <AddWorkspaceModal onClose={() => setShowAdd(false)} onAdded={() => { setShowAdd(false); refresh(); }} /> : null}
       {activityFor ? (
         <Modal title={translate("screens.activityFor", { name: workspaces.find((w) => w.id === activityFor)?.name ?? "" })} onClose={() => setActivityFor(null)} wide>
-          <ErrorText error={localizeText(activityErrors[activityFor] ?? "")} />
+          <ErrorText error={activityErrors[activityFor] ?? null} />
           {activityErrors[activityFor] ? <button type="button" className="btn" onClick={() => loadActivity(activityFor)}>{translate("screens.retry")}</button> : !activity[activityFor] ? <p role="status">{translate("screens.loadingActivity")}</p> : null}
           {activity[activityFor] ? <>
           {activity[activityFor]!.files.length === 0 ? <Empty>{translate("screens.noChangedFiles")}</Empty> : null}
@@ -171,7 +171,7 @@ export default function Workspaces({ onOpenWorkspace }: { onOpenWorkspace?: (w: 
       ) : null}
       {feedFor ? (
         <Modal title={translate("screens.feedFor", { name: workspaces.find((w) => w.id === feedFor)?.name ?? "" })} onClose={() => { feedRequest.current++; setFeedFor(null); }} wide>
-          <ErrorText error={feedError ? localizeText(feedError) : null} />
+          <ErrorText error={feedError} />
           {feedError ? <button type="button" className="btn" onClick={() => loadFeed(feedFor)}>{translate("screens.retry")}</button> : null}
           {feedLoading ? <p role="status">{translate("screens.loadingFeed")}</p> : !feedError && feed.length === 0 ? <div className="muted" style={{ padding: 12 }}>{translate("screens.noActivity")}</div> : null}
           <FeedList feed={feed} onOpenEvent={(e) => setDiffFor({ convId: e.conversationId, path: e.path })} />
@@ -238,7 +238,7 @@ function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) 
   return (
     <Modal title={translate("screens.addWorkspace")} onClose={() => { if (!busy) props.onClose(); }}>
       <fieldset className="form-fields" disabled={busy}>
-      <ErrorText error={actionError ? localizeText(actionError) : null} />
+      <ErrorText error={actionError} />
       <div className="mono" style={{ marginBottom: 8 }}>
         {browse ? (
           <>
@@ -247,7 +247,7 @@ function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) 
           </>
         ) : translate("screens.loading")}
       </div>
-      <ErrorText error={browseError ? localizeText(browseError) : null} />
+      <ErrorText error={browseError} />
       {browseError ? <button type="button" className="btn" onClick={() => load(requestedPath)}>{translate("screens.retry")}</button> : null}
       {loading ? <p role="status">{translate("screens.loadingFolders")}</p> : null}
       <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 6, marginBottom: 12 }}>

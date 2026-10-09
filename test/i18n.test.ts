@@ -41,6 +41,9 @@ test("Intl dates, numbers and enum labels follow the selected language without c
   for (const locale of ["fr", "en"] as const) {
     setLocale(locale);
     assert.equal(formatNumber(12345.6), new Intl.NumberFormat(locale).format(12345.6));
+    assert.equal(formatNumber(0.00012345), locale === "fr" ? "0,00012345" : "0.00012345");
+    assert.equal(formatNumber(1.2345678901234567), locale === "fr" ? "1,2345678901234567" : "1.2345678901234567");
+    assert.equal(formatNumber(1.23456, { maximumFractionDigits: 2 }), locale === "fr" ? "1,23" : "1.23");
     assert.equal(formatDate(date, { dateStyle: "long", timeZone: "UTC" }), new Intl.DateTimeFormat(locale, { dateStyle: "long", timeZone: "UTC" }).format(new Date(date)));
     assert.equal(formatTime(date, { hour: "numeric", timeZone: "UTC" }), new Intl.DateTimeFormat(locale, { hour: "numeric", timeZone: "UTC" }).format(new Date(date)));
     assert.equal(formatDate("invalid"), "—");

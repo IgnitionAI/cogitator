@@ -10,8 +10,8 @@ import Settings from "./screens/Settings";
 import WorkspacePage from "./WorkspacePage";
 import type { AgentPreset, Workspace } from "./types";
 import { Icon, type IconName } from "./icons";
-import { useToast } from "./ui";
-import { localizeText, setLocale, statusLabel, t, useLocale, type TranslationKey } from "./i18n";
+import { LanguagePicker, useToast } from "./ui";
+import { localizeText, statusLabel, t, useLocale, type TranslationKey } from "./i18n";
 
 const NAV = [
   { id: "conversations", icon: "chat", label: "common.conversations" },
@@ -25,7 +25,7 @@ const NAV = [
 type ScreenId = (typeof NAV)[number]["id"];
 
 export default function App() {
-  const locale = useLocale();
+  useLocale();
   const [screen, setScreen] = useState<ScreenId>("conversations");
   const [health, setHealth] = useState<Health | null>(null);
   const toast = useToast();
@@ -131,13 +131,7 @@ export default function App() {
           ))}
         </nav>
         <div className="foot">
-          <label className="language-picker">
-            <span>{t("common.language")}</span>
-            <select value={locale} onChange={(event) => setLocale(event.target.value === "fr" ? "fr" : "en")}>
-              <option value="fr" lang="fr">Français</option>
-              <option value="en" lang="en">English</option>
-            </select>
-          </label>
+          <LanguagePicker />
           {health ? `v${health.version} · pi ${health.pi_version ?? "?"}` : "…"}
         </div>
       </aside>

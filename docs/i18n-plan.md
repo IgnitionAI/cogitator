@@ -13,9 +13,9 @@ Content is not interface chrome: preserve user/agent-authored names, description
 ## Decisions and assumptions
 
 - Browser-local preference (`cogitator.locale`), supported values `en` / `fr` only. Detect French browser preferences initially, otherwise English. Invalid preferences fall back safely. Storage denial must not break the app.
-- Visible accessible language selector in shell; switch immediately without reload, remount, lost drafts, changed sessions or altered data. Update document `lang`. Synchronize valid cross-tab changes.
+- Visible accessible language selector in shell and open modal headers; switch immediately without reload, remount, lost drafts, changed sessions or altered data. Update document `lang`. Synchronize valid cross-tab changes.
 - Small typed bilingual catalogs and interpolation, native `Intl` formatting, React subscription for updates; no new runtime dependency. Domain catalogs separate concurrent ownership, not a new framework.
-- Localize labels, not enum values. Date/time display follows locale, retaining browser timezone; cron scheduling stays server-local. Handle zero/one/many counts and file-size units.
+- Localize labels, not enum values. Numeric content must retain its full precision (no default three-decimal rounding). Date/time display follows locale, retaining browser timezone; cron scheduling stays server-local. Handle zero/one/many counts and file-size units.
 - Translate all owned runtime diagnostics at the display boundary, including parameterized messages, validation arrays and cron failures. Retain API validation `issues` rather than dropping them. Generated transcript/diff truncation suffixes use a language-neutral ellipsis; unnamed tools use an empty metadata value so the frontend supplies its localized fallback. Unknown third-party errors retain original detail with localized context. No translation of arbitrary transcript/file text.
 - Keep historical response serialization compatible; localize its rendered summary and newly generated application prompts without changing request identity or stored user content.
 - Remove language-bearing CSS `content` in favor of localized markup/attributes.

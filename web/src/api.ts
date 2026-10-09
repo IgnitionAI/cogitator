@@ -19,6 +19,8 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
 
 export const api = {
   health: () => req<Health>("GET", "/api/health"),
+  mcp: () => req<{ mcpServers: Record<string, unknown> }>("GET", "/api/mcp"),
+  saveMcp: (config: unknown) => req<{ ok: true }>("PUT", "/api/mcp", config),
 
   providers: () => req<{ providers: ProviderView[] }>("GET", "/api/providers"),
   createProvider: (b: ProviderWrite) => req<{ ok: true }>("POST", "/api/providers", b),

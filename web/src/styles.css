@@ -321,6 +321,7 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
   margin: 0; font-size: 14px; font-weight: 600; letter-spacing: -0.01em;
   overflow-wrap: anywhere; min-width: 0;
 }
+.modal-head .language-picker { width: 110px; flex-shrink: 0; margin: 0; }
 .modal-body { padding: 16px 18px; overflow-y: auto; overscroll-behavior: contain; }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -677,7 +678,7 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
   transition: background-color 0.1s ease;
 }
 .feed-row:hover { background: var(--raised); }
-.feed-time { color: var(--subtle); font-size: 11px; font-variant-numeric: tabular-nums; width: 62px; flex-shrink: 0; }
+.feed-time { color: var(--subtle); font-size: 11px; font-variant-numeric: tabular-nums; min-width: 62px; flex-shrink: 0; white-space: nowrap; }
 .feed-conv { color: var(--muted); max-width: min(180px, 30%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
 .feed-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 
@@ -799,7 +800,7 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
     content: attr(data-scroll-hint);
     display: block; padding: 8px 12px; color: var(--muted); font-size: 12px;
   }
-  body { font-size: 14px; }
+  body, .language-picker { font-size: 14px; }
   .btn, .icon-btn, .nav-item, .ws-tab, .list-main, .file-row, .tree-row, .browse-row, .feed-row, .tool-head, .skill-head, .thinking-head, .chip, .board-title, .check-row { min-height: 44px; }
   .icon-btn { width: 44px; }
   .icon-btn::before { inset: 0; }

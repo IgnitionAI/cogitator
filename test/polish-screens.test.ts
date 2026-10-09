@@ -22,7 +22,7 @@ function harness(screen: string, api: object, fetch?: unknown, component = "defa
   runInNewContext(ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   }).outputText, {
-    exports, fetch, window: { location: { origin: "http://localhost:9876" } },
+    exports, fetch, Error, window: { location: { origin: "http://localhost:9876" } },
     setInterval: () => 0, clearInterval() {},
     require(name: string) {
       if (name === "./i18n" || name === "../i18n") return i18n;
@@ -62,9 +62,10 @@ function find(node: unknown, predicate: (element: Element) => boolean): Element 
 
 test("MCP save locks the submitted draft until the request settles", async () => {
   let finish!: (value: unknown) => void;
-  const render = harness("Settings", { health: async () => ({ db: {} }) }, (_url: string, options?: { method?: string }) => {
-    if (options?.method === "PUT") return new Promise((resolve) => { finish = resolve; });
-    return Promise.resolve({ ok: true, json: async () => ({ mcpServers: {} }) });
+  const render = harness("Settings", {
+    health: async () => ({ db: {} }),
+    mcp: async () => ({ mcpServers: {} }),
+    saveMcp: () => new Promise((resolve) => { finish = resolve; }),
   });
   render(); await settle();
   assert.equal(find(render(), (e) => e.type === "textarea")?.props.readOnly, false);
@@ -73,6 +74,27 @@ test("MCP save locks the submitted draft until the request settles", async () =>
   assert.equal(find(render(), (e) => e.type === "textarea")?.props.readOnly, true);
   finish({ ok: true }); await settle();
   assert.equal(find(render(), (e) => e.type === "textarea")?.props.readOnly, false);
+});
+
+test("MCP rejection preserves the specific server error and the submitted draft", async () => {
+  const render = harness("Settings", {
+    health: async () => ({ db: {} }),
+    mcp: async () => ({ mcpServers: {} }),
+    saveMcp: async () => { throw new Error("serveur demo: command ou url requis"); },
+  });
+  render(); await settle();
+  const draft = '{"mcpServers":{"demo":{}}}';
+  const textarea = find(render(), (e) => e.type === "textarea")!;
+  (textarea.props.onChange as (event: unknown) => void)({ target: { value: draft } });
+  (find(render(), (e) => e.type === "button" && e.props.className === "btn btn-primary")!.props.onClick as () => void)();
+  await settle();
+  const tree = render();
+  assert.equal(find(tree, (e) => e.type === "textarea")?.props.value, draft);
+  const error = find(tree, (e) => e.type === "ErrorText")?.props.error as string;
+  assert.ok(error.includes("serveur demo: command ou url requis"));
+  i18n.setLocale("en");
+  assert.equal(i18n.localizeText(error), "Save rejected: server demo: command or url required");
+  i18n.setLocale("fr");
 });
 
 test("Cron creation waits for agent and workspace options", async () => {

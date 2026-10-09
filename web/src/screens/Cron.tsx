@@ -34,7 +34,7 @@ export default function Cron() {
         actions={<button type="button" className="btn btn-primary" disabled={loading || !!error} onClick={() => setEditing("new")}><Icon name="plus" /> {translate("screens.newTask")}</button>}
       />
       <p className="muted">{translate("screens.timezone", { zone: Intl.DateTimeFormat().resolvedOptions().timeZone })}</p>
-      <ErrorText error={error ? localizeText(error) : null} />
+      <ErrorText error={error} />
       {error ? <button type="button" className="btn" onClick={refresh}>{translate("screens.retry")}</button> : null}
       {loading ? <p role="status">{translate("screens.loading")}</p> : error && tasks.length === 0 ? null : tasks.length === 0 ? (
         <Empty title={translate("screens.noTasks")} action={<button type="button" className="btn btn-primary" disabled={loading || !!error} onClick={() => setEditing("new")}><Icon name="plus" /> {translate("screens.newTask")}</button>}>
@@ -61,16 +61,16 @@ export default function Cron() {
                     disabled={pendingTask === t.id}
                     aria-label={translate("screens.enableTask", { name: t.name })}
                     checked={t.enabled === 1}
-                    onChange={(e) => { if (pendingTask === t.id) return; setPendingTask(t.id); api.updateSchedule(t.id, { enabled: e.target.checked }).then(refresh).catch((err: Error) => toast(localizeText(err.message), true)).finally(() => setPendingTask(null)); }}
+                    onChange={(e) => { if (pendingTask === t.id) return; setPendingTask(t.id); api.updateSchedule(t.id, { enabled: e.target.checked }).then(refresh).catch((err: Error) => toast(err.message, true)).finally(() => setPendingTask(null)); }}
                   />
                 </td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   <button className="btn btn-sm" onClick={() => setRunsFor(t.id)}>{translate("screens.history")}</button>{" "}
                   <button className="btn btn-sm" onClick={() => setEditing(t)}>{translate("screens.edit")}</button>{" "}
-                  <IconBtn name="play" label={translate("screens.runNow", { name: t.name })} onClick={() => api.fireSchedule(t.id).then(() => toast(translate("screens.runStarted", { name: t.name }))).catch((e: Error) => toast(localizeText(e.message), true))} />
+                  <IconBtn name="play" label={translate("screens.runNow", { name: t.name })} onClick={() => api.fireSchedule(t.id).then(() => toast(translate("screens.runStarted", { name: t.name }))).catch((e: Error) => toast(e.message, true))} />
                   <button
                     className="btn btn-sm btn-danger"
-                    onClick={() => { if (confirm(translate("screens.deleteTask", { name: t.name }))) api.deleteSchedule(t.id).then(refresh).catch((e: Error) => toast(localizeText(e.message), true)); }}
+                    onClick={() => { if (confirm(translate("screens.deleteTask", { name: t.name }))) api.deleteSchedule(t.id).then(refresh).catch((e: Error) => toast(e.message, true)); }}
                   >
                     {translate("screens.delete")}
                   </button>
@@ -113,7 +113,7 @@ function RunsModal({ task, onClose }: { task: CronTask; onClose: () => void }) {
 
   return (
     <Modal title={translate("screens.runsFor", { name: task.name })} onClose={onClose} wide>
-      <ErrorText error={error ? localizeText(error) : null} />
+      <ErrorText error={error} />
       {error ? <button type="button" className="btn" onClick={load}>{translate("screens.retry")}</button> : null}
       {loading ? <p role="status">{translate("screens.loadingRuns")}</p> : error && runs.length === 0 ? null : runs.length === 0 ? <Empty>{translate("screens.noRuns")}</Empty> : (
         <div className="table-wrap" data-scroll-hint={translate("common.scrollColumns")} role="region" aria-label={translate("screens.runHistory")} tabIndex={0}><table>
@@ -173,7 +173,7 @@ function TaskEditor(props: {
   return (
     <Modal title={props.task ? translate("screens.editNamed", { name: props.task.name }) : translate("screens.newCron")} onClose={() => { if (!busy) props.onClose(); }}>
       <fieldset className="form-fields" disabled={busy}>
-      <ErrorText error={actionError ? localizeText(actionError) : null} />
+      <ErrorText error={actionError} />
       {props.agents.length === 0 || props.workspaces.length === 0 ? <p role="status" className="muted">{translate("screens.cronPrerequisites")}</p> : null}
       <div className="form-row">
         <Field label={translate("screens.name")}><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>

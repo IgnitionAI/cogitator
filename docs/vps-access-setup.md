@@ -29,6 +29,22 @@ A hash mismatch prevents execution. Use a trusted system Python installation. Th
 
 Review output locally before sharing: even allowed metadata can expose infrastructure names and host paths. Do not paste secrets, configuration files or user databases into chat. Follow-up owner assessment must establish ownership, version/support, actual OIDC flow and MFA enforcement, session/cookie boundaries and safe client isolation without changing AionUI. Do not deploy a replacement or modify the existing IdP based solely on this inventory.
 
+## Verified handoff checkpoint
+
+The metadata-only implementation at `58c06bc` was independently reviewed on Standards and Spec axes. A YAML resource-amplification concern was resolved by removing configuration parsing entirely; neither re-review identified a remaining blocking local defect.
+
+Current checks: five focused tests pass; application build and 105/105 application tests pass. The actual Docker `ps`/`inspect` templates and pinned-image-reference classification were exercised against one disposable, network-disabled local container; native systemd was not exercised in that fixture. An initial removal assertion raced Docker's asynchronous `--rm`; the verification was rerun with bounded waiting and confirmed removal. This is not target-host/root or authentication proof.
+
+The reviewed script was staged under the selected VPS's unprivileged account (private directory 0700, file 0600). Its remote SHA256 matched the local artifact. An actual unprivileged Linux invocation returned `requires_linux_root` with exit 1 as expected, without scanning privileged metadata. Existing Caddy configuration hash was unchanged across staging and Caddy remained active. No IdP installation, service restart, application route or credential change was performed.
+
+Trusted reviewed inspector SHA256:
+
+```text
+e015e67ff91f053cff89788bd47e8f9bd21fcdcbe7dc4e7afb0e1fa47a56c120
+```
+
+Use the separately verified upload path from the owner's handoff; root must copy and check this digest before execution. **Admin inventory execution, effective configuration, OIDC/MFA, public Cogitator access and P1–P5 remain NOT PROVEN.** The tracking issue remains open.
+
 ## Local checks
 
 ```sh

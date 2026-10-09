@@ -1,11 +1,23 @@
 {
   "name": "@ignitionai/cogitator",
-  "version": "0.1.1",
-  "description": "Cogitator \u2014 panneau de contr\u00f4le web pour pi : agents composables, workspaces, conversations libres, cron. pi package.",
+  "version": "0.2.0",
+  "description": "Cogitator — panneau de contrôle web pour pi : agents composables, workspaces, conversations libres, cron. pi package.",
   "type": "module",
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "pi-extension",
+    "cogitator",
+    "agents",
+    "generative-ui"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IgnitionAI/cogitator.git"
+  },
+  "homepage": "https://github.com/IgnitionAI/cogitator#readme",
+  "bugs": {
+    "url": "https://github.com/IgnitionAI/cogitator/issues"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=22.19.0"

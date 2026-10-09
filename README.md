@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="web/public/icon.png" width="120" alt="Cogitator — engrenage-nébuleuse" />
+<img src="https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/web/public/icon.png" width="120" alt="Cogitator — engrenage-nébuleuse" />
 
 # Cogitator
 
@@ -36,13 +36,13 @@ Ou standalone : `npx @ignitionai/cogitator` (Node ≥ 22).
 - **Kanban = GitHub Issues** — chaque carte est une issue (labels `status:`/`priority:`), blocking edges natifs, write-through via `gh`. Zéro sync, une seule vérité, visible sur github.com.
 - **Dispatch** — « 🚀 Lancer l'agent » sur un ticket : conversation spawnée dans le workspace, carte liée (activité cumulée), passage en cours.
 - **Conversations** — streaming SSE avec reprise après coupure, code copiable, outils structurés et diffs, images (collage), historique et skills via `/skill:nom`.
-- **UI interactive automatique** — l’agent choisit entre texte, formulaires, choix, checklists et tableaux selon le besoin, dans les conversations et les workspaces. Réponses transmises explicitement et conservées dans les JSONL pi ; aucun HTML/JavaScript généré exécuté. [Contrat et limites](docs/chat-generative-ui.md).
+- **UI interactive automatique** — l’agent choisit entre texte, formulaires, choix, checklists et tableaux selon le besoin, dans les conversations et les workspaces. Réponses transmises explicitement et conservées dans les JSONL pi ; aucun HTML/JavaScript généré exécuté. [Contrat et limites](https://github.com/IgnitionAI/cogitator/blob/dev/docs/chat-generative-ui.md).
 - **Cron** — tâches planifiées (busy-guard, catchup), runs tracés, notifications.
 - **Providers & skills** — read model de la config pi (auth par `pi auth check`), écritures atomiques + backup, import de skills (GitHub, local, npx).
 
 ## Architecture
 
-Specs complètes dans [`docs/`](docs/) : [domain model](docs/architecture/domain-model.md), [blueprint](docs/architecture/blueprint.md), [API contract](docs/architecture/api-contract.md), [ADRs](docs/context/decisions/) (apply-on-spawn, MCP par `registerMcpServer`, board GitHub single-writer…). TypeScript strict partout, zod aux frontières, 92 tests.
+Specs complètes dans [`docs/`](https://github.com/IgnitionAI/cogitator/tree/dev/docs) : [domain model](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/domain-model.md), [blueprint](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/blueprint.md), [API contract](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/api-contract.md), [ADRs](https://github.com/IgnitionAI/cogitator/tree/dev/docs/context/decisions/) (apply-on-spawn, MCP par `registerMcpServer`, board GitHub single-writer…). TypeScript strict partout, zod aux frontières, 92 tests.
 
 ```text
 Browser (React) → REST + SSE → serveur Node → pool de processus `pi --mode rpc`

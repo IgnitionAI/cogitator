@@ -39,7 +39,8 @@
     "dev:web": "vite web",
     "test": "tsx --test test/*.test.ts",
     "prepublishOnly": "npm run build && npm test",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p web"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web",
+    "durable:spike": "npm --prefix scripts/durable-spike run check"
   },
   "pi": {
     "extensions": [

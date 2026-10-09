@@ -1,0 +1,9 @@
+# ADR-008 — Authenticated personal VPS access and a separate durable runtime
+
+Status: proposed for implementation; requirements confirmed and design review APPROVED on 2026-10-09. Implementation remains gated by Plan 0002; the active architecture contract is not yet amended.
+
+Cogitator will support one authenticated owner over public HTTPS and new remote missions that recover from process interruptions. The proposed design uses an established OIDC access gateway, backend identity enforcement, isolated execution, and a single Pi Durable harness owning persistent runtime state. Existing local RPC sessions and their pi JSONL transcripts remain intact; they are not silently converted or used as a remote execution fallback.
+
+Supervising the current RPC processes alone does not satisfy checkpoint recovery. Replacing the entire runtime at once would unnecessarily risk existing integrations and histories, while Pi Durable remains experimental. Authentication, durable execution, and operating-system isolation are separate boundaries; none substitutes for the others. Durable submission deduplication does not provide exactly-once external effects.
+
+The active architecture contract remains unchanged until the corresponding implementation is reviewed. That change must explicitly scope I3/I5, O6 and ADR-006 for the new runtime, retain loopback binding, and keep remote agents from bypassing approval or secret boundaries through local tools, MCP or shell execution. See [Plan 0002](../plans/active/0002-secure-vps-durable.md) for defaults, alternatives, decision log, review disposition and release gates. This ADR does not authorize infrastructure changes, spending, or production deployment.

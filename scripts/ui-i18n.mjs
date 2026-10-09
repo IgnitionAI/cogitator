@@ -119,7 +119,10 @@ async function clickText(selector, expected) {
   await handle.asElement().click(); await handle.dispose();
 }
 async function nav(index) {
-  if (await page.$eval('.topbar', e => getComputedStyle(e).display !== 'none')) await page.click('.topbar button');
+  if (await page.$eval('.topbar', e => getComputedStyle(e).display !== 'none')) {
+    await page.click('.topbar button');
+    await page.waitForFunction(() => document.querySelector('.app').classList.contains('nav-open') && document.querySelector('.sidebar').getBoundingClientRect().left >= -1);
+  }
   await page.click(`.nav-item:nth-child(${index + 1})`);
   await page.waitForSelector('main h1'); await pause();
 }

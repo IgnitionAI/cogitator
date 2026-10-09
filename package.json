@@ -1,6 +1,6 @@
 {
   "name": "@ignitionai/cogitator",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A web control panel for pi: composable agents, workspaces, interactive conversations, and scheduled tasks. A pi package.",
   "type": "module",
   "keywords": [

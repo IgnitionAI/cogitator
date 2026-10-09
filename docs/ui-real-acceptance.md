@@ -1,32 +1,32 @@
-# Recette UI avec backend réel
+# UI acceptance testing with a real backend
 
-## Verdict : PASS
+## Verdict: PASS
 
-Les quatre parcours ont été exécutés dans Chrome avec l’UI de production servie par le backend sur `127.0.0.1:5320`, les vrais processus pi et le provider authentifié `kimi-coding/kimi-for-coding`. Aucune API, réponse SSE ou exécution de modèle n’a été simulée.
+The four flows were executed in Chrome with the production UI served by the backend at `127.0.0.1:5320`, real pi processes, and the authenticated `kimi-coding/kimi-for-coding` provider. No API, SSE response, or model execution was simulated.
 
-La préparation initiale utilisait Vite. Ce service a été arrêté pendant la recette ; les parcours ont ensuite été repris sur l’UI de production pour éviter ce proxy instable. Aucun correctif cosmétique n’a été ajouté.
+Initial setup used Vite. That service was stopped during acceptance testing; the flows were then resumed on the production UI to avoid the unstable proxy. No cosmetic fixes were added.
 
-## Résultats observés
+## Observed results
 
-| Critère | Résultat | Preuve autoritative |
+| Criterion | Result | Authoritative evidence |
 | --- | --- | --- |
-| Créer un agent | PASS | Création depuis l’éditeur UI, relecture API et validation serveur sans erreur |
-| Ouvrir une conversation, envoyer et interrompre | PASS | Création et envoi depuis l’UI ; 43 événements `text_delta` réels ; Stop accepté ; `agent_end` observé ; réponse persistée dans le fichier de session pi |
-| Créer une carte, assigner, enregistrer et lancer | PASS | Issue GitHub [#5](https://github.com/IgnitionAI/cogitator/issues/5), lancement désactivé avant sauvegarde puis activé ; assignation relue ; conversation liée à la carte ; statut `in_progress` |
-| Commentaires actualisés | PASS | Commentaire envoyé depuis l’UI puis affiché dans le détail sans fermer/réouvrir la carte ; également enregistré sur GitHub |
-| Fichiers et activité actualisés | PASS | L’agent réel a écrit `acceptance-result.txt` avec `COGITATOR_REAL_ACCEPTANCE_OK` ; fichier relu sur disque et dans l’arborescence UI ; fichiers conversation et activité workspace/carte présents dans les API et l’UI |
-| Deux runs cron avec reprise | PASS | Tâche créée et lancée deux fois depuis l’UI ; statuts `ok` / `ok` ; même `session_file` non nul ; deux réponses assistant `CRON_REAL_OK` dans ce même `.jsonl` |
-| Nettoyage | PASS | Agent, workspace, deux conversations et tâche de test absents après relecture API ; issue GitHub #5 confirmée `CLOSED` |
+| Create an agent | PASS | Created through the UI editor, reread through the API, and validated by the server without errors |
+| Open a conversation, send, and interrupt | PASS | Created and sent through the UI; 43 real `text_delta` events; Stop accepted; `agent_end` observed; response persisted in the pi session file |
+| Create a card, assign, save, and launch | PASS | GitHub issue [#5](https://github.com/IgnitionAI/cogitator/issues/5), launch disabled before saving and enabled afterward; assignment reread; conversation linked to the card; `in_progress` status |
+| Comments refreshed | PASS | Comment sent through the UI and then displayed in the detail view without closing/reopening the card; also recorded on GitHub |
+| Files and activity refreshed | PASS | The real agent wrote `acceptance-result.txt` with `COGITATOR_REAL_ACCEPTANCE_OK`; file reread on disk and in the UI file tree; conversation files and workspace/card activity present in the APIs and UI |
+| Two cron runs with resume | PASS | Task created and run twice through the UI; statuses `ok` / `ok`; same non-null `session_file`; two `CRON_REAL_OK` assistant responses in that same `.jsonl` |
+| Cleanup | PASS | Agent, workspace, two conversations, and test task absent after rereading the API; GitHub issue #5 confirmed `CLOSED` |
 
-La planification automatique de la tâche de recette était désactivée. Aucun agent existant ni workspace existant n’a été modifié. L’écriture Board utilise l’implémentation normale GitHub, y compris son assurance des labels système.
+Automatic scheduling of the acceptance task was disabled. No existing agent or workspace was modified. Board writes use the normal GitHub implementation, including its mechanism for ensuring system labels exist.
 
-L’issue de recette est **fermée, pas supprimée**. Le répertoire temporaire et les fichiers de session pi restent disponibles comme preuves ; ils ne font pas partie du commit.
+The acceptance issue is **closed, not deleted**. The temporary directory and pi session files remain available as evidence; they are not part of the commit.
 
-## Preuves locales
+## Local evidence
 
-Dossier : `/tmp/cogitator-real-acceptance-3KxLHE/`
+Directory: `/tmp/cogitator-real-acceptance-3KxLHE/`
 
-- `state.json` : IDs de recette, assertions et chemins de sessions.
+- `state.json`: acceptance IDs, assertions, and session paths.
 - `agent-created.png`
 - `conversation-stopped-mobile.png`
 - `board-comment.png`
@@ -35,17 +35,17 @@ Dossier : `/tmp/cogitator-real-acceptance-3KxLHE/`
 - `cron-two-runs.png`
 - `workspace/acceptance-result.txt`
 
-Ces fichiers temporaires ne sont pas des fixtures permanentes ni des credentials à versionner.
+These temporary files are neither permanent fixtures nor credentials to check into version control.
 
-## Rejouer explicitement
+## Explicit replay
 
-Le script refuse de fonctionner sans opt-in : il consomme des appels modèle et crée une issue GitHub sur le remote `origin` du dépôt courant. Il faut le backend réel actif, un build frontend disponible, Chrome et le Puppeteer du skill browser-tools. `CHROME_PATH` remplace le chemin Chrome macOS par défaut.
+The script refuses to run without opt-in: it consumes model calls and creates a GitHub issue on the current repository's `origin` remote. It requires the real backend to be running, an available frontend build, Chrome, and Puppeteer from the browser-tools skill. `CHROME_PATH` overrides the default macOS Chrome path.
 
 ```bash
 export COGITATOR_REAL_TEST=1
 export BROWSER_TOOLS_DIR=/path/to/browser-tools
 node scripts/ui-real-acceptance.mjs setup
-# Copier le dossier "output" affiché :
+# Copy the displayed "output" directory:
 export ACCEPTANCE_DIR=/tmp/cogitator-real-acceptance-XXXXXX
 node scripts/ui-real-acceptance.mjs conversation
 node scripts/ui-real-acceptance.mjs board
@@ -53,14 +53,14 @@ node scripts/ui-real-acceptance.mjs cron
 node scripts/ui-real-acceptance.mjs cleanup
 ```
 
-Les paramètres `REAL_PROVIDER`, `REAL_MODEL`, `COGITATOR_API_URL` et `COGITATOR_UI_URL` permettent de choisir explicitement les services. Par défaut, l’UI est servie par le backend, sans dépendance à Vite. Ne pas relancer une phase de création déjà réussie : reprendre la phase suivante ou nettoyer ses ressources identifiées.
+The `REAL_PROVIDER`, `REAL_MODEL`, `COGITATOR_API_URL`, and `COGITATOR_UI_URL` parameters allow explicit service selection. By default, the UI is served by the backend, with no Vite dependency. Do not rerun a creation phase that has already succeeded: continue with the next phase or clean up its identified resources.
 
-## Isolation Git
+## Git isolation
 
-Le dépôt était propre au début. La passe UI précédente était déjà commitée dans `918932b`, puis intégrée à la release `52b3252`. Un autre commit (`b5cf258`) est arrivé pendant la recette ; il n’a pas été modifié ni réécrit.
+The repository was clean at the start. The previous UI pass had already been committed in `918932b`, then included in release `52b3252`. Another commit (`b5cf258`) arrived during acceptance testing; it was neither modified nor rewritten.
 
-Vérifications finales : `npm run build` réussi, `npm test` **69/69**, vérification syntaxique du script et `git diff --check` réussis.
+Final checks: `npm run build` passed, `npm test` **69/69**, script syntax check and `git diff --check` passed.
 
-Cette passe ne versionne que le script de recette réelle et ce compte rendu. Aucun état de base de données, sidecar Board, fichier de session, capture, secret ou modification étrangère n’est embarqué.
+This pass versions only the real acceptance script and this report. No database state, Board sidecar, session file, screenshot, secret, or unrelated change is included.
 
-Cette validation couvre les parcours demandés avec un provider réel. Elle ne prétend pas certifier tous les providers, appareils ou lecteurs d’écran.
+This validation covers the requested flows with a real provider. It does not claim to certify all providers, devices, or screen readers.

@@ -1,22 +1,22 @@
-# ADR-006 — Store SQLite unique
+# ADR-006 — Single SQLite store
 
-- Statut : accepté
-- Date : 2026-10-06
+- Status: accepted
+- Date: 2026-10-06
 
-## Contexte
+## Context
 
-Besoins de persistance : presets, workspaces, conversations (métadonnées), tâches cron + historique. Candidats : fichiers JSON, SQLite.
+Persistence needs: presets, workspaces, conversations (metadata), cron tasks + history. Candidates: JSON files, SQLite.
 
-## Décision
+## Decision
 
-**SQLite** (`better-sqlite3`), un seul fichier : `~/.cogitator/cogitator.db`. Colonnes `json` via JSON1. Les transcripts de conversation ne sont **pas** dans la base : ils vivent dans les `.jsonl` pi (source de vérité), cogitator ne stocke que les métadonnées + snapshot de config de spawn.
+**SQLite** (`better-sqlite3`), a single file: `~/.cogitator/cogitator.db`. `json` columns via JSON1. Conversation transcripts are **not** in the database: they live in pi's `.jsonl` files (source of truth); cogitator stores only metadata + the spawn configuration snapshot.
 
-## Conséquences
+## Consequences
 
-+ Requêtes simples (runs récents, conversations par workspace), intégrité, un seul fichier à sauvegarder
-+ Même choix qu'AionUi (précédent éprouvé pour ce profil d'usage)
-− Dépendance native better-sqlite3 (prebuilt binaires, acceptable sur macOS/Linux cibles)
++ Simple queries (recent runs, conversations by workspace), integrity, a single file to back up
++ Same choice as AionUi (proven precedent for this usage profile)
+− Native better-sqlite3 dependency (prebuilt binaries, acceptable on the target macOS/Linux platforms)
 
-## Alternatives rejetées
+## Rejected alternatives
 
-- JSON multi-fichiers → requêtes historique cron pénibles, risque d'écriture partielle
+- Multiple JSON files → cumbersome cron history queries, risk of partial writes

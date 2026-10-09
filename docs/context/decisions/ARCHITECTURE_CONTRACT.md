@@ -1,27 +1,27 @@
 # Architecture Contract — Cogitator
 
-Règles vérifiables par la machine. Toute PR qui les enfreint échoue la review.
+Machine-verifiable rules. Any PR that violates them fails review.
 
-## Interdictions
+## Prohibitions
 
-1. **I1** — Aucune écriture dans `~/.pi/agent/settings.json` ou `~/.pi/agent/auth.json` hors des endpoints Registry (atomic write + `.bak` obligatoires).
-2. **I2** — Aucune écriture dans les dossiers des workspaces (cogitator lit le filesystem ; il ne le modifie pas).
-3. **I3** — Aucun spawn de process pi en dehors de `PiProcessPool` (un seul point de spawn ; flags matérialisés depuis le snapshot de preset, jamais reconstruits ad hoc).
-4. **I4** — L'entry de l'extension pi ne doit rien exécuter au load si ce n'est enregistrer la commande `/cogitator` (pas de serveur démarré dans le process hôte).
-5. **I5** — Aucune donnée de transcript dans la base SQLite (uniquement métadonnées + snapshot de config ; les transcripts vivent dans les `.jsonl` pi).
+1. **I1** — No writes to `~/.pi/agent/settings.json` or `~/.pi/agent/auth.json` outside Registry endpoints (atomic write + `.bak` required).
+2. **I2** — No writes to workspace directories (cogitator reads the filesystem; it does not modify it).
+3. **I3** — No pi process spawns outside `PiProcessPool` (a single spawn point; flags materialized from the preset snapshot, never reconstructed ad hoc).
+4. **I4** — The pi extension entry point must do nothing at load time except register the `/cogitator` command (no server started in the host process).
+5. **I5** — No transcript data in the SQLite database (only metadata + configuration snapshot; transcripts live in pi's `.jsonl` files).
 
 ## Obligations
 
-1. **O1** — Toute écriture de preset d'agent déclenche l'Apply (génération/suppression des `.md` herdr) ; le store et le registre ne divergent pas.
-2. **O2** — Les définitions herdr générées portent le préfixe `noo-<agent-slug>-` et sont les seules fichiers que cogitator supprime dans `~/.pi/agents/` (jamais un fichier non généré par lui).
-3. **O3** — Un run cron crée toujours un `CronRun` (succès comme échec comme skip).
-4. **O4** — Le serveur écoute sur `127.0.0.1` uniquement.
-5. **O5** — Les flags de spawn passent `--no-skills` dès qu'une liste de skills explicite est fournie (jamais de fusion avec la découverte globale).
-6. **O6** — Le snapshot de config est figé dans `Conversation` au spawn ; les modifications de preset n'altèrent jamais une session ouverte.
+1. **O1** — Every agent preset write triggers Apply (generation/deletion of herdr `.md` files); the store and registry do not diverge.
+2. **O2** — Generated herdr definitions carry the `noo-<agent-slug>-` prefix and are the only files cogitator deletes in `~/.pi/agents/` (never a file it did not generate).
+3. **O3** — A cron run always creates a `CronRun` (success, failure or skip).
+4. **O4** — The server listens on `127.0.0.1` only.
+5. **O5** — Spawn flags include `--no-skills` whenever an explicit skills list is provided (never merge with global discovery).
+6. **O6** — The configuration snapshot is frozen in `Conversation` at spawn; preset changes never alter an open session.
 
 ## Conventions
 
-- Slugs : kebab-case, ≤64 caractères, préfixe `noo-` réservé aux subagents générés.
-- Ports : serveur 5320 (variables `COGITATOR_PORT`).
-- Données : `~/.cogitator/` (db, tmp prompts, logs).
-- Erreurs API : JSON `{ "error": string }` + code HTTP correct.
+- Slugs: kebab-case, ≤64 characters, `noo-` prefix reserved for generated subagents.
+- Ports: server 5320 (`COGITATOR_PORT` variable).
+- Data: `~/.cogitator/` (db, temporary prompts, logs).
+- API errors: JSON `{ "error": string }` + correct HTTP status code.

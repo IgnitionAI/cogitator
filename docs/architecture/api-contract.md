@@ -1,75 +1,75 @@
 # API Contract — Cogitator
 
-Base URL : `http://127.0.0.1:5320`. Tout est local, sans auth (solo machine — ADR-004/007).
-Erreurs : JSON `{ "error": string }`, codes HTTP standards. Écritures sensibles : atomic write + backup (`.bak`) côté serveur.
+Base URL: `http://127.0.0.1:5320`. Everything is local, with no authentication (single-user machine — ADR-004/007).
+Errors: JSON `{ "error": string }`, standard HTTP status codes. Sensitive writes: server-side atomic write + backup (`.bak`).
 
-## Registry (config pi)
+## Registry (pi configuration)
 
-| Méthode | Route | Description |
+| Method | Route | Description |
 |---|---|---|
-| GET | `/api/providers` | Providers du catalogue pi + statut auth + modèles par provider |
-| POST | `/api/providers` | Ajouter un provider (écrit `models.json` + `auth.json`) |
-| PUT | `/api/providers/:id` | Modifier (merge, champs préservés inconnus) |
-| DELETE | `/api/providers/:id` | Supprimer + retirer la clé d'`auth.json` |
-| GET | `/api/skills` | Skills découverts (union des emplacements pi) : name, description, path |
-| GET | `/api/mcp` | Serveurs MCP user-level (`~/.pi/agent/mcp.json`) |
-| PUT | `/api/mcp` | Remplace le fichier (validé avant écriture) |
+| GET | `/api/providers` | Providers from the pi catalog + authentication status + models by provider |
+| POST | `/api/providers` | Add a provider (writes `models.json` + `auth.json`) |
+| PUT | `/api/providers/:id` | Update (merge, preserving unknown fields) |
+| DELETE | `/api/providers/:id` | Delete + remove the key from `auth.json` |
+| GET | `/api/skills` | Discovered skills (union of pi locations): name, description, path |
+| GET | `/api/mcp` | User-level MCP servers (`~/.pi/agent/mcp.json`) |
+| PUT | `/api/mcp` | Replace the file (validated before writing) |
 
 ## Agents
 
-| Méthode | Route | Description |
+| Method | Route | Description |
 |---|---|---|
-| GET | `/api/agents` | Liste des presets (sans prompts complets) |
-| POST | `/api/agents` | Créer + Apply (génère les `.md` subagents) |
-| GET | `/api/agents/:id` | Détail complet |
-| PUT | `/api/agents/:id` | Modifier + Apply |
-| DELETE | `/api/agents/:id` | Supprimer + retirer les `.md` générés |
-| POST | `/api/agents/:id/validate` | Vérifie provider/modèle/skills/MCP (existence, shape) |
+| GET | `/api/agents` | List presets (without full prompts) |
+| POST | `/api/agents` | Create + Apply (generates subagent `.md` files) |
+| GET | `/api/agents/:id` | Full details |
+| PUT | `/api/agents/:id` | Update + Apply |
+| DELETE | `/api/agents/:id` | Delete + remove generated `.md` files |
+| POST | `/api/agents/:id/validate` | Check provider/model/skills/MCP (existence, structure) |
 
 ## Workspaces
 
-| Méthode | Route | Description |
+| Method | Route | Description |
 |---|---|---|
-| GET | `/api/workspaces` | Liste + nb de conversations |
-| POST | `/api/workspaces` | Créer `{ dir, name?, default_agent_id? }` — le dossier doit exister |
-| PUT | `/api/workspaces/:id` | Renommer, changer l'agent par défaut |
-| DELETE | `/api/workspaces/:id` | Supprimer (les sessions pi survivent sur disque) |
-| GET | `/api/fs/browse?path=` | File-picker serveur (home racine, entrée par entrée) |
+| GET | `/api/workspaces` | List + conversation count |
+| POST | `/api/workspaces` | Create `{ dir, name?, default_agent_id? }` — the directory must exist |
+| PUT | `/api/workspaces/:id` | Rename, change the default agent |
+| DELETE | `/api/workspaces/:id` | Delete (pi sessions remain on disk) |
+| GET | `/api/fs/browse?path=` | Server-side file picker (rooted at home, entry by entry) |
 
 ## Conversations
 
-| Méthode | Route | Description |
+| Method | Route | Description |
 |---|---|---|
-| GET | `/api/conversations?workspace_id=&include=all` | Liste (métadonnées depuis la base + titre depuis le `.jsonl`) |
-| POST | `/api/conversations` | Spawn. Body : `{ workspace_id? }` + soit `{ agent_id }` soit `{ provider, model, thinking?, system_prompt?, skills?, tools? }` (ad hoc), `prompt?` initial |
-| GET | `/api/conversations/:id` | `{ conversation, live, streaming }` : détail et snapshot, présence du processus, état de génération lu via le pool (`live` ne signifie pas qu’un tour est en cours) |
-| GET | `/api/conversations/:id/events` | **SSE** — événements pi (tokens, tool calls, status) |
-| POST | `/api/conversations/:id/messages` | Envoyer un message `{ text, images? }` |
-| POST | `/api/conversations/:id/stop` | Interrompre le tour en cours |
-| POST | `/api/conversations/:id/model` | Changer de modèle en cours de session (natif pi) |
-| DELETE | `/api/conversations/:id` | Fermer + retirer du pool (le `.jsonl` reste) |
+| GET | `/api/conversations?workspace_id=&include=all` | List (metadata from the database + title from the `.jsonl`) |
+| POST | `/api/conversations` | Spawn. Body: `{ workspace_id? }` + either `{ agent_id }` or `{ provider, model, thinking?, system_prompt?, skills?, tools? }` (ad hoc), initial `prompt?` |
+| GET | `/api/conversations/:id` | `{ conversation, live, streaming }`: details and snapshot, process presence, generation state read through the pool (`live` does not mean a turn is in progress) |
+| GET | `/api/conversations/:id/events` | **SSE** — pi events (tokens, tool calls, status) |
+| POST | `/api/conversations/:id/messages` | Send a message `{ text, images? }` |
+| POST | `/api/conversations/:id/stop` | Interrupt the current turn |
+| POST | `/api/conversations/:id/model` | Change the model during a session (native pi support) |
+| DELETE | `/api/conversations/:id` | Close + remove from the pool (the `.jsonl` remains) |
 
-Les réponses aux composants interactifs utilisent le même `POST /messages` : une enveloppe `cogitator-response` dans `text`, sans endpoint d’action ni autorisation d’exécution supplémentaire. Le contrat de rendu et la politique de présentation automatique sont fournis au démarrage/reprise par le spawner, y compris pour les anciennes sessions ; leurs snapshots et transcriptions ne sont pas réécrits. Voir [le contrat d’UI générative](../chat-generative-ui.md).
+Responses to interactive components use the same `POST /messages`: a `cogitator-response` envelope in `text`, with no action endpoint or additional execution authorization. The rendering contract and automatic presentation policy are supplied by the spawner at startup/resume, including for older sessions; their snapshots and transcripts are not rewritten. See [the generative UI contract](../chat-generative-ui.md).
 
 ## Schedules (cron)
 
-| Méthode | Route | Description |
+| Method | Route | Description |
 |---|---|---|
-| GET | `/api/schedules` | Tâches + `last_run_at`, `next_run_at` calculé |
-| POST | `/api/schedules` | Créer `{ name, cron_expr, prompt, agent_id?, workspace_id?, output_policy, busy_policy, catchup }` |
-| PUT | `/api/schedules/:id` | Modifier / enable / disable |
-| DELETE | `/api/schedules/:id` | Supprimer (l'historique des runs est conservé) |
-| POST | `/api/schedules/:id/run` | Fire manuel immédiat |
-| GET | `/api/schedules/:id/runs?limit=` | Historique (runs récents d'abord) |
+| GET | `/api/schedules` | Tasks + `last_run_at`, calculated `next_run_at` |
+| POST | `/api/schedules` | Create `{ name, cron_expr, prompt, agent_id?, workspace_id?, output_policy, busy_policy, catchup }` |
+| PUT | `/api/schedules/:id` | Update / enable / disable |
+| DELETE | `/api/schedules/:id` | Delete (run history is retained) |
+| POST | `/api/schedules/:id/run` | Trigger immediately by hand |
+| GET | `/api/schedules/:id/runs?limit=` | History (most recent runs first) |
 
-## Events global
+## Global events
 
-| Méthode | Route | Description |
+| Method | Route | Description |
 |---|---|---|
-| GET | `/api/events` | **SSE** — naissance/mort de sessions, changements de statut, fins de run cron (pour badges/notifs UI) |
+| GET | `/api/events` | **SSE** — session creation/termination, status changes, cron run completion (for UI badges/notifications) |
 
 ## Health
 
-| Méthode | Route | Description |
+| Method | Route | Description |
 |---|---|---|
 | GET | `/api/health` | `{ ok, version, pi_version, sessions_active, db }` |

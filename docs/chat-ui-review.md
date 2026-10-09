@@ -1,63 +1,63 @@
-# Revue consolidée — chat enrichi et UI générative
+# Consolidated review — rich chat and generative UI
 
-## Périmètre et couverture
+## Scope and coverage
 
-Conversations principales et chat « Chef de projet » des workspaces. React 19, TypeScript, CSS natif et tokens existants ; thème sombre, Inter, accent indigo. Références : `PRODUCT.md`, `DESIGN.md`, `docs/context/decisions/ARCHITECTURE_CONTRACT.md`, `docs/chat-generative-ui.md` et les six guides du skill `better`.
+Main conversations and the “Chef de projet” (project manager) workspace chat. React 19, TypeScript, native CSS, and existing tokens; dark theme, Inter, indigo accent. References: `PRODUCT.md`, `DESIGN.md`, `docs/context/decisions/ARCHITECTURE_CONTRACT.md`, `docs/chat-generative-ui.md`, and the six guides in the `better` skill.
 
-La revue porte sur le rendu réellement observé dans Chrome, complété par les sources et les tests. Les appels API des parcours navigateur sont interceptés : aucune conversation, commande ou donnée utilisateur réelle n'a été créée par ces scénarios. Les limites de lecture historique et d'identification des messages sont explicitées dans le document du contrat.
+The review covers rendering actually observed in Chrome, supplemented by source inspection and tests. API calls in browser flows are intercepted: these scenarios created no real conversations, commands, or user data. Historical reading and message identification limits are explicitly described in the contract document.
 
-| Domaine | Preuves inspectées | Résultat |
+| Domain | Evidence inspected | Result |
 | --- | --- | --- |
-| Accessibility | Contrôles natifs/labels/fieldset dans `web/src/GenerativeUI.tsx:43`, focus erreur/succès à `:75`, ordre de tabulation du composeur, tableaux défilants, en-tête unique du workspace, mouvement réduit | Clear après corrections ; lecteur d'écran réel non testé |
-| Layout | Captures 1440/768/390/320 px, chat embarqué, viewport 720 × 450 ; mesures de débordement et de visibilité du composeur ; `web/src/chat.css:12`, `:68`, `:167` | Clear après corrections |
-| Writing | États français, erreurs récupérables, avertissement sur les secrets, distinction transmission/exécution, libellés d'outils et interface invalide ; `web/src/GenerativeUI.tsx:66`, `src/generative-ui.ts:67` | Clear |
-| Typography | Hiérarchie inspectée sur captures, colonne de lecture 760 px, prose 75ch, code monospace, saisie mobile 16 px ; `web/src/chat.css:16`, `:32`, `web/src/markdown.tsx:106` | Clear |
-| Colors | Contrastes mesurés sur tokens réellement chargés ; sélection radio native + bordure, états texte + icône ; `web/src/chat.css:94`, `web/src/ToolResult.tsx:54` | Clear |
-| UI | Formulaire/choix/checklist/tableau, copie de code, outils, chargement/erreur/retry/résumé, source invalide, historique, coupures SSE ; scripts et tests ci-dessous | Clear sur les scénarios contrôlés |
+| Accessibility | Native controls/labels/fieldset in `web/src/GenerativeUI.tsx:43`, error/success focus at `:75`, composer tab order, scrollable tables, single workspace heading, reduced motion | Clear after corrections; real screen reader not tested |
+| Layout | Screenshots at 1440/768/390/320 px, embedded chat, 720 × 450 viewport; overflow and composer visibility measurements; `web/src/chat.css:12`, `:68`, `:167` | Clear after corrections |
+| Writing | French status text, recoverable errors, warning about secrets, distinction between submission and execution, tool labels and invalid interface; `web/src/GenerativeUI.tsx:66`, `src/generative-ui.ts:67` | Clear |
+| Typography | Hierarchy inspected in screenshots, 760 px reading column, 75ch prose, monospace code, 16 px mobile input; `web/src/chat.css:16`, `:32`, `web/src/markdown.tsx:106` | Clear |
+| Colors | Contrast measured on actually loaded tokens; native radio selection + border, text + icon states; `web/src/chat.css:94`, `web/src/ToolResult.tsx:54` | Clear |
+| UI | Form/choices/checklist/table, code copying, tools, loading/error/retry/summary, invalid source, history, SSE interruptions; scripts and tests below | Clear for the controlled scenarios |
 
-## Constats corrigés
+## Corrected findings
 
-Tous les constats ci-dessous sont **résolus** dans cette passe. Ils documentent les causes observées et leurs corrections, pas du travail restant.
+All findings below were **resolved** in this pass. They document the observed causes and their corrections, not remaining work.
 
 | Severity | Domain | Location | Before | After | Why |
 | --- | --- | --- | --- | --- | --- |
-| MEDIUM | UI | `web/src/screens/Conversations.tsx:132`, `:339`, `:386` | Une coupure pouvait conserver un résultat partiel, un formulaire désactivé ou une clôture JSON manquante ; la première hydratation pouvait dupliquer une réponse en insérant le raisonnement | Relecture chronologique, outils associés par ID, état réel `isStreaming`, réparation des trous testés et clés locales stables | Une reconnexion doit rétablir l'état exploitable et préserver une saisie existante |
-| MEDIUM | UI | `web/src/GenerativeUI.tsx:122` | Un bloc non clôturé restait en préparation après interruption/rechargement | Préparation seulement pendant le streaming ; sinon erreur lisible, source et demande de correction | Un état d'attente doit avoir une sortie en cas d'échec |
-| MEDIUM | Accessibility | `web/src/GenerativeUI.tsx:75`, `web/src/screens/Conversations.tsx:614` | Remplacer le formulaire pouvait perdre le focus ; ordre DOM du composeur différent de l'ordre visuel | Focus explicite sur erreur/résumé ; saisie puis outils puis envoi | Le clavier doit conserver un point de reprise prévisible |
-| MEDIUM | Layout | `web/src/chat.css:13`, `:68` | Des outils pouvaient être comprimés en une ligne vide ; le bouton de retour aux derniers messages recouvrait une action | Enfants du fil non compressibles ; bouton dans le flux normal, hors de la zone de défilement | Les contenus techniques et les actions doivent rester visibles et atteignables |
-| MEDIUM | Layout | `web/src/chat.css:2`, `:167` | Une petite hauteur laissait trop peu de place au fil ; le défilement du workspace pouvait déplacer la page derrière la barre supérieure | Chrome compact en faible hauteur, défilement interne borné, hauteur minimale du chat embarqué | Le reflow doit conserver un fil lisible, le titre et le composeur sans recouvrement |
-| LOW | Typography | `web/src/markdown.tsx:106`, `web/src/chat.css:32` | Une réponse débutant par `##` sautait directement à un petit niveau de titre ; prose trop large | Premier titre rendu au niveau de section et prose limitée à 75ch | Hiérarchie et longueur de ligne facilitent la lecture des réponses longues |
+| MEDIUM | UI | `web/src/screens/Conversations.tsx:132`, `:339`, `:386` | An interruption could leave a partial result, a disabled form, or a missing JSON closing fence; initial hydration could duplicate a response when inserting reasoning | Chronological replay, tools matched by ID, actual `isStreaming` state, repair of tested gaps, and stable local keys | Reconnection must restore a usable state and preserve existing input |
+| MEDIUM | UI | `web/src/GenerativeUI.tsx:122` | An unclosed block remained in preparation after interruption/reloading | Preparation only during streaming; otherwise, a readable error, source, and correction request | A waiting state must provide a way out on failure |
+| MEDIUM | Accessibility | `web/src/GenerativeUI.tsx:75`, `web/src/screens/Conversations.tsx:614` | Replacing the form could lose focus; composer DOM order differed from visual order | Explicit focus on error/summary; input, then tools, then send | Keyboard users must retain a predictable point from which to continue |
+| MEDIUM | Layout | `web/src/chat.css:13`, `:68` | Tools could be compressed into an empty line; the return-to-latest-messages button overlapped an action | Non-shrinking thread children; button in normal flow, outside the scrolling area | Technical content and actions must remain visible and reachable |
+| MEDIUM | Layout | `web/src/chat.css:2`, `:167` | A short viewport left too little room for the thread; workspace scrolling could move the page behind the top bar | Compact chrome at low heights, bounded internal scrolling, minimum height for embedded chat | Reflow must preserve a readable thread, title, and composer without overlap |
+| LOW | Typography | `web/src/markdown.tsx:106`, `web/src/chat.css:32` | A response starting with `##` jumped directly to a small heading level; prose was too wide | First heading rendered at section level and prose limited to 75ch | Hierarchy and line length make long responses easier to read |
 
-Aucun constat d'interface actionnable restant dans le périmètre contrôlé.
+No actionable interface findings remain within the controlled scope.
 
-## Vérification
+## Verification
 
-### Réussie
+### Passed
 
-- `npm run build` : typechecks web/serveur, bundle Vite et compilation serveur.
-- `npm test` : **92 tests, 92 réussis**. Schémas stricts, limites, contenu inerte, réponses corrélées, snapshots figés, lecture JSONL, outils, récupération de texte et absence de duplication dans les cas ajoutés.
-- `BROWSER_TOOLS_DIR=/Users/salimlaimeche/.pi/agent/skills/browser-tools node scripts/ui-generative.mjs` :
-  - bouton dédié supprimé du composeur ; capacité automatique vérifiée côté spawner pour les nouvelles et anciennes sessions, sans réécriture de snapshot ni message synthétique ;
-  - quatre composants à 1440, 768, 390 et 320 px ; aucun débordement de page ; outils non écrasés ; composeur visible ;
-  - échec 503, valeurs conservées, nouvelle tentative, focus sur l'erreur puis sur le résumé ; brouillon du composeur intact ;
-  - formulaires, choix et checklists relus après rechargement ; filtrage et tri de tableau sans envoi ;
-  - UI partielle non interactive, activation après fin de génération, contenu utilisateur jamais interprété comme une interface, HTML arbitraire refusé ;
-  - reconnexion avec clôture, résultat d'outil et `agent_end` manqués ; réponse utilisateur d'un autre client récupérée ; saisie maintenue malgré l'insertion de raisonnement ;
-  - chat embarqué à 1440/390/320 px et 720 × 450 px ; un seul h1 de page ; titre non masqué par la barre d'application ;
-  - aucune erreur JavaScript ; quatre requêtes de soumission simulées, aucune envoyée au backend réel.
-- `BROWSER_TOOLS_DIR=/Users/salimlaimeche/.pi/agent/skills/browser-tools node scripts/ui-stream-recovery.mjs` : récupération après échec initial de l'historique, snapshot plus court ou plus long que le flux ; pas de doublon et prochain delta dans la bonne bulle.
-- `BROWSER_TOOLS_DIR=/Users/salimlaimeche/.pi/agent/skills/browser-tools node scripts/ui-polish.mjs` : six pages, sept onglets workspace, drawer, dialogs, états vides/erreur et clavier ; aucune erreur JavaScript.
-- `BROWSER_TOOLS_DIR=/Users/salimlaimeche/.pi/agent/skills/browser-tools node scripts/ui-regression.mjs` : fil long mobile, saisie, échec d'envoi, historique indisponible, navigation workspace et chat embarqué.
-- Contrastes mesurés : texte secondaire/surface **5,86:1**, métadonnées/surface **5,13:1**, blanc/accent **4,70:1**, bordure de contrôle/fond **3,08:1**.
-- Captures inspectées dans `/tmp/cogitator-generative/`, notamment `conversation-1440.png`, `choices-390.png`, `form-1440.png`, `form-error-320.png`, `table-320.png`, `workspace-320.png`, `tool-error.png`, `zoom-200.png`, `workspace-zoom-200.png`.
+- `npm run build`: web/server typechecks, Vite bundle, and server compilation.
+- `npm test`: **92 tests, 92 passed**. Strict schemas, limits, inert content, correlated responses, frozen snapshots, JSONL reading, tools, text recovery, and no duplication in the added cases.
+- `BROWSER_TOOLS_DIR=/Users/salimlaimeche/.pi/agent/skills/browser-tools node scripts/ui-generative.mjs`:
+  - dedicated button removed from the composer; automatic capability verified in the spawner for new and old sessions, with no snapshot rewrite or synthetic message;
+  - four components at 1440, 768, 390, and 320 px; no page overflow; tools not collapsed; composer visible;
+  - 503 failure, values preserved, retry, focus on the error and then the summary; composer draft intact;
+  - forms, choices, and checklists replayed after reloading; table filtering and sorting without sending;
+  - partial UI non-interactive, activation after generation ends, user content never interpreted as an interface, arbitrary HTML rejected;
+  - reconnection with a missed closing fence, tool result, and `agent_end`; user response from another client recovered; input preserved despite reasoning insertion;
+  - embedded chat at 1440/390/320 px and 720 × 450 px; a single page h1; title not hidden by the app bar;
+  - no JavaScript errors; four simulated submission requests, none sent to the real backend.
+- `BROWSER_TOOLS_DIR=/Users/salimlaimeche/.pi/agent/skills/browser-tools node scripts/ui-stream-recovery.mjs`: recovery after initial history failure, snapshot shorter or longer than the stream; no duplicate, and the next delta appears in the correct bubble.
+- `BROWSER_TOOLS_DIR=/Users/salimlaimeche/.pi/agent/skills/browser-tools node scripts/ui-polish.mjs`: six pages, seven workspace tabs, drawer, dialogs, empty/error states, and keyboard; no JavaScript errors.
+- `BROWSER_TOOLS_DIR=/Users/salimlaimeche/.pi/agent/skills/browser-tools node scripts/ui-regression.mjs`: long mobile thread, input, send failure, unavailable history, workspace navigation, and embedded chat.
+- Measured contrast ratios: secondary text/surface **5.86:1**, metadata/surface **5.13:1**, white/accent **4.70:1**, control border/background **3.08:1**.
+- Screenshots inspected in `/tmp/cogitator-generative/`, including `conversation-1440.png`, `choices-390.png`, `form-1440.png`, `form-error-320.png`, `table-320.png`, `workspace-320.png`, `tool-error.png`, `zoom-200.png`, `workspace-zoom-200.png`.
 
 ### Not verified
 
-- Génération par un modèle réel et pertinence des composants qu'il choisirait : fixtures navigateur et clients pi factices uniquement.
-- VoiceOver/NVDA, Safari/Firefox et appareil mobile physique/clavier virtuel.
-- Zoom navigateur natif : le test utilise un viewport CSS de 720 × 450, équivalent au reflow à 200 % d'un écran de 1440 × 900.
-- Toutes les ambiguïtés de rapprochement de messages sans identifiants autoritatifs, les transcriptions dépassant la fenêtre historique et les sorties de modèles arbitraires.
+- Generation by a real model and the suitability of the components it would choose: browser fixtures and fake pi clients only.
+- VoiceOver/NVDA, Safari/Firefox, and a physical mobile device/virtual keyboard.
+- Native browser zoom: the test uses a 720 × 450 CSS viewport, equivalent to 200% reflow on a 1440 × 900 screen.
+- All message-matching ambiguities without authoritative identifiers, transcripts exceeding the history window, and arbitrary model outputs.
 
 ## Verdict
 
-**Approve** — pour la couverture déclarée et les scénarios reproductibles ci-dessus. Aucun constat HIGH restant. Ce verdict ne certifie ni le comportement d'un modèle réel ni les environnements non testés.
+**Approve** — for the declared coverage and reproducible scenarios above. No remaining HIGH findings. This verdict certifies neither real model behavior nor untested environments.

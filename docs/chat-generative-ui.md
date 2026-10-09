@@ -1,58 +1,58 @@
-# Chat enrichi et UI générative
+# Rich chat and generative UI
 
-## Périmètre validé
+## Validated scope
 
-Les conversations principales et le chat de workspace reçoivent le même rendu. Le propriétaire a confirmé les deux volets : enrichissement automatique des messages/outils et composants interactifs proposés par les agents. L'identité sombre, dense et française reste inchangée.
+Main conversations and workspace chat use the same rendering. The owner confirmed both aspects: automatic enrichment of messages/tools and interactive components offered by agents. The dark, dense, French-language identity remains unchanged.
 
-Objectifs : lecture confortable, détails techniques consultables, saisie compacte, réponses interactives conservées dans l'historique. Usage local, sans service externe. Aucun HTML, JavaScript ou style arbitraire provenant du modèle n'est exécuté. Une soumission transmet un message à l'agent, elle ne constitue jamais une autorisation d'exécuter une commande ou une opération destructive.
+Goals: comfortable reading, accessible technical details, compact input, and interactive responses retained in history. Local use, with no external service. No arbitrary HTML, JavaScript, or styles from the model are executed. A submission sends a message to the agent; it never authorizes a command or destructive operation.
 
-## Décisions
+## Decisions
 
-| Choix | Alternatives écartées | Raison |
+| Choice | Rejected alternatives | Reason |
 | --- | --- | --- |
-| Catalogue React fini, JSON validé avec Zod déjà installé | SDK génératif externe ; exécution de JSX/HTML généré | Indépendance des fournisseurs, surface de sécurité bornée, maintenance locale |
-| Blocs `cogitator-ui` dans le texte assistant | Nouveau transport SSE et seconde base d'historique | Réutiliser le streaming et les JSONL pi, source de vérité existante |
-| Réponses dans des messages utilisateur `cogitator-response` | État exclusivement local ou transcript dans SQLite | Relecture des soumissions après rechargement, respect de I5 |
-| Copie du contrat de rendu dans le snapshot des nouvelles conversations | Modification rétroactive des presets/sessions | Respect du snapshot O6 ; le spawner complète à l’exécution les anciennes sessions dépourvues de contrat, sans modifier leurs données figées |
-| Styles CSS et composants natifs | Nouvelle librairie de composants ou d'animation | Réutiliser les tokens, focus, contrôles et conventions existants |
+| Finite React catalog, JSON validated with the already-installed Zod | External generative SDK; execution of generated JSX/HTML | Provider independence, bounded security surface, local maintenance |
+| `cogitator-ui` blocks in assistant text | New SSE transport and a second history database | Reuse streaming and pi JSONL files, the existing source of truth |
+| Responses in `cogitator-response` user messages | Exclusively local state or a transcript in SQLite | Replay submissions after reloading, comply with I5 |
+| Copy of the rendering contract in new conversation snapshots | Retroactive changes to presets/sessions | Respect snapshot O6; at runtime, the spawner supplements older sessions that lack a contract without changing their frozen data |
+| CSS styles and native components | New component or animation library | Reuse existing tokens, focus behavior, controls, and conventions |
 
-## Choix automatique du format
+## Automatic format selection
 
-L’agent choisit spontanément le format utile, sans bouton dédié : texte par défaut, formulaire/choix pour des informations structurées, checklist pour une sélection multiple, tableau pour une comparaison. Il doit accepter une réponse en texte libre et ne pas imposer un composant. Seule la présentation est automatique ; une soumission exige toujours une action explicite.
+The agent chooses a useful format on its own, with no dedicated button: text by default, a form/choices for structured information, a checklist for multiple selections, or a table for comparison. It must accept free-text responses and must not force a component. Only presentation is automatic; submission always requires an explicit action.
 
-Le spawner commun aux conversations et aux tâches planifiées transmet cette politique dans le contexte système à chaque démarrage/reprise. Il conserve le contrat figé s’il existe et fournit le contrat v1 aux anciennes sessions qui n’en ont pas. Aucun message utilisateur artificiel, appel de modèle préalable ou changement de preset n’est nécessaire. Après mise à jour du serveur, les processus sont recréés paresseusement au prochain envoi avec le même fichier de session.
+The spawner shared by conversations and scheduled tasks passes this policy in the system context on every start/resume. It retains the frozen contract when one exists and supplies the v1 contract to older sessions that lack one. No artificial user message, preliminary model call, or preset change is needed. After a server update, processes are lazily recreated on the next send using the same session file.
 
-## Contrat v1
+## Contract v1
 
-Un bloc clôturé `cogitator-ui` contient un objet strict : `version: 1`, `id` unique à l'étape, `kind`, `title`, `description` optionnelle.
+A fenced `cogitator-ui` block contains a strict object: `version: 1`, an `id` unique to the step, `kind`, `title`, and an optional `description`.
 
-- `form` : `fields` (id, label, type text/textarea/number/select, required optionnel ; options pour select), `submitLabel` optionnel.
-- `choices` : `options` (id, label, description optionnelle), `submitLabel` optionnel. Une sélection.
-- `checklist` : `items` (id, label, description optionnelle), `submitLabel` optionnel. Plusieurs sélections, dont aucune si approprié.
-- `table` : `columns` (id, label), `rows` (valeurs scalaires par colonne). Filtre et tri locaux ; aucune écriture.
+- `form`: `fields` (id, label, type text/textarea/number/select, optional required; options for select), optional `submitLabel`.
+- `choices`: `options` (id, label, optional description), optional `submitLabel`. One selection.
+- `checklist`: `items` (id, label, optional description), optional `submitLabel`. Multiple selections, including none when appropriate.
+- `table`: `columns` (id, label), `rows` (scalar values per column). Local filtering and sorting; no writes.
 
-Les limites de taille, nombre de champs, options et lignes sont validées à l'entrée. Seuls les messages assistant peuvent déclencher ce rendu. Un bloc incomplet pendant le streaming affiche une préparation non interactive. Un bloc resté incomplet après interruption ou rechargement passe en erreur avec une demande de correction. Un bloc invalide garde son texte source consultable et propose de demander une correction. Les blocs de code ordinaires ne sont jamais interprétés comme une interface.
+Limits on size and the number of fields, options, and rows are validated at input. Only assistant messages can trigger this rendering. An incomplete block during streaming shows a non-interactive preparation state. A block still incomplete after interruption or reloading switches to an error state with a request for correction. An invalid block keeps its source text accessible and offers a way to request correction. Ordinary code blocks are never interpreted as an interface.
 
-Une réponse contient `version: 1`, `request` (la spécification validée exacte) et `values` (valeurs validées contre cette spécification). Cette référence complète évite une corrélation fragile par position dans la timeline ou un ID réutilisé. Elle est bornée par les limites du schéma. Le libellé humain accompagne le bloc JSON ; dans le chat il s'affiche comme un récapitulatif. Le serveur reçoit un message utilisateur normal. Pas de nouvelle permission, commande, URL d'action ou secret à saisir dans une interface générée.
+A response contains `version: 1`, `request` (the exact validated specification), and `values` (values validated against that specification). This complete reference avoids fragile correlation by timeline position or a reused ID. It is bounded by the schema limits. A human-readable label accompanies the JSON block; in chat, it appears as a summary. The server receives a normal user message. No new permission, command, action URL, or secret to enter in a generated interface.
 
-Les contrôles sont désactivés pendant l'envoi et le travail de l'agent. Une reconnexion relit l'état `isStreaming` du processus pi via le pool et l'historique JSONL ; un processus vivant n'est pas nécessairement en train de produire une réponse. Les clés locales des messages restent stables quand la relecture insère du raisonnement, afin de ne pas réinitialiser les formulaires. L'échec reste inline, conserve les valeurs et permet de réessayer. Après succès, le récapitulatif est en lecture seule. Le texte saisi dans le composeur n'est pas remplacé par une réponse de formulaire. Les réponses ne sont considérées comme présentes que lorsqu'elles figurent dans les messages utilisateur, jamais dans un résultat d'outil ou un message assistant.
+Controls are disabled while sending and while the agent is working. A reconnection rereads the pi process's `isStreaming` state through the pool and JSONL history; a running process is not necessarily producing a response. Local message keys remain stable when replay inserts reasoning, so forms are not reset. Failures remain inline, preserve values, and allow retries. After success, the summary is read-only. Text entered in the composer is not replaced by a form response. Responses are considered present only when they appear in user messages, never in a tool result or assistant message.
 
-## Composition visuelle
+## Visual composition
 
-- En-tête compact : titre, fournisseur/modèle, état compréhensible, accès aux fichiers et actions secondaires.
-- Colonne de lecture centrée, réponses sur le fond du chat, utilisateur dans une surface discrète. Pas de carte autour de chaque paragraphe.
-- Métadonnées et activité secondaires ; raisonnement et arguments bruts restent repliables.
-- Code avec langage et copie ; tableaux à défilement explicite ; outils avec état textuel, résumé et résultat adapté (texte, JSON, diff).
-- UI générative comme une section de réponse : titre et contexte, contrôles natifs, validation, action de transmission et récapitulatif.
-- Composeur à deux niveaux : texte, puis pièces jointes/skills et envoi. Raccourcis hors du placeholder. Retour au dernier message quand le lecteur remonte le fil.
-- Animations réservées au feedback ; aucune animation d'entrée répétée sur l'historique rechargé. Mouvement réduit respecté.
+- Compact header: title, provider/model, understandable status, access to files and secondary actions.
+- Centered reading column, responses on the chat background, user messages on a subtle surface. No card around every paragraph.
+- Secondary metadata and activity; reasoning and raw arguments remain collapsible.
+- Code with language and copy controls; explicitly scrollable tables; tools with textual status, a summary, and an appropriate result format (text, JSON, diff).
+- Generative UI as a response section: title and context, native controls, validation, submission action, and summary.
+- Two-level composer: text, then attachments/skills and send. Shortcuts outside the placeholder. Return to the latest message when the reader scrolls back through the thread.
+- Animations reserved for feedback; no repeated entrance animation on reloaded history. Reduced motion respected.
 
-## Vérification et limites
+## Verification and limitations
 
-`npm run build` et les 92 tests passent. `scripts/ui-generative.mjs` vérifie les quatre composants, le refus d'HTML arbitraire, les sorties interrompues, l'échec puis la nouvelle tentative, le focus, le rechargement, les événements manqués et la conservation d'un formulaire pendant une insertion d'historique. Chrome a été testé à 1440, 768, 390 et 320 px, ainsi qu'à 720 × 450 px (viewport CSS équivalent à un zoom de 200 % sur 1440 × 900). Toutes les requêtes API de ces scénarios sont interceptées. Rapport consolidé : `docs/chat-ui-review.md`.
+`npm run build` and all 92 tests pass. `scripts/ui-generative.mjs` checks all four components, rejection of arbitrary HTML, interrupted outputs, failure followed by retry, focus, reloading, missed events, and preservation of a form during history insertion. Chrome was tested at 1440, 768, 390, and 320 px, as well as 720 × 450 px (a CSS viewport equivalent to 200% zoom on 1440 × 900). All API requests in these scenarios are intercepted. Consolidated report: `docs/chat-ui-review.md`.
 
-Limites explicites : JSON d'interface de 64 Kio maximum, enveloppe JSON de réponse de 128 Kio, 20 champs/colonnes, 50 choix, 200 lignes. La relecture garde la fenêtre existante de 300 entrées sur les 2000 dernières lignes JSONL ; elle ne charge pas un transcript arbitrairement ancien. Les résultats d'outils historiques restent soumis au plafond serveur existant de 4000 caractères, signalé par « tronqué ». Les diffs affichent la modification demandée, pas une preuve d'écriture. Les valeurs non transmises survivent aux échecs et aux réconciliations testées, mais pas au rechargement de la page. Les soumissions transmises, elles, sont persistées par pi.
+Explicit limits: a maximum of 64 KiB for interface JSON, 128 KiB for the response JSON envelope, 20 fields/columns, 50 choices, and 200 rows. Replay retains the existing window of 300 entries from the last 2000 JSONL lines; it does not load an arbitrarily old transcript. Historical tool results remain subject to the existing server limit of 4000 characters, indicated by “tronqué” (truncated). Diffs show the requested change, not proof of a write. Unsubmitted values survive failures and the tested reconciliations, but not a page reload. Submitted responses, however, are persisted by pi.
 
-La réconciliation textuelle reste une correspondance chronologique dans cette fenêtre bornée : elle ne remplace pas des identifiants de message autoritatifs. Les scripts couvrent les scénarios d'événements manqués décrits dans le rapport, pas toutes les ambiguïtés possibles de messages textuels identiques. Aucun test avec un fournisseur de modèle réel, VoiceOver ou un appareil mobile physique n'a été effectué dans cette passe.
+Text reconciliation remains a chronological match within this bounded window: it does not replace authoritative message identifiers. The scripts cover the missed-event scenarios described in the report, not every possible ambiguity involving identical text messages. No testing with a real model provider, VoiceOver, or a physical mobile device was performed in this pass.
 
-La génération dépend de l'agent : une instruction documentée n'est pas une garantie de conformité du modèle. Le texte brut et les erreurs de validation restent accessibles. Les snapshots et transcriptions des anciennes sessions ne sont pas réécrits ; seule la capacité de présentation du contexte système est complétée à la reprise. Pas de migration de transcript, pas de dashboard arbitraire ni d'exécution d'artefacts.
+Generation depends on the agent: a documented instruction does not guarantee model compliance. Raw text and validation errors remain accessible. Older session snapshots and transcripts are not rewritten; only the presentation capability in the system context is supplemented on resume. No transcript migration, arbitrary dashboards, or artifact execution.

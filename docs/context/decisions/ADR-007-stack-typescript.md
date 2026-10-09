@@ -1,37 +1,37 @@
-# ADR-007 — TypeScript fullstack, RpcClient officiel, SSE, packaging pi package
+# ADR-007 — Full-stack TypeScript, official RpcClient, SSE, pi package distribution
 
-- Statut : accepté
-- Date : 2026-10-06
+- Status: accepted
+- Date: 2026-10-06
 
-## Contexte
+## Context
 
-Choix de stack pour : serveur Node local, UI web temps réel, communication avec pi, distribution.
+Stack choices for: local Node server, real-time web UI, communication with pi, distribution.
 
-## Décision
+## Decision
 
-| Couche | Choix | Justification |
+| Layer | Choice | Rationale |
 |---|---|---|
-| Langage | TypeScript partout | `RpcClient` officiel de pi en TS = zéro glue ; team de 1 |
-| Serveur | Node ≥22, HTTP natif (pas de framework lourd) | Même runtime que l'extension pi ; SSE trivial |
-| UI | React + Vite (build statique servi par le serveur) | Écosystème, itération rapide |
-| Temps réel | SSE (Server-Sent Events) | Modèle éprouvé (pi-web-simple) : streaming tokens pi → navigateur |
-| Persistance | SQLite (ADR-006) | — |
-| Distribution | **pi package** : `pi install npm:@ignitionai/cogitator`, commande `/cogitator` qui démarre le serveur détaché ; bin standalone `npx @ignitionai/cogitator` | La cible d'usage est l'écosystème pi |
+| Language | TypeScript throughout | pi's official `RpcClient` is in TS = no glue code; team of 1 |
+| Server | Node ≥22, native HTTP (no heavy framework) | Same runtime as the pi extension; trivial SSE |
+| UI | React + Vite (static build served by the server) | Ecosystem, fast iteration |
+| Real-time | SSE (Server-Sent Events) | Proven model (pi-web-simple): streaming pi tokens → browser |
+| Persistence | SQLite (ADR-006) | — |
+| Distribution | **pi package**: `pi install npm:@ignitionai/cogitator`, `/cogitator` command that starts the server detached; standalone executable `npx @ignitionai/cogitator` | The target usage is the pi ecosystem |
 
-## Empreinte packaging (validée contre docs/packages.md de pi 1.0.4)
+## Packaging footprint (validated against pi 1.0.4 docs/packages.md)
 
-- Manifeste `pi` explicite : `"pi": { "extensions": ["./extensions"] }` + keyword `pi-package` (visibilité galerie pi.dev/packages)
-- **`@earendil-works/pi-coding-agent` en `peerDependencies: "*"`** — fourni par l'hôte pi, jamais en `dependencies` (sinon warning + classes dupliquées : c'était le défaut de pi-web-simple)
-- `bin` autorisé : `cogitator` démarre le serveur standalone ; la commande `/cogitator` (via `pi.registerCommand()`) spawn le serveur **détaché** — l'entry de l'extension reste minimale (I4)
-- better-sqlite3 en `dependencies` : pi installe les dépendances du paquet lors de `pi install`
-- Install cible : `pi install npm:@ignitionai/cogitator` (pin de version supporté : `@x.y.z`)
+- Explicit `pi` manifest: `"pi": { "extensions": ["./extensions"] }` + `pi-package` keyword (visibility in the pi.dev/packages gallery)
+- **`@earendil-works/pi-coding-agent` in `peerDependencies: "*"`** — provided by the pi host, never in `dependencies` (otherwise a warning + duplicate classes: this was pi-web-simple's flaw)
+- `bin` allowed: `cogitator` starts the standalone server; the `/cogitator` command (via `pi.registerCommand()`) spawns the server **detached** — the extension entry point stays minimal (I4)
+- better-sqlite3 in `dependencies`: pi installs package dependencies during `pi install`
+- Target installation: `pi install npm:@ignitionai/cogitator` (version pinning supported: `@x.y.z`)
 
-## Conséquences
+## Consequences
 
-+ Une seul langage, réutilisation directe de l'API pi, packaging natif pour les utilisateurs pi
-− Extension pi chargée dans chaque session pi : l'entry doit rester minimal (enregistrer `/cogitator`, pas démarrer de serveur dans le process hôte)
++ One language, direct reuse of the pi API, native packaging for pi users
+− The pi extension is loaded in every pi session: the entry point must stay minimal (register `/cogitator`, do not start a server in the host process)
 
-## Alternatives rejetées
+## Rejected alternatives
 
-- Python/FastAPI → glue avec le RpcClient TS, deux langages
-- WebSocket → surdimensionné ; le flux est essentiellement serveur → client
+- Python/FastAPI → glue code for the TS RpcClient, two languages
+- WebSocket → overkill; the flow is primarily server → client

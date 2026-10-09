@@ -1,31 +1,31 @@
-# ADR-001 — Apply-on-spawn via flags natifs pi
+# ADR-001 — Apply-on-spawn via native pi flags
 
-- Statut : accepté
-- Date : 2026-10-06
+- Status: accepted
+- Date: 2026-10-06
 
-## Contexte
+## Context
 
-La config d'un agent (provider, modèle, thinking, skills, prompt, outils, MCP) doit s'appliquer aux sessions pi. pi ne peut pas être reconfiguré à chaud : il lit sa config au démarrage du processus et n'expose pas de RPC de reconfiguration (pi-web-simple s'en est heurté en écrivant directement `settings.json`/`auth.json`).
+An agent's configuration (provider, model, thinking, skills, prompt, tools, MCP) must apply to pi sessions. pi cannot be reconfigured on the fly: it reads its configuration at process startup and exposes no reconfiguration RPC (pi-web-simple ran into this by writing directly to `settings.json`/`auth.json`).
 
-## Décision
+## Decision
 
-Chaque conversation est spawnée avec des **flags CLI natifs** matérialisés depuis le preset :
+Each conversation is spawned with **native CLI flags** materialized from the preset:
 
 - `--model <provider>/<id>:<thinking>`
-- `--append-system-prompt <fichier>`
-- `--no-skills` + `--skill <path>` répété (skills exactes, pas la découverte globale)
+- `--append-system-prompt <file>`
+- `--no-skills` + repeated `--skill <path>` (exact skills, not global discovery)
 - `--tools` / `--exclude-tools`
-- MCP : `pi.registerMcpServer()` par l'extension au `session_start`
+- MCP: `pi.registerMcpServer()` by the extension at `session_start`
 
-Une session ouverte **garde sa config figée** ; les modifications de preset n'affectent que les spawns suivants.
+An open session **keeps its configuration frozen**; preset changes affect only subsequent spawns.
 
-## Conséquences
+## Consequences
 
-+ Prévisible, pas de mutation sauvage de sessions en cours, zéro fichier écrit dans les workspaces
-+ Bénéficie des évolutions de pi (nouveaux flags = nouvelles capacités d'agent)
-− Une session en cours ne voit pas les changements de preset (comportement voulu, documenté dans l'UI)
++ Predictable, no uncontrolled mutation of ongoing sessions, no files written to workspaces
++ Benefits from pi improvements (new flags = new agent capabilities)
+− An ongoing session does not see preset changes (intended behavior, documented in the UI)
 
-## Alternatives rejetées
+## Rejected alternatives
 
-- Écrire dans `settings.json` / `auth.json` globaux → même pi-web-simple s'y est brûlé ; risque de corruption ; pas de notion de preset
-- Générer un dossier projet temporaire par agent → inutile depuis que pi 1.0.4 expose `--skill` repeatable
+- Write to global `settings.json` / `auth.json` → even pi-web-simple ran into trouble with this; risk of corruption; no notion of presets
+- Generate a temporary project directory per agent → unnecessary since pi 1.0.4 exposes repeatable `--skill`

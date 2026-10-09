@@ -1,18 +1,20 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/web/public/icon.png" width="120" alt="Cogitator — engrenage-nébuleuse" />
+<img src="https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/web/public/icon.png" width="120" alt="Cogitator — nebula gear logo" />
 
 # Cogitator
 
-**Panneau de contrôle web pour [pi](https://pi.dev)** — agents composables, workspaces, kanban GitHub natif, cron.
+**A web control panel for [pi](https://pi.dev)** — composable agents, workspaces, GitHub-native kanban, and scheduled tasks.
 
 [![npm version](https://img.shields.io/npm/v/@ignitionai/cogitator)](https://www.npmjs.com/package/@ignitionai/cogitator)
 [![pi package](https://img.shields.io/badge/pi-package-5e6ad2)](https://pi.dev/packages)
-[![license](https://img.shields.io/npm/l/@ignitionai/cogitator)](./LICENSE)
+[![license](https://img.shields.io/npm/l/@ignitionai/cogitator)](#license)
 
 </div>
 
-Cogitator orchestre tes processus pi depuis un navigateur : tu composes des agents (provider + modèle + thinking + skills + MCP + subagents), tu pilotes des workspaces projets, tu dispatch du travail sur un board kanban dont la source de vérité est **GitHub Issues**, et tout le développement est tracé (fichiers modifiés, diffs, feed chronologique).
+Cogitator lets you orchestrate pi processes from your browser: compose agents from a provider, model, thinking level, skills, MCP servers, and subagents; manage project workspaces; and dispatch work through a kanban board backed by **GitHub Issues**. Track the work through modified files, diffs, and a chronological activity feed.
+
+The application currently has a French-language interface. The documentation is in English.
 
 ## Installation
 
@@ -20,35 +22,35 @@ Cogitator orchestre tes processus pi depuis un navigateur : tu composes des agen
 pi install npm:@ignitionai/cogitator
 ```
 
-Puis dans pi :
+Then, in pi:
 
 ```text
-/cogitator          # démarre le serveur détaché et ouvre http://127.0.0.1:5320
+/cogitator          # starts the detached server and opens http://127.0.0.1:5320
 ```
 
-Ou standalone : `npx @ignitionai/cogitator` (Node ≥ 22).
+Or run it standalone: `npx @ignitionai/cogitator` (Node.js ≥ 22.19.0).
 
-## Ce que Cogitator fait
+## Features
 
-- **Agents composables** — un preset = provider + modèle + thinking + skills exactes + serveurs MCP + prompt de scope + subagents. Matérialisé en flags natifs pi à chaque spawn (`--model id:thinking`, `--no-skills --skill …`, `--append-system-prompt`).
-- **La trinité seedée** — Majordome (opérateur, agent par défaut), Chef de Projet (board, dispatch, méthodes to-tickets/use-delegate), Architecte de Skills (création de SKILL.md). Skills complets, MCP Cogitator (28 outils).
-- **Workspaces projets** — page dédiée par dossier : board, activité fichiers (+/−), feed chronologique, arborescence read-only, équipe (qui fait quoi), chat Chef de Projet, setup de projet en un clic.
-- **Kanban = GitHub Issues** — chaque carte est une issue (labels `status:`/`priority:`), blocking edges natifs, write-through via `gh`. Zéro sync, une seule vérité, visible sur github.com.
-- **Dispatch** — « 🚀 Lancer l'agent » sur un ticket : conversation spawnée dans le workspace, carte liée (activité cumulée), passage en cours.
-- **Conversations** — streaming SSE avec reprise après coupure, code copiable, outils structurés et diffs, images (collage), historique et skills via `/skill:nom`.
-- **UI interactive automatique** — l’agent choisit entre texte, formulaires, choix, checklists et tableaux selon le besoin, dans les conversations et les workspaces. Réponses transmises explicitement et conservées dans les JSONL pi ; aucun HTML/JavaScript généré exécuté. [Contrat et limites](https://github.com/IgnitionAI/cogitator/blob/dev/docs/chat-generative-ui.md).
-- **Cron** — tâches planifiées (busy-guard, catchup), runs tracés, notifications.
-- **Providers & skills** — read model de la config pi (auth par `pi auth check`), écritures atomiques + backup, import de skills (GitHub, local, npx).
+- **Composable agents** — each preset combines a provider, model, thinking level, explicit skill set, MCP servers, scope prompt, and subagents. These become native pi flags when the process starts (`--model id:thinking`, `--no-skills --skill …`, `--append-system-prompt`).
+- **Three built-in agents** — Majordome (the default operator), Chef de Projet (project management, board dispatch, and the `to-tickets`/`use-delegate` methods), and Architecte de Skills (`SKILL.md` authoring). Includes their skills and the Cogitator MCP server with 28 tools.
+- **Project workspaces** — a dedicated page for each directory, with a board, file activity (+/−), chronological feed, read-only file tree, team overview, project manager chat, and one-click project setup.
+- **GitHub-native kanban** — each card is a GitHub issue, with `status:`/`priority:` labels, native blocking relationships, and writes through `gh`. No synchronization layer: GitHub remains the single source of truth.
+- **Agent dispatch** — use “Lancer l’agent” (launch agent) on a ticket to start a conversation in its workspace, link the card to its activity, and move it to in progress.
+- **Conversations** — SSE streaming with reconnection recovery, copyable code, structured tool output and diffs, pasted images, history, and skills invoked with `/skill:name`.
+- **Automatic interactive UI** — agents choose between text, forms, choices, checklists, and tables as needed, in both standalone and workspace conversations. Responses are submitted explicitly and saved in pi JSONL transcripts. Generated HTML and JavaScript are never executed. See the [contract and limitations](https://github.com/IgnitionAI/cogitator/blob/dev/docs/chat-generative-ui.md).
+- **Scheduled tasks** — cron scheduling with concurrent-run protection, catch-up behavior, run history, and notifications.
+- **Providers and skills** — inspect pi configuration, check authentication with `pi auth check`, use atomic writes with backups, and import skills from GitHub, local directories, or npm commands.
 
 ## Architecture
 
-Specs complètes dans [`docs/`](https://github.com/IgnitionAI/cogitator/tree/dev/docs) : [domain model](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/domain-model.md), [blueprint](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/blueprint.md), [API contract](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/api-contract.md), [ADRs](https://github.com/IgnitionAI/cogitator/tree/dev/docs/context/decisions/) (apply-on-spawn, MCP par `registerMcpServer`, board GitHub single-writer…). TypeScript strict partout, zod aux frontières, 92 tests.
+Specifications live in [`docs/`](https://github.com/IgnitionAI/cogitator/tree/dev/docs): [domain model](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/domain-model.md), [blueprint](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/blueprint.md), [API contract](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/api-contract.md), and [architecture decisions](https://github.com/IgnitionAI/cogitator/tree/dev/docs/context/decisions/). They cover apply-on-spawn configuration, MCP registration through `registerMcpServer`, and the GitHub-backed board's single-writer model. The project uses strict TypeScript, Zod validation at boundaries, and 92 tests.
 
 ```text
-Browser (React) → REST + SSE → serveur Node → pool de processus `pi --mode rpc`
-                                    ↕ SQLite ~/.cogitator + fichiers pi natifs
+Browser (React) → REST + SSE → Node server → pool of `pi --mode rpc` processes
+                                  ↕ SQLite in ~/.cogitator + native pi files
 ```
 
-## Licence
+## License
 
 MIT — © IgnitionAI

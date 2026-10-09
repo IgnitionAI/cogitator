@@ -2,87 +2,87 @@
 
 ## Bounded contexts
 
-| Contexte | Responsabilité | Entités |
+| Context | Responsibility | Entities |
 |---|---|---|
-| **Registry** | Lire/écrire la config native de pi (providers, modèles, auth, MCP user-level, skills) | ProviderRef (read model), SkillRef (read model) |
-| **Agents** | CRUD des presets d'agents et des setups de subagents | AgentPreset, SubagentSetup |
-| **Workspaces** | CRUD des workspaces (dossier + métadonnées) | Workspace |
-| **Conversations** | Spawn, cycle de vie, streaming des sessions pi | Conversation |
-| **Schedules** | Cron, historique d'exécution | CronTask, CronRun |
+| **Registry** | Read/write pi's native configuration (providers, models, authentication, user-level MCP, skills) | ProviderRef (read model), SkillRef (read model) |
+| **Agents** | CRUD for agent presets and subagent setups | AgentPreset, SubagentSetup |
+| **Workspaces** | CRUD for workspaces (directory + metadata) | Workspace |
+| **Conversations** | Spawn, lifecycle, streaming of pi sessions | Conversation |
+| **Schedules** | Cron, execution history | CronTask, CronRun |
 
-Le Registry ne **duplique** pas la config de pi : c'est un read model rafraîchi depuis `models-store.json`, `auth.json`, `~/.pi/agent/mcp.json` + scan des emplacements de skills. Les écritures passent par des endpoints dédiés (atomic write + backup).
+The Registry does not **duplicate** pi's configuration: it is a read model refreshed from `models-store.json`, `auth.json`, `~/.pi/agent/mcp.json` + a scan of skill locations. Writes go through dedicated endpoints (atomic write + backup).
 
-## Entités cœur
+## Core entities
 
-### AgentPreset (agrégat central)
+### AgentPreset (central aggregate)
 
-Un preset fige la configuration complète d'un agent. Il est **immu-able à l'exécution** : à chaque spawn, il est matérialisé en flags pi (voir [blueprint](blueprint.md#materialisation-des-presets-en-flags)).
+A preset captures an agent's full configuration. It is **immutable at runtime**: at each spawn, it is materialized as pi flags (see [blueprint](blueprint.md#materialisation-des-presets-en-flags)).
 
-| Champ | Type | Invariant |
+| Field | Type | Invariant |
 |---|---|---|
 | id | uuid | — |
-| slug | texte unique | kebab-case, ≤64 caractères |
-| name, description | texte | description utilisée pour le routing |
-| provider | texte | doit exister dans le catalogue pi (`pi auth check`) |
-| model | texte | doit appartenir au provider |
-| thinking | texte \| null | niveau pi : off…max |
-| system_prompt | texte | scope de l'agent |
-| skills | json[] | chemins existants sur disque |
-| tools_allowlist | json[] \| null | null = tous les outils |
-| mcp_servers | json[] | entrées au format `mcpServers` |
+| slug | unique text | kebab-case, ≤64 characters |
+| name, description | text | description used for routing |
+| provider | text | must exist in the pi catalog (`pi auth check`) |
+| model | text | must belong to the provider |
+| thinking | text \| null | pi level: off…max |
+| system_prompt | text | agent scope |
+| skills | json[] | existing paths on disk |
+| tools_allowlist | json[] \| null | null = all tools |
+| mcp_servers | json[] | entries in `mcpServers` format |
 
 ### SubagentSetup
 
-Enfant d'AgentPreset (1–N). Même shape de config, plus un `name` unique par agent. À l'Apply, généré en définition herdr native (`~/.pi/agents/noo-<agent>-<sub>.md`) — une seule vérité d'exécution, visible aussi depuis la CLI.
+Child of AgentPreset (1–N). Same configuration structure, plus a `name` unique within each agent. On Apply, generated as a native herdr definition (`~/.pi/agents/noo-<agent>-<sub>.md`) — a single runtime source of truth, also visible from the CLI.
 
-**Invariant** : pas de cycle — un SubagentSetup ne peut pas référencer son AgentPreset parent.
+**Invariant**: no cycles — a SubagentSetup cannot reference its parent AgentPreset.
 
 ### Workspace
 
-| Champ | Invariant |
+| Field | Invariant |
 |---|---|
 | id, name | — |
-| dir | **unique**, dossier existant sur disque |
-| default_agent_id | FK nullable vers AgentPreset |
+| dir | **unique**, existing directory on disk |
+| default_agent_id | nullable FK to AgentPreset |
 
-Le workspace hérite de tout le mécanisme cwd-bound de pi : skills projet, settings projet, approvals MCP, sessions rattachées au dossier.
+The workspace inherits pi's entire cwd-bound mechanism: project skills, project settings, MCP approvals, sessions attached to the directory.
 
 ### Conversation
 
-| Champ | Invariant |
+| Field | Invariant |
 |---|---|
 | id | — |
-| workspace_id | **nullable** — null = conversation libre |
-| agent_id | FK nullable — null = provider/modèle choisis ad hoc |
-| provider, model, thinking | **snapshot figé au spawn** |
-| session_file | chemin du `.jsonl` pi (unique) |
+| workspace_id | **nullable** — null = standalone conversation |
+| agent_id | nullable FK — null = provider/model chosen ad hoc |
+| provider, model, thinking | **snapshot frozen at spawn** |
+| session_file | path to the pi `.jsonl` (unique) |
 | status | spawning \| active \| idle \| dead |
 
-Une conversation ouverte **garde sa config** : toute modification de preset n'affecte que les spawns suivants (décision ADR-001).
+An open conversation **keeps its configuration**: preset changes affect only subsequent spawns (decision ADR-001).
 
 ### CronTask / CronRun
 
 | CronTask | Invariant |
 |---|---|
 | id, name | — |
-| cron_expr | expression cron valide (5 ou 6 champs) |
-| prompt | texte tiré à l'heure H |
-| agent_id, workspace_id | cibles (agent recommandé, workspace hébergeant la session) |
+| cron_expr | valid cron expression (5 or 6 fields) |
+| prompt | text sent at the scheduled time |
+| agent_id, workspace_id | targets (agent recommended, workspace hosting the session) |
 | output_policy | append_session \| new_session |
 | busy_policy | skip \| queue \| kill |
-| catchup | bool — 1 run de rattrapage si des runs ont été manqués |
+| catchup | bool — 1 catch-up run if runs were missed |
 
-**Invariant** : jamais 2 runs simultanés de la même tâche (busy-guard). CronRun trace chaque exécution (status, session, erreur).
+**Invariant**: never 2 simultaneous runs of the same task (busy-guard). CronRun records each execution (status, session, error).
 
-## Diagramme ER
+## ER diagram
 
 ```mermaid
 erDiagram
-    AGENT_PRESET ||--o{ SUBAGENT_SETUP : "comporte"
-    AGENT_PRESET ||--o{ CONVERSATION : "spawnée comme"
-    AGENT_PRESET ||--o{ CRON_TASK : "cible"
-    WORKSPACE ||--o{ CONVERSATION : "contient"
-    WORKSPACE ||--o{ CRON_TASK : "s'exécute dans"
+    AGENT_PRESET ||--o{ SUBAGENT_SETUP : "includes"
+    AGENT_PRESET ||--o{ CONVERSATION : "spawned as"
+    AGENT_PRESET ||--o{ CRON_TASK : "targets"
+    WORKSPACE ||--o{ CONVERSATION : "contains"
+    WORKSPACE ||--o{ CRON_TASK : "runs in"
 
     AGENT_PRESET {
         uuid id PK
@@ -94,7 +94,7 @@ erDiagram
         text thinking "nullable"
         text system_prompt
         json skills
-        json tools_allowlist "nullable = tous"
+        json tools_allowlist "nullable = all"
         json mcp_servers
     }
     SUBAGENT_SETUP {
@@ -117,7 +117,7 @@ erDiagram
     }
     CONVERSATION {
         uuid id PK
-        uuid workspace_id FK "nullable = libre"
+        uuid workspace_id FK "nullable = standalone"
         uuid agent_id FK "nullable"
         text provider
         text model
@@ -151,4 +151,4 @@ erDiagram
 
 ## Store
 
-SQLite unique : `~/.cogitator/cogitator.db` (ADR-006). Les colonnes `json` utilisent JSON1. Aucune donnée de conversation dans la base : les transcripts vivent dans les `.jsonl` pi (source de vérité), la base ne garde que les métadonnées.
+Single SQLite database: `~/.cogitator/cogitator.db` (ADR-006). The `json` columns use JSON1. No conversation data in the database: transcripts live in pi's `.jsonl` files (source of truth); the database keeps only metadata.

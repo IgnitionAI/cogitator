@@ -1,22 +1,22 @@
-# ADR-003 — Workspaces directory-based
+# ADR-003 — Directory-based workspaces
 
-- Statut : accepté
-- Date : 2026-10-06
+- Status: accepted
+- Date: 2026-10-06
 
-## Contexte
+## Context
 
-Un workspace peut être un regroupement logique (propre à cogitator) ou un dossier du filesystem. Le modèle natif de pi est cwd-bound : sessions, skills projet, settings projet et approvals MCP sont rattachés au répertoire de travail.
+A workspace can be a logical grouping (specific to cogitator) or a filesystem directory. pi's native model is cwd-bound: sessions, project skills, project settings and MCP approvals are attached to the working directory.
 
-## Décision
+## Decision
 
-Un workspace = **un dossier existant sur disque** (unique) + métadonnées cogitator (nom, agent par défaut). Cogitator ne duplique pas le mécanisme de découverte de pi ; il s'appuie dessus.
+A workspace = **an existing directory on disk** (unique) + cogitator metadata (name, default agent). Cogitator does not duplicate pi's discovery mechanism; it relies on it.
 
-## Conséquences
+## Consequences
 
-+ Sessions, skills et config projet d'un workspace fonctionnent nativement dans pi (CLI comprise)
-+ File-picker serveur simple, pas de mapping à maintenir
-− Pas de workspace "virtuel" détaché du filesystem (non demandé)
++ A workspace's sessions, skills and project configuration work natively in pi (including the CLI)
++ Simple server-side file picker, no mapping to maintain
+− No "virtual" workspace detached from the filesystem (not requested)
 
-## Alternatives rejetées
+## Rejected alternatives
 
-- Workspaces purement logiques → réimplémente la découverte cwd de pi pour rien
+- Purely logical workspaces → needlessly reimplements pi's cwd discovery

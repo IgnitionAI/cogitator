@@ -1,22 +1,22 @@
-# ADR-002 — MCP via registerMcpServer (support builtin), pas pi-mcp-adapter
+# ADR-002 — MCP via registerMcpServer (built-in support), not pi-mcp-adapter
 
-- Statut : accepté
-- Date : 2026-10-06
+- Status: accepted
+- Date: 2026-10-06
 
-## Contexte
+## Context
 
-Les presets d'agents portent une liste de serveurs MCP. Deux mécanismes possibles chez l'utilisateur cible : le support MCP **builtin** de pi (`mcp.json` + API `pi.registerMcpServer()`), ou l'extension `pi-mcp-adapter` (qui *remplace* le builtin et fournit `--mcp-config`). L'utilisateur cible a pi-mcp-adapter installé.
+Agent presets carry a list of MCP servers. Two possible mechanisms are available to the target user: pi's **built-in** MCP support (`mcp.json` + `pi.registerMcpServer()` API), or the `pi-mcp-adapter` extension (which *replaces* built-in support and provides `--mcp-config`). The target user has pi-mcp-adapter installed.
 
-## Décision
+## Decision
 
-Cogitator utilise l'**API builtin** `pi.registerMcpServer(name, config)` au `session_start` de chaque session qu'il spawne, avec les entrées du preset (shape `mcpServers`). Le serveur MCP user-level (`~/.pi/agent/mcp.json`) reste géré par un écran de config dédié.
+Cogitator uses the **built-in API** `pi.registerMcpServer(name, config)` at `session_start` for each session it spawns, with the preset's entries (`mcpServers` structure). The user-level MCP server (`~/.pi/agent/mcp.json`) remains managed through a dedicated configuration screen.
 
-## Conséquences
+## Consequences
 
-+ Pas de dépendance à l'installation de pi-mcp-adapter ; shape officielle et stable
-+ MCP par-agent exact, pas de fuite entre presets
-− Si l'utilisateur garde pi-mcp-adapter, celui-ci remplace le builtin : la combinaison devra être détectée au démarrage et signalée dans l'UI (health check)
++ No dependency on having pi-mcp-adapter installed; official, stable structure
++ Exact per-agent MCP configuration, no leakage between presets
+− If the user keeps pi-mcp-adapter, it replaces built-in support: the combination must be detected at startup and reported in the UI (health check)
 
-## Alternatives rejetées
+## Rejected alternatives
 
-- `--mcp-config <fichier généré>` (flag de pi-mcp-adapter) → couple cogitator à une extension tierce non requise
+- `--mcp-config <generated file>` (pi-mcp-adapter flag) → couples cogitator to a third-party extension that is not required

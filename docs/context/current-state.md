@@ -1,36 +1,36 @@
-# AS-IS — Cogitator (baseline greenfield)
+# AS-IS — Cogitator (greenfield baseline)
 
-Date : 2026-10-06
+Date: 2026-10-06
 
-## État
+## Status
 
-**M0 (squelette) et M1 (registry + agents) terminés le 2026-10-06** — branche `dev`.
+**M0 (skeleton) and M1 (registry + agents) completed on 2026-10-06** — branch `dev`.
 
-- **M0** : serveur HTTP natif (health + placeholder), schéma SQLite v1, extension pi `/cogitator` (spawn détaché). Vérifié : critères de sortie + checklist items 1, 10.
-- **M1** : read model pi (providers + statut auth via `pi auth check`, skills scannés, `mcp.json`), CRUD providers (models.json/auth.json atomiques + backup), CRUD AgentPresets + validation, Apply → définitions herdr `noo-*.md` (O1/O2), détection pi-mcp-adapter dans health. 13 tests au vert ; E2E live validé (création d'un preset openai/gpt-5.4 + subagent deepseek, validate 0 erreur, `.md` correct, cleanup propre). Checklist items 5, 6 verts.
-- **M2** : `PiPool` (spawn paresseux via factory injectable, cap 8 avec éviction du plus vieux non-streaming via `getState().isStreaming`, idle-recycle 10 min, `--session` pour reprise), matérialisation flags en **forme espace** (pi rejette `--flag=valeur`), routes conversations complètes (CRUD, messages, stop→abort, switch modèle, SSE par conversation), snapshot figé `spawn_args` (O6), migration v2 (session_file nullable + spawn_args, FK off pendant migration). 23 tests au vert ; **E2E live : vrai process pi (deepseek-flash) spawné par l'API, 2 messages, réponses exactes streamées en SSE** (`agent_start → message_update → agent_settled`). Checklist items 1, 2, 8, 9 verts.
-- **M3** : CRUD workspaces (dir existant + canonicalisé `realpathSync` — invariant dir unique, macOS `/tmp` symlink), nom dérivé du dossier, agent par défaut (FK validée), suppression → conversations orphelines (SET NULL), file-picker serveur `GET /api/fs/browse` (dirs d'abord, cachés exclus), héritage de l'agent par défaut à la création de conversation. 31 tests au vert. Checklist item 4 vert.
-- **M4** : transport MCP par env — `mcp_servers` du preset dans le snapshot figé → encodés dans `COGITATOR_MCP` → l'extension les enregistre au `session_start` via `pi.registerMcpServer` (builtin connecte ; pi-mcp-adapter coexisté sans blocage, vérifié live). Encode/decode filtrant (name + command|url requis). Fixture stdio MCP maison (`test/fixtures/echo-mcp-server.mjs`). 37 tests au vert ; **E2E live : preset avec serveur echo → conversation → le LLM a réellement appelé l'outil (`ECHO: salut-cogitator`)**. Checklist item 3 vert.
-- **M5** : `CronService` (`cron-parser` v5) — tick 30 s, expressions 5/6 champs validées, busy-guard skip|queue|kill (garde intra-process + run 'running' en base), catchup (1 run de rattrapage ; sinon curseur avancé sans exécution), fire manuel (`POST /:id/run` 202), runs tracés dans tous les cas (O3 : ok/error/timeout/skipped), session dédiée par tâche (append_session reprend la dernière session via `--session` ; la conversation cron est un row éphémère supprimé en fin de run — libère l'UNIQUE session_file), notifications `cron_run_started/finished` sur SSE global `GET /api/events`. 45 tests au vert ; **E2E live : tâche tirée manuellement → vrai pi → `CRON-RUN-OK`, run ok tracé avec sa session**. Checklist item 7 vert.
-- **M6c — Import de skills** : `POST /api/skills/import` (URL GitHub → tarball codeload main/master → extraction par le tar système — ponytail: pas de dép npm ; chemin local aussi) → copie des dossiers SKILL.md dans `~/.agents/skills` (skip par nom, overwrite optionnel, sanitize anti-traversal, scan profondeur ≤ 2). Outil MCP `cogitator_import_skills` + modale UI (Agents). 57 tests ; **E2E live : « Importe les skills de badlogic/pi-skills » au Majordome → 8 skills réellement importés et listés**.**
-- **M6b — Majordome (agent opérateur)** : serveur MCP embarqué (`src/mcp-server.ts`, SDK MCP, 17 outils = tout l'API) ; preset **Majordome** seedé au démarrage si aucun agent (provider/modèle repris des defaults pi, MCP cogitator attaché) ; **agent par défaut global** (colonne `is_default`, migration v3, unicité transactionnelle, route `POST /api/agents/:id/default`) ; résolution conversation : explicite > workspace > défaut global. UI : badge ★ + bouton "Définir défaut". 51 tests au vert ; **E2E live : conversation sans rien préciser → Majordome → demande en langage naturel "crée un agent Veille RAG…" → appels MCP réels (create + validate) → agent créé et validé, rapport en français.**
-- **M6** : UI React+Vite (6 écrans : Conversations avec chat streaming SSE + historique `.jsonl`, Workspaces + file-picker, éditeur d'Agents complet avec validation + Apply, Providers, Cron avec runs temps réel, Settings avec MCP user-level JSON). `GET /:id/history` (lecture .jsonl, I5). Serveur statique avec recherche ascendante de `web/dist` (dev `src/` ≠ prod `dist/src/`) + SPA fallback. `react`/`vite` en devDependencies (livrable = build statique). 45/45 tests ; UI vérifiée live (index + bundle + fallback). **Publication npm en attente : auth expirée (`npm login` requis).**
+- **M0**: native HTTP server (health + placeholder), SQLite v1 schema, pi `/cogitator` extension (detached spawn). Verified: exit criteria + checklist items 1, 10.
+- **M1**: pi read model (providers + authentication status via `pi auth check`, scanned skills, `mcp.json`), provider CRUD (atomic models.json/auth.json + backup), AgentPreset CRUD + validation, Apply → herdr definitions `noo-*.md` (O1/O2), pi-mcp-adapter detection in health. 13 tests passing; live E2E validated (creation of an openai/gpt-5.4 preset + deepseek subagent, validate returned 0 errors, correct `.md`, clean cleanup). Checklist items 5, 6 passing.
+- **M2**: `PiPool` (lazy spawn via injectable factory, cap of 8 with eviction of the oldest non-streaming process via `getState().isStreaming`, 10 min idle recycling, `--session` for resume), flags materialized in **space-separated form** (pi rejects `--flag=valeur`), full conversation routes (CRUD, messages, stop→abort, model switch, per-conversation SSE), frozen `spawn_args` snapshot (O6), v2 migration (nullable session_file + spawn_args, FK off during migration). 23 tests passing; **live E2E: real pi process (deepseek-flash) spawned by the API, 2 messages, exact responses streamed over SSE** (`agent_start → message_update → agent_settled`). Checklist items 1, 2, 8, 9 passing.
+- **M3**: workspace CRUD (existing dir + canonicalized with `realpathSync` — unique dir invariant, macOS `/tmp` symlink), name derived from the directory, default agent (validated FK), deletion → orphaned conversations (SET NULL), server-side file picker `GET /api/fs/browse` (directories first, hidden entries excluded), default agent inherited at conversation creation. 31 tests passing. Checklist item 4 passing.
+- **M4**: MCP transport via environment variables — the preset's `mcp_servers` in the frozen snapshot → encoded in `COGITATOR_MCP` → the extension registers them at `session_start` via `pi.registerMcpServer` (built-in support connects; pi-mcp-adapter coexisted without blocking, verified live). Filtering encode/decode (name + command|url required). Custom stdio MCP fixture (`test/fixtures/echo-mcp-server.mjs`). 37 tests passing; **live E2E: preset with echo server → conversation → the LLM actually called the tool (`ECHO: salut-cogitator`)**. Checklist item 3 passing.
+- **M5**: `CronService` (`cron-parser` v5) — 30 s tick, validated 5/6-field expressions, skip|queue|kill busy-guard (in-process guard + 'running' run in the database), catchup (1 catch-up run; otherwise cursor advanced without execution), manual trigger (`POST /:id/run` 202), runs recorded in all cases (O3: ok/error/timeout/skipped), dedicated session per task (append_session resumes the last session via `--session`; the cron conversation is a transient row deleted at the end of the run — frees up the UNIQUE session_file), `cron_run_started/finished` notifications on global SSE `GET /api/events`. 45 tests passing; **live E2E: manually triggered task → real pi → `CRON-RUN-OK`, successful run recorded with its session**. Checklist item 7 passing.
+- **M6c — Skill import**: `POST /api/skills/import` (GitHub URL → codeload main/master tarball → extraction with system tar — ponytail: no npm dependency; local path also supported) → copy SKILL.md directories to `~/.agents/skills` (skip by name, optional overwrite, path-traversal sanitization, scan depth ≤ 2). MCP tool `cogitator_import_skills` + UI modal (Agents). 57 tests; **live E2E: “Importe les skills de badlogic/pi-skills” (import the skills from badlogic/pi-skills) sent to Majordome → 8 skills actually imported and listed**.**
+- **M6b — Majordome (operator agent)**: embedded MCP server (`src/mcp-server.ts`, MCP SDK, 17 tools = the entire API); **Majordome** preset seeded at startup if there are no agents (provider/model taken from pi defaults, cogitator MCP attached); **global default agent** (`is_default` column, v3 migration, transactional uniqueness, `POST /api/agents/:id/default` route); conversation resolution: explicit > workspace > global default. UI: ★ badge + "Définir défaut" (set as default) button. 51 tests passing; **live E2E: conversation with nothing specified → Majordome → natural-language request "crée un agent Veille RAG…" (create a Veille RAG agent…) → real MCP calls (create + validate) → agent created and validated, report in French.**
+- **M6**: React+Vite UI (6 screens: Conversations with SSE streaming chat + `.jsonl` history, Workspaces + file picker, full Agents editor with validation + Apply, Providers, Cron with real-time runs, Settings with user-level MCP JSON). `GET /:id/history` (.jsonl reading, I5). Static server with upward search for `web/dist` (dev `src/` ≠ prod `dist/src/`) + SPA fallback. `react`/`vite` in devDependencies (deliverable = static build). 45/45 tests; UI verified live (index + bundle + fallback). **npm publication pending: authentication expired (`npm login` required).**
 
-Prochain : M2 (PiProcessPool + conversations).
+Next: M2 (PiProcessPool + conversations).
 
-## Environment cible de développement
+## Target development environment
 
-- Machine du développeur : macOS, Node ≥22 (Homebrew node 26), pi 1.0.4 (global bun)
-- pi installé avec extensions : herdr, pi-subagents, ponytail, context-mode, openwiki, pi-web-access, pi-mcp-adapter, rpiv-todo
-- Providers configurés : kimi-coding (OAuth), openai (OAuth), xai (OAuth), deepseek (api_key)
-- ~140 skills disponibles dans `~/.agents/skills` + `~/.pi/agent/skills`
+- Developer's machine: macOS, Node ≥22 (Homebrew node 26), pi 1.0.4 (global bun)
+- pi installed with extensions: herdr, pi-subagents, ponytail, context-mode, openwiki, pi-web-access, pi-mcp-adapter, rpiv-todo
+- Configured providers: kimi-coding (OAuth), openai (OAuth), xai (OAuth), deepseek (api_key)
+- ~140 skills available in `~/.agents/skills` + `~/.pi/agent/skills`
 
-## Points d'attention détectés
+## Identified concerns
 
-1. `pi-mcp-adapter` remplace le support MCP builtin → détection au démarrage de cogitator + avertissement UI (ADR-002)
-2. Le modèle "agent" n'existe pas nativement dans pi → cogitator le matérialise en flags (ADR-001) ; le concept est propre à cogitator et documenté
-3. Le cron dépend de la vie du serveur (ADR-004) — à réévaluer en v2 si besoin 24/7
+1. `pi-mcp-adapter` replaces built-in MCP support → detection at cogitator startup + UI warning (ADR-002)
+2. The "agent" model does not exist natively in pi → cogitator materializes it as flags (ADR-001); the concept is specific to cogitator and documented
+3. Cron depends on the server's lifetime (ADR-004) — reassess in v2 if 24/7 operation is needed
 
-## Prochaine étape
+## Next step
 
-[`plans/active/0001-mvp.md`](plans/active/0001-mvp.md) — M0 (squelette) est le point d'entrée.
+[`plans/active/0001-mvp.md`](plans/active/0001-mvp.md) — M0 (skeleton) is the entry point.

@@ -32,6 +32,12 @@ Then, in pi:
 
 Or run it standalone: `npx @ignitionai/cogitator` (Node.js ≥ 22.19.0).
 
+## VPS access preparation (experimental)
+
+The current application is a **trusted, loopback-only local service**, not a secured remote deployment. Do not expose it through a public proxy.
+
+For the staged VPS work, start with the [read-only administrator inventory](https://github.com/IgnitionAI/cogitator/blob/dev/docs/vps-access-setup.md) of any existing identity service before deploying another one. This tooling does **not** install services, change authentication, deploy Cogitator, enable remote agents, or prove the remaining security/recovery gates. It is repository tooling, not included in the npm package.
+
 ## Features
 
 - **Composable agents** — each preset combines a provider, model, thinking level, explicit skill set, MCP servers, scope prompt, and subagents. These become native pi flags when the process starts (`--model id:thinking`, `--no-skills --skill …`, `--append-system-prompt`).
@@ -46,7 +52,7 @@ Or run it standalone: `npx @ignitionai/cogitator` (Node.js ≥ 22.19.0).
 
 ## Architecture
 
-Specifications live in [`docs/`](https://github.com/IgnitionAI/cogitator/tree/dev/docs): [domain model](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/domain-model.md), [blueprint](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/blueprint.md), [API contract](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/api-contract.md), and [architecture decisions](https://github.com/IgnitionAI/cogitator/tree/dev/docs/context/decisions/). They cover apply-on-spawn configuration, MCP registration through `registerMcpServer`, and the GitHub-backed board's single-writer model. The project uses strict TypeScript, Zod validation at boundaries, and 92 tests.
+Specifications live in [`docs/`](https://github.com/IgnitionAI/cogitator/tree/dev/docs): [domain model](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/domain-model.md), [blueprint](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/blueprint.md), [API contract](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/api-contract.md), and [architecture decisions](https://github.com/IgnitionAI/cogitator/tree/dev/docs/context/decisions/). They cover apply-on-spawn configuration, MCP registration through `registerMcpServer`, and the GitHub-backed board's single-writer model. The project uses strict TypeScript, Zod validation at boundaries, and a regression test suite.
 
 ```text
 Browser (React) → REST + SSE → Node server → pool of `pi --mode rpc` processes

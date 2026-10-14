@@ -47,6 +47,9 @@ export default function App() {
       if (ev.type === "cron_run_finished") {
         toast(t(ev.error ? "common.cronFinishedError" : "common.cronFinished", { name: ev.name ?? "", status: statusLabel(ev.status ?? ""), error: localizeText(ev.error ?? "") }), ev.status !== "ok");
       }
+      if (ev.type === "agents_changed") {
+        api.agents().then((r) => setAgents(r.agents)).catch(() => undefined);
+      }
     });
     return close;
   }, [toast]);

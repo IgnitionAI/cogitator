@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "../api";
+import { api, openEvents } from "../api";
 import type { AgentPreset, Conversation } from "../types";
 import { Empty, ErrorText, PageHead, Skeleton, useToast } from "../ui";
 import { Icon } from "../icons";
@@ -18,6 +18,9 @@ export default function Bots() {
   }, []);
 
   useEffect(load, [load]);
+  useEffect(() => openEvents("/api/events", (e) => {
+    if ((e as { type?: string }).type === "agents_changed") load();
+  }), [load]);
 
   async function openBot(agent: AgentPreset) {
     try {
@@ -47,7 +50,7 @@ export default function Bots() {
       <ChatView
         key={open.id}
         conversation={open}
-        onClose={() => setOpen(null)}
+        onClose={() => { setOpen(null); load(); }}
         onDeleted={() => { setOpen(null); load(); }}
       />
     );

@@ -102,7 +102,7 @@ Responses to interactive components use the same `POST /messages`: a `cogitator-
 
 | Method | Route | Description |
 |---|---|---|
-| GET | `/api/events` | **SSE** — session creation/termination, status changes, cron run completion (for UI badges/notifications) |
+| GET | `/api/events` | **SSE** — session creation/termination, status changes, cron run completion, `agents_changed` on agent CRUD (for UI badges/notifications) |
 
 ## Health
 

@@ -47,7 +47,7 @@ Make Cogitator’s home “text teammates”. Natural language with the **Majord
 | **S0 — Schema v4** | `default_workspace_id` on `agent_preset` (group tables wait for S4) | ✅ v3→v4; existing presets null |
 | **S1 — 1–1 API** | `GET /conversations?agent_id=`; spawn fills workspace from preset when set (else standalone) | ✅ `test/s0-s2.test.ts` |
 | **S2 — Shell** | Nav **Bots** first; click = resume last / spawn; auto-open default agent | ✅ `web/src/screens/Bots.tsx` |
-| **S3 — NL create** | Empty/first run opens Majordome; Agents CRUD secondary (⚙) | “Crée-moi un agent …” works from home without the Agents screen |
+| **S3 — NL create** | Empty/first run opens Majordome; Agents CRUD secondary (⚙) | ✅ `agents_changed` SSE sur CRUD agents + reload Bots home ; prompt Majordome réutilise son provider/modèle si non précisé ; `test/s3-agents-changed.test.ts` |
 | **S4 — Groups** | `POST /groups`, `POST /groups/:id/messages` (@ vs host), SSE on the bus, inject into member sessions | 2 bots in one thread; `@` runs only that process; no `@` runs host |
 | **S5 — Specs** | domain / API / blueprint / contract / guardian match shipped code | This package, then code follows it |
 

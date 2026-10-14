@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "../api";
-import type { AgentPreset, Conversation, Group, Workspace } from "../types";
-import { Empty, ErrorText, Field, PageHead, Skeleton, useToast } from "../ui";
+import { api, openEvents, type EventConnectionState } from "../api";
+import type { AgentPreset, Conversation, Group, GroupMessage, Workspace } from "../types";
+import { Empty, ErrorText, Field, PageHead, Skeleton, Spinner, useToast } from "../ui";
 import { Icon } from "../icons";
 import { localizeText, t } from "../i18n";
-import { ChatView } from "./Conversations";
+import { Markdown } from "../markdown";
+import { ToolResult } from "../ToolResult";
+import { applyEvent, bumpChatItemKey, ChatView, type ChatItem, type StreamState } from "./Conversations";
 
 export default function Bots() {
   const toast = useToast();
@@ -207,41 +209,223 @@ function GroupCreateForm(props: { agents: AgentPreset[]; onDone: () => void; onC
   );
 }
 
-/** Fil de groupe (create/list S4) : nommé, vide, membres listés — pas encore de messages. */
+/** Enveloppe SSE du bus : un seul flux pour tout le fil, événement pi du membre + attribution. */
+type GroupActivity = {
+  type: string;
+  conversationId?: string;
+  agentId?: string | null;
+  name?: string | null;
+  event?: import("../types").SseEvent;
+};
+
+type GroupItem = ChatItem & { author?: string };
+
+/** Rejeu persistant du bus → timeline (le streaming live passe par le SSE, pas par ces lignes). */
+function busRowsToItems(rows: GroupMessage[], group: Group): GroupItem[] {
+  const memberName = (agentId: string | null) =>
+    agentId ? group.members.find((m) => m.agent_id === agentId)?.name ?? agentId : "";
+  return rows.flatMap((r): GroupItem[] => {
+    if (r.role === "user") return r.text ? [{ kind: "user", text: r.text }] : [];
+    if (r.role === "assistant") return r.text.trim() ? [{ kind: "assistant", text: r.text, author: memberName(r.agent_id) }] : [];
+    const result = r.detail ? (JSON.parse(r.detail) as { result?: string }).result : undefined;
+    return [{ kind: "tool", text: r.text, result, isError: r.is_error === 1, state: "done", author: memberName(r.agent_id) }];
+  });
+}
+
+/** Fil de groupe (ADR-011) : une seule source SSE sur le bus ; hôte sans @, membre visé avec @. */
 function GroupView(props: { group: Group; onClose: () => void }) {
   const toast = useToast();
+  const { group } = props;
+  const [busItems, setBusItems] = useState<GroupItem[]>([]);
+  const [liveItems, setLiveItems] = useState<GroupItem[]>([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [streaming, setStreaming] = useState(false);
+  const [connection, setConnection] = useState<EventConnectionState>("connecting");
+  const [ready, setReady] = useState(false);
+  const busyRef = useRef(false);
+  const streamRef = useRef<StreamState>({ assistantIndex: null, streaming: false, toolByContent: {} });
+  const authorRef = useRef<string>("");
+  const runnerRef = useRef<string>("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const nearBottom = useRef(true);
+
+  const memberName = useCallback(
+    (agentId: string | null | undefined) => group.members.find((m) => m.agent_id === agentId)?.name ?? agentId ?? "?",
+    [group],
+  );
+
+  const loadBus = useCallback(() => {
+    api.groupMessages(group.id)
+      .then((r) => { setBusItems(busRowsToItems(r.messages, group)); setReady(true); })
+      .catch((e: Error) => { toast(localizeText(e.message), true); setReady(true); });
+  }, [group, toast]);
+
+  // rejeu du bus + UN flux SSE group_activity (pas N flux des sessions membres)
+  useEffect(() => {
+    loadBus();
+    const close = openEvents(
+      `/api/groups/${group.id}/events`,
+      (e) => {
+        const envelope = e as GroupActivity;
+        if (envelope.type !== "group_activity" || !envelope.event) return;
+        authorRef.current = envelope.name ?? memberName(envelope.agentId);
+        runnerRef.current = envelope.conversationId ?? runnerRef.current;
+        const inner = envelope.event;
+        setLiveItems((prev) =>
+          (applyEvent(prev, inner, streamRef.current) as GroupItem[]).map((item) =>
+            (item.kind === "assistant" || item.kind === "tool") && !item.author && authorRef.current
+              ? { ...item, author: authorRef.current }
+              : item,
+          ),
+        );
+        if (inner.type === "agent_start" || inner.type === "turn_start" || inner.type === "message_update") setRunning(true);
+        if (inner.type === "message_update" && inner.assistantMessageEvent?.type === "text_start") setStreaming(true);
+        if (inner.type === "agent_end") {
+          setRunning(false);
+          setStreaming(false);
+          // le serveur écrit la réponse finale sur le bus ~1,5 s après agent_end : rejeu, puis on purge le live
+          setTimeout(() => {
+            loadBus();
+            setLiveItems([]);
+            streamRef.current = { assistantIndex: null, streaming: false, toolByContent: {} };
+          }, 1700);
+        }
+      },
+      {
+        // à chaque (re)connexion : combler le trou via le rejeu du bus
+        onOpen: () => { loadBus(); setLiveItems([]); },
+        onStateChange: setConnection,
+      },
+    );
+    return close;
+  }, [group.id, loadBus, memberName]);
+
+  const items = [...busItems, ...liveItems].filter((i) => i.kind !== "status");
+
+  useEffect(() => {
+    if (nearBottom.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [items.length, items[items.length - 1]?.text.length]);
+
+  const send = async () => {
+    const text = input.trim();
+    if (busyRef.current || !text) return;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      await api.sendGroupMessage(group.id, text);
+      setInput("");
+      // écho local : le bus pi ne contient pas les messages utilisateur
+      setLiveItems((prev) => [...prev, { kind: "user", text, key: bumpChatItemKey() }]);
+    } catch (e: unknown) {
+      toast(localizeText(e instanceof Error ? e.message : String(e)), true);
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+      taRef.current?.focus();
+    }
+  };
 
   async function remove() {
     try {
-      await api.deleteGroup(props.group.id);
+      await api.deleteGroup(group.id);
       props.onClose();
     } catch (e: unknown) {
       toast(localizeText(e instanceof Error ? e.message : String(e)), true);
     }
   }
 
+  const connectionText = connection === "connected" ? t("chat.connected") : connection === "reconnecting" ? t("chat.reconnecting") : connection === "closed" ? t("chat.disconnected") : t("chat.connecting");
+
   return (
-    <>
-      <PageHead
-        title={props.group.name}
-        sub={t("screens.groupSub")}
-        actions={
-          <>
-            <button type="button" className="btn btn-sm chat-back" onClick={props.onClose}>
-              <Icon name="back" /> <span className="chat-back-label">{t("chat.back")}</span>
-            </button>{" "}
-            <button type="button" className="btn btn-sm btn-danger" onClick={() => void remove()}>{t("screens.delete")}</button>
-          </>
-        }
-      />
-      <div className="card">
-        {props.group.members.map((m) => (
-          <p key={m.conversation_id} className="list-meta">
-            {m.is_host ? "★ " : ""}{m.name} <span className="list-meta">{m.provider}/{m.model}</span>
-          </p>
-        ))}
+    <div className="chat">
+      <header className="chat-head">
+        <button type="button" className="btn btn-sm chat-back" onClick={props.onClose}>
+          <Icon name="back" /> <span className="chat-back-label">{t("chat.back")}</span>
+        </button>
+        <div className="chat-heading">
+          <h1>{group.name}</h1>
+          <div className="chat-context">
+            <span>{group.members.map((m) => (m.is_host ? `★ ${m.name}` : m.name)).join(" · ")}</span>
+            <span className="chat-connection" role="status">{connectionText}</span>
+          </div>
+        </div>
+        <span className={`chat-state ${running ? "is-running" : ""}`} role="status">
+          <Icon name={running ? "activity" : "check"} size={14} />{running ? t("chat.running") : t("chat.ready")}
+        </span>
+        {running && runnerRef.current ? (
+          <button type="button" className="btn btn-sm btn-danger" onClick={() => api.stopConversation(runnerRef.current).catch((e: Error) => toast(e.message, true))}>
+            <Icon name="stop" /> {t("chat.stop")}
+          </button>
+        ) : null}
+        <button type="button" className="btn btn-sm btn-danger" onClick={() => { if (confirm(t("screens.deleteGroupConfirm", { name: group.name }))) void remove(); }}>
+          {t("screens.delete")}
+        </button>
+      </header>
+      <div className="chat-body">
+        <div className="chat-main">
+          <div
+            className="chat-scroll"
+            ref={scrollRef}
+            role="log"
+            aria-label={t("chat.history")}
+            tabIndex={0}
+            onScroll={(e) => {
+              const node = e.currentTarget;
+              nearBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight <= 80;
+            }}
+          >
+            {!ready ? <Skeleton /> : null}
+            {ready && items.length === 0 ? (
+              <Empty title={t("screens.groupEmpty")}>{t("screens.groupEmptyHint")}</Empty>
+            ) : null}
+            {items.map((m, i) => {
+              if (m.kind === "tool") {
+                return (
+                  <div key={m.key ?? i}>
+                    {m.author ? <div className="message-label"><Icon name="bot" size={14} />{m.author}</div> : null}
+                    <ToolResult name={m.text} args={m.args} result={m.result} isError={m.isError} state={m.state} />
+                  </div>
+                );
+              }
+              const isLastAssistant = m.kind === "assistant" && i === items.length - 1;
+              return (
+                <div key={m.key ?? i} className={`msg msg-${m.kind}`} role="article" aria-label={m.kind === "user" ? t("chat.userMessage") : t("chat.agentMessage")}>
+                  <div className="message-label">
+                    <Icon name={m.kind === "user" ? "users" : "bot"} size={14} />
+                    {m.kind === "user" ? t("screens.groupYou") : m.author ?? t("chat.agent")}
+                  </div>
+                  <Markdown text={m.text} />
+                  {isLastAssistant && streaming ? <span className="caret" /> : null}
+                </div>
+              );
+            })}
+          </div>
+          <div className="composer">
+            <div className="chat-input">
+              <textarea
+                ref={taRef}
+                aria-label={t("chat.message")}
+                value={input}
+                placeholder={t("screens.groupPlaceholder")}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+              />
+              <button type="button" className="btn btn-primary" onClick={() => void send()} disabled={busy || !input.trim()}>
+                {busy ? <Spinner /> : <Icon name="send" />} <span className="composer-send-label">{t("chat.send")}</span>
+              </button>
+            </div>
+            <div className="composer-hint"><span>{t("chat.keyboardHint")}</span><span>{running ? t("chat.working") : t("screens.groupSub")}</span></div>
+          </div>
+        </div>
       </div>
-      <Empty title={t("screens.groupEmpty")}>{t("screens.groupEmptyHint")}</Empty>
-    </>
+    </div>
   );
 }

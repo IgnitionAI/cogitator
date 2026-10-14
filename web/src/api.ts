@@ -2,7 +2,7 @@ import { recheckAccess } from "./auth-api";
 import { t } from "./i18n";
 import { authMessages } from "./locales/auth";
 import type {
-  AgentPreset, BoardCard, Conversation, CronRun, CronTask, FeedEvent, FileChange, FileEvent, Group, GroupWrite, Health, ImageContentInput, ProviderView, SkillRef, Workspace, AgentWrite, CardWrite, ConversationWrite, ProviderWrite, ScheduleWrite, SseEvent, WorkspaceWrite } from "./types";
+  AgentPreset, BoardCard, Conversation, CronRun, CronTask, FeedEvent, FileChange, FileEvent, Group, GroupMessage, GroupWrite, Health, ImageContentInput, ProviderView, SkillRef, Workspace, AgentWrite, CardWrite, ConversationWrite, ProviderWrite, ScheduleWrite, SseEvent, WorkspaceWrite } from "./types";
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const mutation = method !== "GET" && method !== "HEAD";
@@ -78,6 +78,9 @@ export const api = {
   group: (id: string) => req<{ group: Group }>("GET", `/api/groups/${id}`),
   createGroup: (b: GroupWrite) => req<{ group: Group }>("POST", "/api/groups", b),
   deleteGroup: (id: string) => req<{ ok: true }>("DELETE", `/api/groups/${id}`),
+  groupMessages: (id: string) => req<{ messages: GroupMessage[] }>("GET", `/api/groups/${id}/messages`),
+  sendGroupMessage: (id: string, text: string) =>
+    req<{ ok: true }>("POST", `/api/groups/${id}/messages`, { text }),
   sendMessage: (id: string, text: string, images?: ImageContentInput[]) =>
     req<{ ok: true }>("POST", `/api/conversations/${id}/messages`, { text, images }),
   stopConversation: (id: string) => req<{ ok: true }>("POST", `/api/conversations/${id}/stop`),

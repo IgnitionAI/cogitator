@@ -103,6 +103,20 @@ export interface Group {
   members: GroupMember[];
 }
 
+/** Ligne du bus du fil de groupe (ADR-011) — rejeu persistant ; le streaming passe par le SSE. */
+export interface GroupMessage {
+  id: string;
+  group_id: string;
+  conversation_id: string | null;
+  agent_id: string | null;
+  role: "user" | "assistant" | "tool";
+  text: string;
+  /** JSON { result } pour role='tool' ; null sinon */
+  detail: string | null;
+  is_error: number;
+  created_at: string;
+}
+
 export interface CronTask {
   id: string;
   name: string;

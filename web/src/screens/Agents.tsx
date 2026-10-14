@@ -2,7 +2,7 @@ import { t as translate, localizeText, formatNumber, thinkingLabel, getLocale } 
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { THINKING_LEVELS } from "../types";
-import type { AgentPreset, McpServerEntry, ProviderView, SkillRef, SubagentInput } from "../types";
+import type { AgentPreset, McpServerEntry, ProviderView, SkillRef, SubagentInput, Workspace } from "../types";
 import { Badge, Empty, ErrorText, Field, Modal, PageHead, useToast } from "../ui";
 import { Icon } from "../icons";
 
@@ -211,6 +211,7 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
   const [actionError, setActionError] = useState<string | null>(null);
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [skills, setSkills] = useState<SkillRef[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [form, setForm] = useState({
     name: props.agent?.name ?? "",
     description: props.agent?.description ?? "",
@@ -222,6 +223,7 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
     tools: (props.agent?.tools_allowlist ?? []).join(", "),
     mcp_servers: props.agent?.mcp_servers ?? [] as McpServerEntry[],
     subagents: (props.agent?.subagents ?? []) as SubagentInput[],
+    default_workspace_id: props.agent?.default_workspace_id ?? null,
   });
   const [savedId, setSavedId] = useState(props.agent?.id ?? null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
@@ -234,9 +236,10 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
   const loadOptions = useCallback(() => {
     setOptionsLoading(true);
     setLoadError(null);
-    Promise.all([api.providers(), api.skills()]).then(([p, sk]) => {
+    Promise.all([api.providers(), api.skills(), api.workspaces()]).then(([p, sk, w]) => {
       setProviders(p.providers);
       setSkills(sk.skills);
+      setWorkspaces(w.workspaces);
       const first = p.providers[0];
       if (first) setForm((f) => f.provider ? f : { ...f, provider: first.id, model: "" });
     }).catch((e: Error) => setLoadError(e.message)).finally(() => setOptionsLoading(false));
@@ -276,6 +279,7 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
         tools_allowlist: form.tools.trim() ? form.tools.split(",").map((t) => t.trim()).filter(Boolean) : null,
         mcp_servers: form.mcp_servers,
         subagents: form.subagents,
+        default_workspace_id: form.default_workspace_id,
       };
       const r = savedId
         ? await api.updateAgent(savedId, body)
@@ -331,6 +335,12 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
         </Field>
         <Field label={translate("screens.description")}>
           <input value={form.description} onChange={(e) => set("description", e.target.value)} />
+        </Field>
+        <Field label={translate("screens.defaultWorkspace")} hint={translate("screens.defaultWorkspaceHint")}>
+          <select value={form.default_workspace_id ?? ""} onChange={(e) => set("default_workspace_id", e.target.value || null)}>
+            <option value="">{translate("screens.noDefaultWorkspace")}</option>
+            {workspaces.map((w) => <option key={w.id} value={w.id}>{w.name || w.dir}</option>)}
+          </select>
         </Field>
       </div>
       <Field label={translate("screens.scope")}>

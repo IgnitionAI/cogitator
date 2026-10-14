@@ -163,6 +163,18 @@ export const screensMessages = {
     "fr": "Description",
     "en": "Description"
   },
+  "screens.defaultWorkspace": {
+    "fr": "Workspace par défaut",
+    "en": "Default workspace"
+  },
+  "screens.defaultWorkspaceHint": {
+    "fr": "Dossier de travail des prochaines conversations 1–1 avec ce bot.",
+    "en": "Working folder for this bot's next 1–1 conversations."
+  },
+  "screens.noDefaultWorkspace": {
+    "fr": "Aucun (dossier autonome)",
+    "en": "None (standalone folder)"
+  },
   "screens.scope": {
     "fr": "Instructions système et périmètre",
     "en": "Scope prompt (system prompt)"

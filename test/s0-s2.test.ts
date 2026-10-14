@@ -145,3 +145,40 @@ test("DELETE workspace SET NULL on agent default_workspace_id", async () => {
   };
   assert.equal(again.agent.default_workspace_id, null);
 });
+
+test("PUT assigns then re-assigns a bot's default workspace (picker path)", async () => {
+  const mkWs = (dir: string) => {
+    mkdirSync(dir);
+    return fetch(`${base}/api/workspaces`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ dir }),
+    }).then((r) => r.json()) as Promise<{ workspace: { id: string } }>;
+  };
+  const wsA = await mkWs(join(home, "picker-a"));
+  const wsB = await mkWs(join(home, "picker-b"));
+  const created = await (await fetch(`${base}/api/agents`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Picker bot", provider: "openai", model: "gpt-5.4", skills: [], mcp_servers: [] }),
+  })).json() as { agent: { id: string; default_workspace_id: string | null } };
+  assert.equal(created.agent.default_workspace_id, null);
+
+  const put = (body: Record<string, unknown>) =>
+    fetch(`${base}/api/agents/${created.agent.id}`, {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const baseBody = {
+    name: "Picker bot", provider: "openai", model: "gpt-5.4",
+    skills: [], mcp_servers: [], subagents: [],
+  };
+
+  const r1 = await (await put({ ...baseBody, default_workspace_id: wsA.workspace.id })).json() as { agent: { default_workspace_id: string } };
+  assert.equal(r1.agent.default_workspace_id, wsA.workspace.id);
+
+  await fetch(`${base}/api/workspaces/${wsA.workspace.id}`, { method: "DELETE" });
+  const cleared = await (await fetch(`${base}/api/agents/${created.agent.id}`)).json() as { agent: { default_workspace_id: string | null } };
+  assert.equal(cleared.agent.default_workspace_id, null);
+
+  const r2 = await (await put({ ...baseBody, default_workspace_id: wsB.workspace.id })).json() as { agent: { default_workspace_id: string } };
+  assert.equal(r2.agent.default_workspace_id, wsB.workspace.id);
+});

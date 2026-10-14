@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { extname, basename, join, normalize, resolve, sep } from "node:path";
+import { extname, basename, join } from "node:path";
+import { resolveConfined } from "./execution/confinement.js";
 
 export interface TreeNode {
   name: string;
@@ -75,11 +76,10 @@ export interface FileContent {
  * sous la racine du workspace (anti-traversal), taille plafonnée, extensions binaires refusées.
  */
 export function readWorkspaceFile(rootDir: string, requested: string): { file?: FileContent; error?: string } {
-  const root = resolve(rootDir);
-  const target = resolve(normalize(requested));
-  if (target !== root && !target.startsWith(root + sep)) {
-    return { error: "chemin hors du workspace" };
-  }
+  // Anti-traversal lexical + rejet des échappées par symlink (résolution realpath, Plan 0002 §4).
+  const confined = resolveConfined(rootDir, requested);
+  if ("error" in confined) return { error: "chemin hors du workspace" };
+  const target = confined.path;
   if (!existsSync(target)) return { error: `fichier introuvable: ${requested}` };
   let stat;
   try {

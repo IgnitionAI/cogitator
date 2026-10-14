@@ -3,6 +3,7 @@ import { existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { Db } from "./db.js";
 import type { WorkspaceUpdate } from "./schemas.js";
+import { enrollWorkspaceDir, type EnrollmentPolicy } from "./execution/confinement.js";
 
 export interface WorkspaceRow {
   id: string;
@@ -42,15 +43,25 @@ function agentExists(db: Db, id: string): boolean {
   return Boolean(db.prepare("SELECT 1 FROM agent_preset WHERE id = ?").get(id));
 }
 
-/** Crée un workspace. Invariant (domain model) : le dossier doit exister ; dir unique. */
-export function createWorkspace(db: Db, input: WorkspaceInput): { workspace?: WorkspaceRow; error?: string } {
+/**
+ * Crée un workspace. Invariant (domain model) : le dossier doit exister ; dir unique.
+ * `policy` (mode distant) : l'enrôlement est restreint aux racines enrôlées et rejette
+ * les échappées par symlink (Plan 0002 §4) ; absent = comportement local historique.
+ */
+export function createWorkspace(db: Db, input: WorkspaceInput, policy?: EnrollmentPolicy): { workspace?: WorkspaceRow; error?: string } {
   if (!existsSync(input.dir)) return { error: `dossier introuvable: ${input.dir}` };
   if (!statSync(input.dir).isDirectory()) return { error: `n'est pas un dossier: ${input.dir}` };
   let dir: string;
-  try {
-    dir = realpathSync(input.dir); // canonicalise (symlinks, trailing /)
-  } catch {
-    return { error: `dossier illisible: ${input.dir}` };
+  if (policy) {
+    const enrolled = enrollWorkspaceDir(policy, input.dir);
+    if ("error" in enrolled) return { error: enrolled.error };
+    dir = enrolled.dir;
+  } else {
+    try {
+      dir = realpathSync(input.dir); // canonicalise (symlinks, trailing /)
+    } catch {
+      return { error: `dossier illisible: ${input.dir}` };
+    }
   }
   if (getWorkspaceByDir(db, dir)) return { error: `workspace déjà enregistré pour ${dir}` };
   if (input.default_agent_id && !agentExists(db, input.default_agent_id)) {

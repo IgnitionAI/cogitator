@@ -52,6 +52,7 @@ import {
   type BoardCardInput, type ConversationCreate, type GroupCreate,
 } from "./schemas.js";
 import { spawnConfigFromPreset, type SpawnConfig } from "./spawn.js";
+import { enrollmentPolicyFromEnv } from "./execution/confinement.js";
 import {
   browseDir, createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, updateWorkspace,
   type WorkspaceRow,
@@ -305,6 +306,11 @@ function registryRoutes(deps: Deps): Route[] {
     ["POST", "/api/skills/import", async (ctx) => {
       const b = parseBody(ctx.res, skillImportSchema, ctx.body);
       if (!b) return;
+      // Mode distant : les imports par commande hôte (npx/npm) sont désactivés
+      // (Plan 0002 §4 : pas d'import npm/npx côté hôte en mode distant).
+      if (enrollmentPolicyFromEnv().remote && /^npx\s|^npm\s/.test(b.source.trim())) {
+        return sendJson(ctx.res, 400, { error: "import par commande (npx/npm) désactivé en mode distant" });
+      }
       const destRoot = paths.skillsDirs[0] ?? join(paths.piAgentDir, "skills");
       const result = await importSkills(b.source, destRoot, b.overwrite === true);
       if (result.error && result.imported.length === 0) return sendJson(ctx.res, 400, { error: result.error });
@@ -386,7 +392,7 @@ function workspaceRoutes(deps: Deps): Route[] {
     ["POST", "/api/workspaces", (ctx) => {
       const b = parseBody(ctx.res, workspaceCreateSchema, ctx.body);
       if (!b) return;
-      const { workspace, error } = createWorkspace(db, b);
+      const { workspace, error } = createWorkspace(db, b, enrollmentPolicyFromEnv());
       if (error) return sendJson(ctx.res, 400, { error });
       sendJson(ctx.res, 201, { workspace });
     }],

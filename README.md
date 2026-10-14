@@ -6,6 +6,7 @@
 
 **A web control panel for [pi](https://pi.dev)** — composable agents, workspaces, GitHub-native kanban, and scheduled tasks.
 
+[![GitHub](https://img.shields.io/badge/GitHub-IgnitionAI%2Fcogitator-5e6ad2?logo=github)](https://github.com/IgnitionAI/cogitator)
 [![npm version](https://img.shields.io/npm/v/@ignitionai/cogitator)](https://www.npmjs.com/package/@ignitionai/cogitator)
 [![pi package](https://img.shields.io/badge/pi-package-5e6ad2)](https://pi.dev/packages)
 [![license](https://img.shields.io/npm/l/@ignitionai/cogitator)](#license)
@@ -34,9 +35,11 @@ Or run it standalone: `npx @ignitionai/cogitator` (Node.js ≥ 22.19.0).
 
 ## VPS access preparation (experimental)
 
-The current application is a **trusted, loopback-only local service**, not a secured remote deployment. Do not expose it through a public proxy.
+The default application remains a **trusted, loopback-only local service**, not a secured remote deployment. Do not expose it through a public proxy.
 
-For the staged VPS work, start with the [read-only administrator inventory](https://github.com/IgnitionAI/cogitator/blob/dev/docs/vps-access-setup.md) of any existing identity service before deploying another one. This tooling does **not** install services, change authentication, deploy Cogitator, enable remote agents, or prove the remaining security/recovery gates. It is repository tooling, not included in the npm package.
+The local [native single-owner login and MFA implementation](https://github.com/IgnitionAI/cogitator/blob/dev/docs/native-auth.md) has passed independent code re-reviews and bounded local verification, including Node 22/26 and real local HTTPS/browser journeys. It is independent of a particular VPS or identity provider, but authentication is **not agent execution isolation**. See the [evidence and remaining gates](https://github.com/IgnitionAI/cogitator/blob/dev/docs/native-auth-verification.md). This working-tree increment is not a new published release. Public remote operation, autonomous recovery and the remaining Durable work are not approved by it.
+
+The earlier [identity-service inventory](https://github.com/IgnitionAI/cogitator/blob/dev/docs/vps-access-setup.md) is historical, suspended repository tooling; its administrator handoff is no longer requested. No remote deployment or recovery gate is certified by these documents.
 
 ## Features
 

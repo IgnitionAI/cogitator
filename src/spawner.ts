@@ -15,6 +15,9 @@ export interface SpawnerOptions {
   paths: Paths;
 }
 
+/** Identité d'environnement : l'agent sait qu'il tourne dans le web UI, pas dans le TUI pi. */
+const ENVIRONMENT_NOTICE = "Environnement : tu t'exécutes dans Cogitator, un panneau de contrôle web pour pi. L'utilisateur interagit depuis un navigateur : ne lui demande jamais de changer de mode, d'appuyer sur une touche ou d'utiliser le TUI pi — tu as déjà accès complet aux outils, agis directement.";
+
 export interface Spawner {
   /** Spawn paresseux : (re)démarre le process pi de la conversation si besoin (I3 : tout passe par le pool). */
   ensure(conv: ConversationRow): Promise<{ sessionFile?: string }>;
@@ -35,7 +38,7 @@ export function makeSpawner(opts: SpawnerOptions): Spawner {
       const result = await pool.ensure(conv.id, {
         cwd: conv.workspace_dir ?? homedir(),
         // Host presentation capability: also available to legacy sessions, without rewriting their snapshot.
-        args: buildArgs({ ...spawn, uiInstructions: `${spawn.uiInstructions ?? UI_INSTRUCTIONS}\n\n${UI_PRESENTATION_POLICY}` }, tmpDir, conv.id),
+        args: buildArgs({ ...spawn, uiInstructions: `${spawn.uiInstructions ?? UI_INSTRUCTIONS}\n\n${UI_PRESENTATION_POLICY}\n\n${ENVIRONMENT_NOTICE}` }, tmpDir, conv.id),
         resumeSessionFile: conv.session_file,
         env: mcpEnv ? { [MCP_ENV_VAR]: mcpEnv } : undefined,
       });

@@ -1,11 +1,16 @@
 import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, statSync, readFileSync } from "node:fs";
-import { dirname, extname, join, normalize } from "node:path";
+import { existsSync, statSync, readFileSync, realpathSync } from "node:fs";
+import { dirname, extname, join, normalize, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from "node:http";
 import type { ZodType } from "zod";
 import { HOST } from "./config.js";
+import { requestAuthorization } from "./request-authorization.js";
+import type { AuthState } from "./auth-state.js";
+import { protectedRequired } from "./auth-state.js";
+import { AuthError, ownerSession, requireApproved, sessionById } from "./native-auth.js";
+import { authFailure, authJson, authRoute, browserHeaders, checkResponse, localCheck, responseChecks, validateBoundary } from "./auth-http.js";
 import type { Db } from "./db.js";
 import { packageVersion, piVersion } from "./pi.js";
 import type { Paths } from "./paths.js";
@@ -76,17 +81,29 @@ const CONTENT_TYPES: Record<string, string> = {
 
 /** Sert le build statique de l'UI ; SPA fallback vers index.html.
  *  Le dossier est résolu à chaque requête : un build web peut être (re)généré après le démarrage. */
-function serveStatic(res: ServerResponse, pathname: string): boolean {
+function serveStatic(res: ServerResponse, pathname: string, publicOnly = false): boolean {
   const root = findWebDist();
   if (!root) return false;
-  const rel = pathname === "/" ? "index.html" : pathname;
-  const file = normalize(join(root, rel));
-  if (!file.startsWith(root)) return false; // pas de traversal
-  const target = existsSync(file) && statSync(file).isFile() ? file : join(root, "index.html");
-  if (!existsSync(target)) return false;
+  const target = resolveStaticFile(root, pathname, publicOnly);
+  if (!target) return false;
+  checkResponse(res);
   res.writeHead(200, { "content-type": CONTENT_TYPES[extname(target)] ?? "application/octet-stream" });
   res.end(readFileSync(target));
   return true;
+}
+
+/** Resolve symlinks before serving: lexical prefix checks alone are not containment. */
+export function resolveStaticFile(root: string, pathname: string, publicOnly = false): string | null {
+  const rel = pathname === "/" ? "index.html" : pathname;
+  const file = normalize(join(root, rel));
+  if (relative(root, file).startsWith(`..${sep}`)) return null;
+  if (publicOnly && pathname !== "/" && pathname !== "/index.html" && !/^\/assets\/[A-Za-z0-9_-]+\.(?:js|css|woff2)$/.test(pathname)) return null;
+  if (publicOnly && !existsSync(file)) return null;
+  const target = existsSync(file) && statSync(file).isFile() ? file : join(root, "index.html");
+  if (!existsSync(target)) return null;
+  const contained = relative(realpathSync(root), realpathSync(target));
+  if (contained.startsWith(`..${sep}`) || contained === "..") return null;
+  return target;
 }
 
 // ---------- Mini routeur ----------
@@ -97,12 +114,14 @@ interface Ctx {
   body: unknown;
   req: IncomingMessage;
   res: ServerResponse;
+  check: () => void;
 }
 
 type Handler = (ctx: Ctx) => Promise<void> | void;
 type Route = [method: string, pattern: string, handler: Handler];
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
+  checkResponse(res);
   res.writeHead(status, { "content-type": "application/json" });
   res.end(JSON.stringify(body));
 }
@@ -134,7 +153,8 @@ function matchRoute(routes: Route[], method: string, pathname: string): { handle
   return null;
 }
 
-const MAX_BODY_BYTES = 1_000_000;
+// Doit rester cohérent avec messageSchema : 8 images × 15 Mo base64 + texte (~121 Mo).
+const MAX_BODY_BYTES = 130_000_000;
 
 function readBody(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -143,8 +163,7 @@ function readBody(req: IncomingMessage): Promise<unknown> {
     req.on("data", (c: Buffer) => {
       size += c.length;
       if (size > MAX_BODY_BYTES) {
-        reject(new Error("body trop volumineux"));
-        req.destroy();
+        reject(new AuthError("INVALID_INPUT", 413));
         return;
       }
       chunks.push(c);
@@ -154,7 +173,7 @@ function readBody(req: IncomingMessage): Promise<unknown> {
       try {
         resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
       } catch {
-        reject(new Error("JSON invalide"));
+        reject(new AuthError("INVALID_INPUT", 400));
       }
     });
     req.on("error", reject);
@@ -180,16 +199,22 @@ type SseSend = (event: unknown) => void;
 
 const SSE_HEADERS = {
   "content-type": "text/event-stream",
-  "cache-control": "no-cache",
+  "cache-control": "no-store",
   connection: "keep-alive",
 };
 
 /** Ouvre un flux SSE et renvoie l'émetteur (`initial` = premier événement, ex. session_file). */
 function openSse(res: ServerResponse, initial?: unknown): SseSend {
+  checkResponse(res);
   res.writeHead(200, SSE_HEADERS);
   const send: SseSend = (event) => {
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
+    try { checkResponse(res); if (!res.destroyed && !res.writableEnded) res.write(`data: ${JSON.stringify(event)}\n\n`); } catch { res.end(); }
   };
+  const heartbeat = setInterval(() => {
+    try { checkResponse(res); res.write(": heartbeat\n\n"); } catch { res.end(); }
+  }, 15_000);
+  heartbeat.unref();
+  res.once("close", () => clearInterval(heartbeat));
   if (initial !== undefined) send(initial);
   return send;
 }
@@ -512,7 +537,7 @@ function boardRoutes(deps: Deps): Route[] {
     ["POST", "/api/workspaces/:id/board/cards/:cardId/start", async (ctx) => {
       const ws = requireWorkspace(deps, ctx);
       if (!ws) return;
-      const started = await startCardWork(deps, ws, cardNumber(ctx), ((ctx.body ?? {}) as { extra?: string }).extra);
+      const started = await startCardWork(deps, ws, cardNumber(ctx), ((ctx.body ?? {}) as { extra?: string }).extra, ctx.check);
       if ("error" in started) return sendJson(ctx.res, started.status, { error: started.error });
       sendJson(ctx.res, 201, started);
     }],
@@ -578,8 +603,10 @@ async function startCardWork(
   ws: WorkspaceRow,
   number: number,
   extra?: string,
+  check: () => void = () => {},
 ): Promise<{ conversation: ConversationRow; card: BoardCard } | { error: string; status: number }> {
   const found = await findCard(ws.dir, number);
+  check();
   if ("error" in found) return found;
   const { card } = found;
 
@@ -595,10 +622,13 @@ async function startCardWork(
   setConversationTitle(deps.db, conv.id, `#${card.number} ${card.title}`);
   const titled = getConversation(deps.db, conv.id)!;
   await deps.spawner.ensure(titled);
+  check();
   await deps.pool.prompt(titled.id, ticketPrompt(card, extra));
+  check();
 
   const moved = await moveCardGh(ws.dir, card.number, "in_progress");
   if ("error" in moved) return { conversation: titled, card };
+  check();
   const linked = await updateCardGh(ws.dir, card.number, {
     title: moved.card.title,
     conversation_ids: [...new Set([...card.conversation_ids, conv.id])],
@@ -636,7 +666,9 @@ function conversationRoutes(deps: Deps): Route[] {
       const prompt = b.prompt?.trim();
       if (prompt) {
         await deps.spawner.ensure(conv);
+        ctx.check();
         await pool.prompt(conv.id, prompt);
+        ctx.check();
         setConversationTitle(db, conv.id, prompt);
         conv = getConversation(db, conv.id)!;
       }
@@ -655,8 +687,9 @@ function conversationRoutes(deps: Deps): Route[] {
       const subs = deps.sseSubs.get(conv.id) ?? new Set<SseSend>();
       deps.sseSubs.set(conv.id, subs);
       subs.add(send);
-      ctx.req.on("close", () => {
+      ctx.res.once("close", () => {
         subs.delete(send);
+        if (!subs.size) deps.sseSubs.delete(conv.id);
       });
     }],
     ["GET", "/api/conversations/:id/history", (ctx) => {
@@ -684,7 +717,9 @@ function conversationRoutes(deps: Deps): Route[] {
       if (!b) return;
       const text = (b.text ?? "").trim();
       await deps.spawner.ensure(conv);
+      ctx.check();
       await pool.prompt(conv.id, text, b.images);
+      ctx.check();
       if (text) setConversationTitle(db, conv.id, text);
       sendJson(ctx.res, 200, { ok: true });
     }],
@@ -700,6 +735,7 @@ function conversationRoutes(deps: Deps): Route[] {
       const b = parseBody(ctx.res, modelSwitchSchema, ctx.body);
       if (!b) return;
       await pool.setModel(conv.id, b.provider, b.id);
+      ctx.check();
       const spawn = { ...(JSON.parse(conv.spawn_args || "{}") as SpawnConfig), provider: b.provider, model: b.id };
       setConversationModel(db, conv.id, b.provider, b.id, spawn);
       sendJson(ctx.res, 200, { ok: true });
@@ -708,6 +744,7 @@ function conversationRoutes(deps: Deps): Route[] {
       const conv = requireConversation(deps, ctx);
       if (!conv) return;
       await pool.evict(conv.id);
+      ctx.check();
       deleteConversation(db, conv.id);
       sendJson(ctx.res, 200, { ok: true }); // le .jsonl pi survit sur disque (I5)
     }],
@@ -782,7 +819,7 @@ function scheduleRoutes(deps: Deps): Route[] {
       const task = getTask(db, ctx.params.id!);
       if (!task) return notFound(ctx.res, "schedule");
       // fire-and-forget : le run est tracé et observable via /runs + /events
-      void cron.fireNow(task.id).catch(() => undefined);
+      requestAuthorization.exit(() => { void cron.fireNow(task.id).catch(() => undefined); });
       sendJson(ctx.res, 202, { ok: true });
     }],
     ["GET", "/api/schedules/:id/runs", (ctx) => {
@@ -818,6 +855,8 @@ export interface AppOptions {
   pool: PiPool;
   cron?: CronService;
   events?: EventEmitter;
+  auth?: AuthState;
+  server?: Server;
 }
 
 export function createApp(opts: AppOptions): Server {
@@ -827,7 +866,7 @@ export function createApp(opts: AppOptions): Server {
 
   // Fan-out des événements pi vers les abonnés SSE par conversation
   const sseSubs = new Map<string, Set<SseSend>>();
-  pool.onEvent((convId, event) => {
+  const unsubscribePool = pool.onEvent((convId, event) => {
     for (const send of sseSubs.get(convId) ?? []) send(event);
   });
 
@@ -855,27 +894,70 @@ export function createApp(opts: AppOptions): Server {
     ["GET", "/api/events", (ctx) => {
       const send = openSse(ctx.res);
       events.on("event", send);
-      ctx.req.on("close", () => events.off("event", send));
+      ctx.res.once("close", () => events.off("event", send));
     }],
   ];
 
-  return createServer(async (req, res) => {
-    const url = new URL(req.url ?? "/", `http://${HOST}`);
-    if (!url.pathname.startsWith("/api/")) {
-      if (serveStatic(res, url.pathname)) return;
-      res.writeHead(404, { "content-type": "text/plain" });
-      res.end("not found");
-      return;
-    }
+  const app = opts.server ?? createServer();
+  if (opts.auth) { app.requestTimeout = 30_000; app.headersTimeout = 10_000; app.maxHeadersCount = 100; }
+  app.once("close", unsubscribePool);
+  app.on("request", async (req, res) => {
+    res.setHeader("content-security-policy", "frame-ancestors 'none'");
+    res.setHeader("x-frame-options", "DENY");
+    res.setHeader("referrer-policy", "no-referrer");
+    res.setHeader("x-content-type-options", "nosniff");
     try {
-      const body = req.method === "POST" || req.method === "PUT" ? await readBody(req) : {};
+      const privateRequest = privateRequests.has(req);
+      const state = opts.auth;
+      if (privateRequest && ("origin" in req.headers || Object.keys(req.headers).some(h => h.startsWith("sec-fetch-")))) throw new AuthError("FORBIDDEN", 403);
+      if (state) {
+        state.assertAvailable();
+        if (!privateRequest) validateBoundary(req, state);
+      } else localCheck(paths.home);
+      const url = new URL(req.url ?? "/", `http://${HOST}`);
+      if (req.url === "/api/status" && req.method === "GET") return authJson(res, 200, { service: "cogitator", authentication: state ? "required" : "local" });
+      if (url.pathname.startsWith("/api/auth")) {
+        if (privateRequest) throw new AuthError("FORBIDDEN", 403);
+        if (state) return await authRoute(req, res, state);
+        if (req.url === "/api/auth/status" && req.method === "GET") return authJson(res, 200, { mode: "local" });
+        throw new AuthError("NOT_FOUND", 404);
+      }
+      // Only the build login shell and its JS/CSS/font assets are public, never an SPA fallback.
+      if (state && !url.pathname.startsWith("/api/") && req.method === "GET" && serveStatic(res, url.pathname, true)) return;
+      let check = () => localCheck(paths.home);
+      if (state) {
+        if (privateRequest) check = () => state.assertAvailable();
+        else {
+          const session = await ownerSession(state.auth, state.db, state.config, browserHeaders(req));
+          requireApproved(session);
+          check = () => { state.assertAvailable(); requireApproved(sessionById(state.db, state.config, session.id)); };
+        }
+      }
+      check();
+      responseChecks.set(res, check);
+      if (state) res.setHeader("cache-control", "no-store");
+      if (!url.pathname.startsWith("/api/")) {
+        if (serveStatic(res, url.pathname)) return;
+        return sendJson(res, 404, { error: "NOT_FOUND" });
+      }
+      const body = req.method === "POST" || req.method === "PUT" || req.method === "DELETE" ? await readBody(req) : {};
+      check();
       const found = matchRoute(routes, req.method ?? "GET", url.pathname);
-      if (!found) return sendJson(res, 404, { error: `not found: ${url.pathname}` });
-      await found.handler({ params: found.params, query: url.searchParams, body, req, res });
+      if (!found) return sendJson(res, 404, { error: state ? "NOT_FOUND" : `not found: ${url.pathname}` });
+      await requestAuthorization.run(check, () => found.handler({ params: found.params, query: url.searchParams, body, req, res, check }));
     } catch (err) {
-      sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+      if (err instanceof AuthError || opts.auth || protectedRequired(paths.home)) authFailure(res, err);
+      else if (!res.headersSent) sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+      else res.end();
     }
   });
+  return app;
+}
+
+// Server-owned identity only: no HTTP header can confer the local OS-owner capability.
+const privateRequests = new WeakSet<IncomingMessage>();
+export function createPrivateServer(app: Server): Server {
+  return createServer((req, res) => { privateRequests.add(req); app.emit("request", req, res); });
 }
 
 export { sendJson, API_PROTOCOLS };

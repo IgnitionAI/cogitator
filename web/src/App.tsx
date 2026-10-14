@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, openEvents } from "./api";
 import type { Health } from "./types";
+import Bots from "./screens/Bots";
 import Conversations from "./screens/Conversations";
 import Workspaces from "./screens/Workspaces";
 import Agents from "./screens/Agents";
@@ -14,6 +15,7 @@ import { LanguagePicker, useToast } from "./ui";
 import { localizeText, statusLabel, t, useLocale, type TranslationKey } from "./i18n";
 
 const NAV = [
+  { id: "bots", icon: "bot", label: "common.bots" },
   { id: "conversations", icon: "chat", label: "common.conversations" },
   { id: "workspaces", icon: "folder", label: "common.workspaces" },
   { id: "agents", icon: "bot", label: "common.agents" },
@@ -26,7 +28,7 @@ type ScreenId = (typeof NAV)[number]["id"];
 
 export default function App() {
   useLocale();
-  const [screen, setScreen] = useState<ScreenId>("conversations");
+  const [screen, setScreen] = useState<ScreenId>("bots");
   const [health, setHealth] = useState<Health | null>(null);
   const toast = useToast();
   const [openWorkspace, setOpenWorkspace] = useState<Workspace | null>(null);
@@ -83,8 +85,11 @@ export default function App() {
 
   const screenNode = (() => {
     switch (screen) {
+      case "bots":
+        return <Bots />;
       case "conversations":
         return <Conversations initialOpenId={pendingConv} onConsumeInitial={() => setPendingConv(null)} />;
+
       case "workspaces":
         return <Workspaces onOpenWorkspace={(w) => {
           setOpenWorkspace(w);

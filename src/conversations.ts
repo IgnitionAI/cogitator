@@ -29,15 +29,18 @@ export interface CreateConversationInput {
   spawn: SpawnConfig;
 }
 
-export function listConversations(db: Db, workspaceId?: string): ConversationRow[] {
+export function listConversations(db: Db, workspaceId?: string, agentId?: string): ConversationRow[] {
+  const where = [
+    workspaceId ? "c.workspace_id = ?" : "",
+    agentId ? "c.agent_id = ?" : "",
+  ].filter(Boolean).join(" AND ");
   const sql = `
     SELECT c.*, w.dir AS workspace_dir FROM conversation c
     LEFT JOIN workspace w ON w.id = c.workspace_id
-    ${workspaceId ? "WHERE c.workspace_id = ?" : ""}
+    ${where ? `WHERE ${where}` : ""}
     ORDER BY c.updated_at DESC`;
-  return (workspaceId
-    ? db.prepare(sql).all(workspaceId)
-    : db.prepare(sql).all()) as unknown as ConversationRow[];
+  const params = [workspaceId, agentId].filter((v): v is string => Boolean(v));
+  return (params.length ? db.prepare(sql).all(...params) : db.prepare(sql).all()) as unknown as ConversationRow[];
 }
 
 export function getConversation(db: Db, id: string): ConversationRow | null {

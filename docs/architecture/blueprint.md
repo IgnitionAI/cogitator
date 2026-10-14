@@ -67,6 +67,36 @@ When an AgentPreset is saved:
 2. A subagent removed from the preset → its `.md` file is deleted
 3. The cogitator store keeps a **working copy** for the UI (forms, validation) — but execution reads only the herdr registry (ADR-005)
 
+## Group bus (ADR-011, not implemented)
+
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant API as Cogitator API
+    participant Bus as group_message
+    participant Host as pi rpc host
+    participant B as pi rpc @bot
+    U->>API: POST /groups/:id/messages
+    API->>Bus: author=user
+    alt @slug in text
+        API->>B: inject user + bus excerpt
+        B-->>API: tokens / tools
+        API->>Bus: author=agent_id
+    else no mention
+        API->>Host: inject user + bus excerpt
+        Host-->>API: tokens / tools
+        API->>Bus: author=host
+        opt host @other
+            API->>B: inject handoff
+            B-->>API: tokens / tools
+            API->>Bus: author=other
+        end
+    end
+    API-->>U: SSE /groups/:id/events
+```
+
+Member processes are ordinary pool entries (cap 8, idle 10 min). The bus is SQLite, not a shared jsonl. UI subscribes to the group SSE, not each member’s `/conversations/:id/events`.
+
 ## CronService
 
 ```
@@ -79,11 +109,11 @@ cron tick → task due?
 
 **Accepted limitation**: cron runs only while the cogitator server is running. Displayed in the UI.
 
-## UI — screens
+## UI — screens (Plan 0004 target)
 
-1. **Conversations** (dashboard): all sessions, standalone or by workspace, status, model
-2. **Workspaces**: cards (directory, session count, default agent), creation via server-side file picker
-3. **Agents**: list + full preset editor (cascading providers/models, scanned skills with multi-select, MCP, subagent editor)
-4. **Providers**: pi read model (providers, authentication status, models), guided editing of `models.json` / `auth.json` (atomic + backup)
-5. **Cron**: tasks + run history, manual trigger
-6. **Settings**: port, idle timeout, session cap, theme
+1. **Bots (home)**: sidebar = presets + groups; main = 1–1 chat of the selected bot (resume last). First run = Majordome. New bot = NL to Majordome, not the CRUD form first.
+2. **Group thread**: same chrome; authors named; `@` completion; one composer.
+3. **Conversations** (secondary): global session list (debug / leftovers).
+4. **Workspaces**: cards (directory, session count, default agent), file picker. Also the cwd picker when a bot has no `default_workspace_id`.
+5. **Agents** (⚙): full preset editor — secondary to NL create.
+6. **Providers / Cron / Settings**: unchanged.

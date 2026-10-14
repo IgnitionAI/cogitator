@@ -301,6 +301,9 @@ function agentRoutes(deps: Deps): Route[] {
     ["POST", "/api/agents", (ctx) => {
       const input = parseBody(ctx.res, agentInputSchema, ctx.body);
       if (!input) return;
+      if (input.default_workspace_id && !getWorkspace(db, input.default_workspace_id)) {
+        return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      }
       const preset = createAgent(db, input);
       sendJson(ctx.res, 201, { agent: preset, apply: applyAgent(paths, preset) });
     }],
@@ -312,6 +315,9 @@ function agentRoutes(deps: Deps): Route[] {
     ["PUT", "/api/agents/:id", (ctx) => {
       const input = parseBody(ctx.res, agentInputSchema, ctx.body);
       if (!input) return;
+      if (input.default_workspace_id && !getWorkspace(db, input.default_workspace_id)) {
+        return sendJson(ctx.res, 404, { error: "workspace introuvable" });
+      }
       const preset = updateAgent(db, ctx.params.id!, input);
       if (!preset) return notFound(ctx.res, "agent");
       sendJson(ctx.res, 200, { agent: preset, apply: applyAgent(paths, preset) });
@@ -616,8 +622,9 @@ function conversationRoutes(deps: Deps): Route[] {
   const { db, pool } = deps;
   return [
     ["GET", "/api/conversations", (ctx) => {
-      const workspaceId = ctx.query.get("workspace_id");
-      sendJson(ctx.res, 200, { conversations: listConversations(db, workspaceId ?? undefined) });
+      const workspaceId = ctx.query.get("workspace_id") ?? undefined;
+      const agentId = ctx.query.get("agent_id") ?? undefined;
+      sendJson(ctx.res, 200, { conversations: listConversations(db, workspaceId, agentId) });
     }],
     ["POST", "/api/conversations", async (ctx) => {
       const b = parseBody(ctx.res, conversationCreateSchema, ctx.body);
@@ -625,7 +632,7 @@ function conversationRoutes(deps: Deps): Route[] {
       const resolved = resolveSpawnTarget(deps, b);
       if ("error" in resolved) return sendJson(ctx.res, resolved.status, { error: resolved.error });
 
-      let conv = createConversation(db, { workspaceId: b.workspace_id ?? null, agentId: resolved.agentId, spawn: resolved.spawn });
+      let conv = createConversation(db, { workspaceId: resolved.workspaceId, agentId: resolved.agentId, spawn: resolved.spawn });
       const prompt = b.prompt?.trim();
       if (prompt) {
         await deps.spawner.ensure(conv);
@@ -711,7 +718,7 @@ function conversationRoutes(deps: Deps): Route[] {
 function resolveSpawnTarget(
   deps: Deps,
   b: ConversationCreate,
-): { agentId: string | null; spawn: SpawnConfig } | { error: string; status: number } {
+): { agentId: string | null; spawn: SpawnConfig; workspaceId: string | null } | { error: string; status: number } {
   const { db } = deps;
   const workspace = b.workspace_id ? getWorkspace(db, b.workspace_id) : null;
   if (b.workspace_id && !workspace) return { error: "workspace introuvable", status: 404 };
@@ -721,11 +728,14 @@ function resolveSpawnTarget(
   if (agentId) {
     const preset = getAgent(db, agentId);
     if (!preset) return { error: "agent introuvable", status: 404 };
-    return { agentId: preset.id, spawn: spawnConfigFromPreset(preset) };
+    const workspaceId = b.workspace_id ?? preset.default_workspace_id ?? null;
+    if (workspaceId && !getWorkspace(db, workspaceId)) return { error: "workspace introuvable", status: 404 };
+    return { agentId: preset.id, spawn: spawnConfigFromPreset(preset), workspaceId };
   }
   if (b.provider && b.model) {
     return {
       agentId: null,
+      workspaceId: b.workspace_id ?? null,
       spawn: {
         provider: b.provider, model: b.model, thinking: b.thinking ?? null,
         systemPrompt: b.system_prompt, skills: b.skills, tools: b.tools, mcpServers: b.mcp_servers,
@@ -737,7 +747,9 @@ function resolveSpawnTarget(
   if (!fallbackId) return { error: "aucun agent par défaut — précise agent_id ou provider+model", status: 400 };
   const preset = getAgent(db, fallbackId);
   if (!preset) return { error: "agent introuvable", status: 404 };
-  return { agentId: preset.id, spawn: spawnConfigFromPreset(preset) };
+  const workspaceId = b.workspace_id ?? preset.default_workspace_id ?? null;
+  if (workspaceId && !getWorkspace(db, workspaceId)) return { error: "workspace introuvable", status: 404 };
+  return { agentId: preset.id, spawn: spawnConfigFromPreset(preset), workspaceId };
 }
 
 /** Tâches planifiées (cron) + historique de runs. */

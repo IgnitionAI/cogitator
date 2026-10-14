@@ -1,4 +1,24 @@
 export const screensMessages = {
+  "screens.bots": {
+    "fr": "Bots",
+    "en": "Bots"
+  },
+  "screens.botsSub": {
+    "fr": "Un bot = un agent. Clique pour reprendre le dernier fil.",
+    "en": "A bot is an agent. Click to resume the last thread."
+  },
+  "screens.noBots": {
+    "fr": "Aucun bot",
+    "en": "No bots"
+  },
+  "screens.botEmpty": {
+    "fr": "Crée un agent dans Équipe, ou parle au Majordome une fois qu’il existe.",
+    "en": "Create an agent under Team, or talk to Majordome once it exists."
+  },
+  "screens.talk": {
+    "fr": "Parler",
+    "en": "Talk"
+  },
   "screens.agents": {
     "fr": "Agents",
     "en": "Agents"

@@ -38,6 +38,7 @@ interface PresetRow {
   id: string; slug: string; name: string; description: string; provider: string; model: string;
   thinking: string | null; system_prompt: string; skills: string; tools_allowlist: string | null;
   mcp_servers: string; created_at: string; updated_at: string; is_default: number;
+  default_workspace_id: string | null;
 }
 
 interface SubRow {
@@ -79,6 +80,7 @@ function rowToPreset(row: PresetRow, subs: SubRow[]): AgentPreset {
     created_at: row.created_at,
     updated_at: row.updated_at,
     is_default: row.is_default,
+    default_workspace_id: row.default_workspace_id ?? null,
     subagents: subs.map((s) => ({
       id: s.id,
       name: s.name,
@@ -141,13 +143,13 @@ export function createAgent(db: Db, input: AgentInput): AgentPreset {
   const slug = uniqueSlug(db, input.name);
   const now = new Date().toISOString();
   db.prepare(
-    `INSERT INTO agent_preset (id, slug, name, description, provider, model, thinking, system_prompt, skills, tools_allowlist, mcp_servers, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO agent_preset (id, slug, name, description, provider, model, thinking, system_prompt, skills, tools_allowlist, mcp_servers, created_at, updated_at, default_workspace_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id, slug, input.name, input.description ?? "", input.provider, input.model, input.thinking ?? null,
     input.system_prompt ?? "", JSON.stringify(input.skills ?? []),
     input.tools_allowlist ? JSON.stringify(input.tools_allowlist) : null,
-    JSON.stringify(input.mcp_servers ?? []), now, now,
+    JSON.stringify(input.mcp_servers ?? []), now, now, input.default_workspace_id ?? null,
   );
   replaceSubagents(db, id, input.subagents ?? []);
   return getAgent(db, id)!;
@@ -158,13 +160,15 @@ export function updateAgent(db: Db, id: string, input: AgentInput): AgentPreset 
   if (!existing) return null;
   db.prepare(
     `UPDATE agent_preset SET slug = ?, name = ?, description = ?, provider = ?, model = ?, thinking = ?,
-       system_prompt = ?, skills = ?, tools_allowlist = ?, mcp_servers = ?, updated_at = ?
+       system_prompt = ?, skills = ?, tools_allowlist = ?, mcp_servers = ?, updated_at = ?, default_workspace_id = ?
      WHERE id = ?`,
   ).run(
     uniqueSlug(db, input.name, id), input.name, input.description ?? "", input.provider, input.model,
     input.thinking ?? null, input.system_prompt ?? "", JSON.stringify(input.skills ?? []),
     input.tools_allowlist ? JSON.stringify(input.tools_allowlist) : null,
-    JSON.stringify(input.mcp_servers ?? []), new Date().toISOString(), id,
+    JSON.stringify(input.mcp_servers ?? []), new Date().toISOString(),
+    input.default_workspace_id === undefined ? existing.default_workspace_id ?? null : input.default_workspace_id,
+    id,
   );
   replaceSubagents(db, id, input.subagents ?? []);
   return getAgent(db, id);

@@ -53,8 +53,13 @@ export const api = {
     ),
 
 
-  conversations: (workspaceId?: string) =>
-    req<{ conversations: Conversation[] }>("GET", `/api/conversations${workspaceId ? `?workspace_id=${workspaceId}` : ""}`),
+  conversations: (workspaceId?: string, agentId?: string) => {
+    const q = new URLSearchParams();
+    if (workspaceId) q.set("workspace_id", workspaceId);
+    if (agentId) q.set("agent_id", agentId);
+    const qs = q.toString();
+    return req<{ conversations: Conversation[] }>("GET", `/api/conversations${qs ? `?${qs}` : ""}`);
+  },
   conversation: (id: string) => req<{ conversation: Conversation; live: boolean; streaming: boolean }>("GET", `/api/conversations/${id}`),
   createConversation: (b: ConversationWrite) => req<{ conversation: Conversation }>("POST", "/api/conversations", b),
   deleteConversation: (id: string) => req<{ ok: true }>("DELETE", `/api/conversations/${id}`),

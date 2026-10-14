@@ -55,6 +55,7 @@ export interface AgentPreset {
   created_at: string;
   updated_at: string;
   is_default?: number;
+  default_workspace_id?: string | null;
   subagents: Array<SubagentInput & { id: string }>;
 }
 
@@ -232,6 +233,7 @@ export interface AgentWrite {
   tools_allowlist?: string[] | null;
   mcp_servers?: McpServerEntry[];
   subagents?: SubagentInput[];
+  default_workspace_id?: string | null;
 }
 
 export interface WorkspaceWrite {

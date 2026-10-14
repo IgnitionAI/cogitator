@@ -62,6 +62,7 @@ export const agentInputSchema = z.object({
   tools_allowlist: z.array(z.string()).nullable().optional(),
   mcp_servers: z.array(mcpServerEntrySchema).optional(),
   subagents: z.array(subagentInputSchema).optional(),
+  default_workspace_id: z.string().nullable().optional(),
 });
 export type AgentInput = z.infer<typeof agentInputSchema>;
 

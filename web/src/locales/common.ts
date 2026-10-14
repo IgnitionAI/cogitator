@@ -1,4 +1,5 @@
 export const commonMessages = {
+  'common.bots': { fr: 'Bots', en: 'Bots' },
   'common.conversations': { fr: 'Conversations', en: 'Conversations' },
   'common.workspaces': { fr: 'Espaces de travail', en: 'Workspaces' },
   'common.agents': { fr: 'Agents', en: 'Agents' },

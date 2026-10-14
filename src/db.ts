@@ -106,6 +106,8 @@ ALTER TABLE conversation_v2 RENAME TO conversation;
 // v2 → v3 : agent par défaut global (le "Majordome")
 const MIGRATE_V2_TO_V3 = `ALTER TABLE agent_preset ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0;`;
 
+const MIGRATE_V3_TO_V4 = `ALTER TABLE agent_preset ADD COLUMN default_workspace_id TEXT REFERENCES workspace(id) ON DELETE SET NULL;`;
+
 export type Db = Database.Database;
 
 export function openDb(dbPath: string): { db: Db; version: number } {
@@ -116,8 +118,9 @@ export function openDb(dbPath: string): { db: Db; version: number } {
   if (version < 1) {
     db.exec(SCHEMA_V2);
     db.exec(MIGRATE_V2_TO_V3);
-    db.pragma("user_version = 3");
-    return { db, version: 3 };
+    db.exec(MIGRATE_V3_TO_V4);
+    db.pragma("user_version = 4");
+    return { db, version: 4 };
   }
   if (version < 2) {
     // FK OFF pendant la migration (pratique SQLite standard ; les parents peuvent être créés plus tard)
@@ -130,5 +133,9 @@ export function openDb(dbPath: string): { db: Db; version: number } {
     db.exec(MIGRATE_V2_TO_V3);
     db.pragma("user_version = 3");
   }
-  return { db, version: 3 };
+  if (version < 4) {
+    db.exec(MIGRATE_V3_TO_V4);
+    db.pragma("user_version = 4");
+  }
+  return { db, version: 4 };
 }

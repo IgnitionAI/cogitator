@@ -1,4 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { readFileSync } from "node:fs";
+import { getPaths } from "../src/paths.js";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,7 +16,7 @@ const STARTUP_POLL_MS = 100;
 
 async function isUp(): Promise<boolean> {
   try {
-    const res = await fetch(`${BASE_URL}/api/health`);
+    const res = await fetch(`${BASE_URL}/api/status`);
     return res.ok;
   } catch {
     return false;
@@ -60,8 +62,22 @@ export default function (pi: ExtensionAPI) {
           await new Promise((resolve) => setTimeout(resolve, STARTUP_POLL_MS));
         }
       }
-      openBrowser(BASE_URL);
-      ctx.ui.notify(`Cogitator — ${BASE_URL}`, "info");
+      if (!(await isUp())) {
+        ctx.ui.notify("Cogitator unavailable: check the server/auth state and stop incompatible previous instances.", "error");
+        return;
+      }
+      let browserUrl = BASE_URL;
+      if (process.env.COGITATOR_URL === undefined) {
+        try {
+          const config: unknown = JSON.parse(readFileSync(join(getPaths().home, "auth", "config.json"), "utf8"));
+          if (config && typeof config === "object" && "origin" in config && typeof config.origin === "string") {
+            const url = new URL(config.origin);
+            if (url.protocol === "https:" && url.origin === config.origin) browserUrl = url.origin;
+          }
+        } catch { /* Existing local mode has no auth configuration. */ }
+      }
+      openBrowser(browserUrl);
+      ctx.ui.notify(`Cogitator — ${browserUrl}`, "info");
     },
   });
 }

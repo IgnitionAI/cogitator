@@ -86,7 +86,8 @@ export async function compatibility(directory: string, harness: Harness, root: C
     assert(JSON.stringify(toolEntries.at(-1)).includes(fixtureId), 'Negative control must reproduce the old diagnostic-text false match');
     assert.throws(requireMcpSuccess, /successful authoritative tool result/);
     assert.deepEqual(requests, ['GET /api/skills', 'GET /api/skills']);
-    assert(serverLog.includes(backendUrl), 'Real MCP server must confirm explicit isolated backend URL');
+    // The fixture-owned request ledger and exact result prove URL selection, not a destination log.
+    assert(serverLog.includes('connecté (stdio)'), 'Real MCP server must confirm its stdio connection');
     registry.uninstall(profile);
     assert.equal((await root.agent(context)).tools.length, 0); // Negative case: future adapter must reject this profile.
   } finally {

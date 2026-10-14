@@ -9,3 +9,10 @@ export const PORT = Number(process.env.COGITATOR_PORT ?? DEFAULT_PORT);
 
 /** URL de base du serveur local — COGITATOR_URL l'emporte (ex. autre port/hôte). */
 export const BASE_URL = process.env.COGITATOR_URL ?? `http://${HOST}:${PORT}`;
+
+/** Only explicit 0/1 are supported; a typo must never silently select local mode. */
+export function authenticationRequired(env: NodeJS.ProcessEnv = process.env): boolean {
+  const value = env.COGITATOR_AUTH_REQUIRED;
+  if (value !== undefined && value !== "0" && value !== "1") throw new Error("COGITATOR_AUTH_REQUIRED must be unset, 0, or 1.");
+  return value === "1";
+}

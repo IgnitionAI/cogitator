@@ -1,0 +1,11 @@
+# ADR-009 — Product-owned authentication, independent of the VPS
+
+Status: **accepted for the bounded local increment**, 2026-10-10, following design review, independent Standards/Spec code re-reviews and local verification. Supersedes only the external-identity/Firetower access choice in ADR-008, not its Durable, isolation or recovery requirements. This is not public-deployment or P1–P5 acceptance.
+
+Cogitator owns single-owner login and mandatory MFA rather than requiring Authelia, an OIDC gateway, SMTP or a particular hosting provider. Better Auth **1.7.7** supplies security primitives; the application enforces exact owner binding, private per-session assurance and fresh write authority. Password-only enrollment never grants application access, and protected-state loss cannot silently select local mode. See [Plan 0003](../plans/active/0003-native-owner-auth.md) and the [scoped verification record](../../native-auth-verification.md).
+
+Classic local processes retain their explicitly trusted OS-owner capability, without receiving browser credentials. A private owner-only Unix socket supplies that local transport through one shared route/event registration; all TCP remains loopback-only. O4 now records this reviewed exception. It does not contain same-UID agent code or grant remote workers administrative access: Plan 0002's isolation and scoped authorization gates remain mandatory.
+
+The deliberate integration cost is version-pinned schema/sequence coupling: private auth SQLite is separate from catalog/history; temporary SQL constraints recheck authority at factor writes and enrollment activation/rotation. Only the activation request's intentional old-session retirement is deferred into the final verification statement. No transaction spans library awaits, and partial activation remains fail-closed/offline-recovery-only. Library upgrades must revalidate these seams, logout persistence/challenge consumption, replay claims and recovery. The organization-invitation advisory is not declared fixed merely because that plugin is disabled.
+
+Firetower provisioning and the staged inventory handoff remain suspended. Their evidence is historical. The reviewed O4 and catalog-store clarifications are adopted locally; no host administration, deployment, public exposure, release or push is implied.

@@ -1,6 +1,6 @@
 # Plan 0002 — Personal HTTPS access and durable VPS execution
 
-Status: review-approved design (APPROVED); isolated P0 tooling implemented, P1–P5 not implemented. Full one-shot delivery is not verified or deployed.
+Status: original design review APPROVED; isolated P0 tooling and the bounded local native-auth slice of P1 are implemented/reviewed/verified. [Plan 0003](0003-native-owner-auth.md) supersedes the external-identity access choice. Deployed P1 and P2–P5 remain NOT PROVEN; full one-shot delivery is incomplete and not deployed.
 Date: 2026-10-09
 Design-research baseline: Cogitator 0.2.1, commit `65a5393`.
 Execution baseline: Cogitator 0.3.0, commit `bd128d2b7225da6b465ffbb9267f4b4571c0c777`; preserve the independently delivered French/English UI and its tests.
@@ -36,7 +36,7 @@ Reserve estimated request cost atomically before admission, count interrupted re
 
 ## 2. Evidence and current gaps
 
-Source inspection is not a production security audit or a crash-test result.
+The table records **pre-native-auth baseline observations** and original source locations, not today's line numbers. Plan 0003 now addresses owner authentication and trusted local-client compatibility; its [verification record](../../../native-auth-verification.md) does not resolve the remaining isolation/runtime gaps. Source inspection is not a production security audit or a crash-test result.
 
 | Observed baseline | Evidence | Consequence |
 | --- | --- | --- |
@@ -59,13 +59,11 @@ Pi Durable is a separate experimental SDK, not a flag for `pi --mode rpc`. Its `
 | Whole-product replacement with Durable | One runtime eventually | Rejected for the first release: experimental APIs and unverified integration parity make a big-bang migration unsafe |
 | Add a bounded Durable runtime for new remote missions | Meets recovery goal while keeping existing local sessions readable and functional | **Selected**, subject to the compatibility and security gates below; no fallback from failed Durable recovery to a classic RPC execution |
 
-Access: retain Caddy for HTTPS and oauth2-proxy with a separate established OIDC provider requiring MFA. Following the owner's explicit approval of the proposed defaults, use a dedicated Authelia identity service on the selected VPS instead of assuming an already-configured managed issuer. This expands trusted identity operations (password hashes, SMTP enrollment/recovery, signing keys and protected identity backups), not worker authority. Authelia is separate from Cogitator and its workers; do not implement a homemade password/reset database or replace the gateway/backend token verification with forward-auth alone. For this one-owner, one-instance deployment, file-backed users, SQLite and memory sessions are acceptable deliberate limits; IdP restart can require a fresh browser login and does not stop autonomous missions. Mandatory client MFA, actual signed claims, revocation and restoration remain subject to P1/P5 proof.
+Access (owner-confirmed replacement, 2026-10-10): Cogitator owns single-owner login, database-backed sessions and mandatory per-session MFA using a maintained library. No public registration, mandatory external IdP, Authelia, OIDC gateway or SMTP. [Plan 0003](0003-native-owner-auth.md) defines the reviewed technical design, Better Auth version/source/runtime-seam proof, offline bootstrap/recovery, API/files/SSE protection and local compatibility. Native authentication does not authorize remote execution or substitute for P2 isolation.
 
-The owner selected Firetower, and its configured SSH account was verified non-root. Reuse the existing Caddy service and a dedicated sslip.io hostname instead of purchasing a domain; DNS resolution is only a prerequisite, not HTTPS/authentication proof. Administrative setup requires the owner/operator: the available account cannot modify the existing root-owned Caddy configuration, noninteractive sudo requires a password, and the existing key does not authenticate as root. Never grant blanket sudo or rootful Docker access to workers/controller to bypass that boundary. The exact owner identity, private SMTP delivery configuration, signing/client secrets and backup destination remain provisioning inputs, not invitations to weaken authentication.
+The earlier Firetower/Caddy/sslip.io/Authelia preparation is suspended. Its read-only findings and staged metadata inspector remain historical; the owner is not asked to run the administrator handoff. No service/configuration changes or public Cogitator route were installed. See the [historical access note](../../../vps-access-options.md) and [suspended inventory](../../../vps-access-setup.md) only for evidence, not current provisioning instructions.
 
-A subsequent read-only inspection found that existing Caddy already routes an Authelia portal and forward-auth requests for AionUI to loopback port 9091. Do not install a duplicate IdP before assessing this service. Its effective configuration, OIDC support, ownership and enforced MFA are **not proven** by these routes; public discovery probes did not return usable OIDC metadata. The immediate human-admin step is a secret-filtered, read-only service/configuration inventory. Prefer reusing the established IdP if it can meet the new client's policy and isolation requirements without weakening or silently changing AionUI; otherwise return to an explicitly scoped fresh-service plan. A prepared fresh-IdP installer was held back rather than deployed or presented as ready for this existing configuration.
-
-An explicitly confirmed later access-preparation step may expose only the established IdP portal and a static HTTP 503 on the reserved application hostname. It must not start or proxy the current Cogitator application. Public application enablement remains gated by the approved authentication, isolation and runtime checks. Preserve existing Caddy sites; validate before reload, back up and roll back only this setup's changes on failure. Human-only admin/secrets/enrollment actions use a reviewed local-terminal setup procedure, never credentials in chat. See [the source-backed access note](../../../vps-access-options.md) for the proposal's operational implications.
+The eventual VPS, canonical HTTPS origin and off-host backup destination remain to be selected and verified. A maintained TLS terminator may still be used without owning product authentication. Do not grant blanket sudo/Docker access, expose the current application, restore the withheld installer or perform further Firetower actions.
 
 Execution: retain Node/TypeScript, the current React application, and REST/SSE. Use Pi Durable as the scheduler/checkpoint engine, not a new homegrown workflow engine. Use rootless container workers because arbitrary development commands must not run in the credential-owning control process.
 
@@ -73,10 +71,10 @@ Execution: retain Node/TypeScript, the current React application, and REST/SSE. 
 
 ```mermaid
 flowchart TD
-    Browser[Owner browser] --> TLS[Caddy HTTPS]
-    TLS --> Identity[oauth2-proxy / OIDC + MFA]
-    TLS --> API[Cogitator authenticated API and SSE — loopback only]
-    Identity -. verified identity .-> API
+    Browser[Owner browser] --> TLS[HTTPS termination]
+    TLS --> API[Cogitator native owner auth and API/SSE — loopback TCP]
+    API --> Identity[Private auth SQLite: owner, sessions, mandatory MFA]
+    Identity -. protected backup .-> Backup
     API --> Catalog[Existing SQLite catalog]
     API --> Runtime[One Durable harness process]
     Runtime --> State[Durable SQLite: tasks, transcript, mission documents]
@@ -92,15 +90,15 @@ flowchart TD
 
 ### Access boundary
 
-- Public ingress is HTTPS only; no direct access to Cogitator, OAuth proxy, SQLite, worker endpoints, or daemon sockets. Preserve loopback binding. Restrict SSH separately; never expose the Docker API.
-- Require the configured owner identity, not merely membership of an email domain. Pin verified issuer, audience and stable subject; validate signature and expiration using a maintained JWT/OIDC library. The gateway strips client-supplied identity headers and forwards a verified identity token; the application validates it rather than trusting arbitrary `X-Forwarded-*` values. Demonstrate the exact token/header mapping in the access spike; opaque access tokens are not ID tokens.
-- Require an enforced MFA policy for this owner/application, not merely an MFA-capable issuer. Establish enforcement through the provider's application/account policy and appropriate verified authentication claims where available; reject a fresh password-only login in P1. If enforcement cannot be established, provisioning fails.
-- Fail closed if identity configuration is missing, invalid, or unverifiable. Keep previously verified keys cached only according to a bounded policy; never disable verification during IdP failure.
-- Secure, HttpOnly, SameSite session cookies; short refresh/revalidation; bounded sessions. No bearer tokens in URLs or browser localStorage, and no secrets or auth headers in logs.
-- Enforce the canonical Host/Origin and JSON Content-Type for browser mutations; reject cross-origin writes and permissive credentialed CORS. Protect login callbacks with the gateway's state/nonce mechanisms.
-- Authenticate every REST/SSE entry point. Watching history or connecting SSE must not create a mission. SSE renews authorization by reconnecting at most every 60 seconds; logout closes browser streams, and operator revocation disables new access and existing streams within that bound. Logging out does not abort missions.
-- The local classic mode remains loopback-only. A remote mode refuses startup without its access policy. Minimal health/readiness is local; infrastructure probes must not expose configuration.
-- Internal automation uses distinct mission-scoped credentials and endpoint allowlists. Neither an agent nor a worker receives an owner browser session. Full administrative Cogitator MCP methods are unavailable to autonomous workers.
+- Public ingress is HTTPS only; no direct exposure of the backend, SQLite, worker endpoints or daemon sockets. Preserve loopback TCP binding. Restrict SSH separately; never expose the Docker API.
+- Pin the exact sole owner ID established offline. A maintained library owns password/factor verification and signed sessions; Cogitator checks fresh database state and per-session MFA assurance, never an email-domain match or an account enrollment checkbox.
+- Password-only/enrollment sessions cannot access application data. Prove fresh MFA, stale-session rejection, one-use recovery, bounded abuse controls and offline recovery using the exact library version; see Plan 0003. No public signup or external identity dependency is required.
+- Missing, corrupt or unverifiable protected configuration/storage fails closed; required mode must survive partial-state loss and be explicit in deployed service configuration. Do not revert to unauthenticated local mode on error.
+- Secure, HttpOnly, SameSite host-only cookies; fixed bounded sessions and fresh revalidation. No browser-visible JSON bearer tokens, tokens in URLs/localStorage, or secret-bearing logs/snapshots.
+- Enforce canonical Host/Origin and JSON Content-Type for browser mutations, exact auth-route allowlists and controlled proxy headers. Reject cross-origin writes and permissive credentialed CORS.
+- Authenticate every REST/files/SSE entry point. Watching new Durable history/SSE must not create a mission. Revalidate before stream events/heartbeats and close revoked/expired streams within 60 seconds; logout closes browser streams but does not abort accepted work.
+- Existing local mode remains distinct. Public liveness exposes only minimal service/authentication status; detailed health remains private. The reviewed private Unix IPC retains trusted OS-owner classic MCP without granting a TCP bypass or changing frozen snapshots.
+- Remote automation uses separate mission-scoped credentials and endpoint allowlists, never owner browser sessions or the local administrative socket. Full administrative MCP is unavailable to autonomous remote workers; unconfined classic execution cannot be exposed as a remote fallback.
 
 ### Execution and secret boundary
 
@@ -176,7 +174,7 @@ A stable registry and explicit compatibility checks are essential: changing the 
 - **I5 / ADR-006:** keep classic pi JSONL history untouched. Propose a narrowly scoped amendment allowing Durable-owned transcripts/documents in its own storage. Do not store the same transcript in the catalog. Amend the active contract only in the implementation change that establishes the new boundary.
 - **I3:** retain the sole classic spawn path; add one explicit Durable runtime composition point. No feature may create an unmanaged process or harness.
 - **O6:** freeze preset, policy, toolchain and extension versions per mission. Durable's ability to update prompt sections does not silently authorize changing a running mission's capabilities.
-- **O4:** keep loopback binding; HTTPS terminates at the gateway.
+- **O4 / O7:** retain loopback-only TCP and the reviewed owner-only Unix IPC exception; HTTPS terminates at the trusted gateway. Browser/TCP application access in protected mode uses fresh per-session MFA, never account enrollment alone.
 - **I2 / O1 / ADR-005:** preserve local behavior. Define the remote execution-environment boundary and the explicit status of herdr compatibility before enabling it. Do not label a native Durable child conversation a herdr agent.
 - **History:** pin `runtime_kind` at creation. Old sessions remain in classic mode; no automatic transcript conversion or assumption that Durable JSONL is pi-session JSONL. New remote missions use Durable only after its gates pass. Legacy classic execution must not become an unisolated remote backdoor; initial remote access to imported classic history is read-only.
 - **MCP/skills:** reuse verified skill loaders; run tool-bearing stdio MCP servers in the worker boundary or expose a restricted trusted connector. Remote MCP identities/permissions must be reviewed. Block unsupported presets rather than silently dropping tools or granting more access.
@@ -190,7 +188,7 @@ Keep existing conversation endpoints; add only the contracts required for remote
 
 | Proposed surface | Contract |
 | --- | --- |
-| Owner login/logout | Gateway-owned OIDC flow; no Cogitator registration or password reset; deny any identity other than the configured owner |
+| Owner login/logout | Native maintained-library sessions and mandatory per-session MFA; offline sole-owner provisioning/recovery, no public signup/reset; see Plan 0003 |
 | `POST /api/conversations/:id/messages` | Durable mode requires a bounded stable `requestId`; acknowledge only after durable acceptance; return the accepted submission identity. Queue by default while busy; explicit steer retains separate intent semantics |
 | Existing history/events routes | Authenticated committed snapshot + updates; stable entry IDs; no mission start on a read; auth expiry and reconnection preserve pending input and form state |
 | `GET /api/missions/:id` | Authoritative projected status, budget, current work, approval requirement and outcome; secrets redacted |
@@ -204,7 +202,7 @@ All inputs are bounded and validated. Distinguish 401 (not authenticated), 403 (
 
 | Surface | Required states and truthful behavior |
 | --- | --- |
-| Login | Sign in, unavailable identity provider, rejected account; never a permanent loading screen |
+| Login | Password/MFA challenge, restricted enrollment, recovery, unavailable authentication and rejected credentials; never a permanent loading screen |
 | Conversation | Queued, running, recovering, waiting for approval, paused by budget, needs attention, completed/failed/cancelled; explain what continues when the browser closes |
 | Approval panel | Fixed operation, target, commit/artifact, consequence, validity and explicit approve/deny; separate from model-generated forms; keyboard/focus accessible |
 | Recovery | Show confirmed state, retained output and unresolved effects; never show “completed” for an unrecorded result |
@@ -214,12 +212,12 @@ Detailed visual mockups are deferred to the affected implementation slice; this 
 
 ## 8. Delivery plan and exit gates
 
-Effort is an initial engineering estimate, not a commitment; deployment credentials and external approvals are excluded. Expect approximately 12–20 focused engineering days, revised after P0.
+Effort below is the original estimate, not a commitment; deployment credentials and external approvals are excluded. The original 12–20 focused engineering days must be re-estimated after the native-auth proof and remaining integration work.
 
 | Phase | Work and principal files | Exit gate | Estimate |
 | --- | --- | --- | --- |
 | **P0 — Prove the runtime seam** | Pin a Durable release; isolated harness/worker spike around `src/pool.ts`, `src/spawner.ts`, `src/history.ts`; test actual `requestId`, events, approvals/documents, tool policy, skill loader, one necessary MCP integration and storage version behavior | Crash during generation and a controlled tool; reopen/resume; prove no duplicate protected effect; explicit compatibility matrix for required presets. No public deployment and no full runtime rewrite | 2–3 days |
-| **P1 — Establish the access boundary** | Gateway and systemd deployment spec; auth/Origin/Host boundary in `src/server.ts`; update `src/mcp-server.ts`, extension probes and UI auth-expiry handling; fail-closed remote configuration | External tests deny unauthenticated/wrong-owner REST, SSE, files and writes; forged headers/direct port access fail; valid owner works from a clean browser; logout/revocation bounded | 2–3 days |
+| **P1 — Establish the access boundary** | Native owner bootstrap/sessions/MFA and local compatibility per Plan 0003; auth/Origin/Host boundary, private local MCP, extension probes, bilingual login and expiry handling; later TLS/systemd specification | External tests deny unauthenticated/wrong-owner REST, SSE, files and writes; forged headers/direct port access fail; valid owner works from a clean browser; logout/revocation bounded | 2–3 days |
 | **P2 — Constrain execution** | Container-backed execution environment, workspace enrollment/path confinement, rootless daemon and egress policy, scoped external-effect tools; remote restrictions on skill import/MCP | Malicious fixture cannot read control secrets, mount host files, reach metadata/control ports, alter approvals, push protected refs or bypass an action grant through bash | 2–4 days |
 | **P3 — Integrate durable missions** | Shared runtime selection/adaptation, durable documents and approvals, request IDs, two-slot admission, workspace claims, budgets, frozen runtime versions; chat snapshots/states | Process-kill matrix passes; pending messages/approvals/budgets survive; two browsers do not double-submit; no process leaks; classic local sessions remain functional | 3–4 days |
 | **P4 — Reconcile scheduling and upgrades** | Reproduce/fix cron gaps in `src/cron.ts`; durable schedule occurrences use stable schedule/occurrence IDs; classify missed runs, stale claims and retained workers; migrate no old session implicitly | Normal schedule and catch-up differ correctly; same occurrence cannot execute twice after restart; real worker cancellation; rejected old runtime schemas fail safely | 1–2 days |
@@ -236,7 +234,7 @@ P0 precedes commitment to the integration. P1 and P2 must both pass before any r
 - Forged identity headers, wrong owner, direct backend access, cross-origin writes, stream expiry, symlink escape and unrestricted import attempts.
 - Sandbox attempting to read provider credentials, runtime DB, approval records, Docker socket, host/private addresses or cloud metadata.
 - Unauthorized branch/CI/workflow/production actions attempted both through a tool and through a shell command.
-- State restore on an isolated host with all outbound effects disabled first. A restore creates a new recovery epoch and invalidates restored approvals/automation credentials; it must not resurrect consumed or revoked authority. Receipts/intents created after the backup may be absent entirely: require owner-reviewed reconciliation with external systems and prohibit replay of work whose effect history cannot be established. Ordinary process restart is not a restore and retains valid grants. Re-enable dispatch only for reconciled missions with fresh required authorization; never claim that absent receipts can be recovered from the backup.
+- State restore on an isolated host with all outbound effects disabled first. A restore creates a new recovery epoch and invalidates restored approvals/automation credentials, owner sessions, temporary authentication challenges and setup capabilities; it must not resurrect consumed or revoked authority. Required-auth service configuration remains independent of the restored data set. Receipts/intents created after the backup may be absent entirely: require owner-reviewed reconciliation with external systems and prohibit replay of work whose effect history cannot be established. Ordinary process restart is not a restore and retains valid grants. Re-enable dispatch only for reconciled missions with fresh required authorization; never claim that absent receipts can be recovered from the backup.
 
 ### Operations and rollback
 
@@ -244,7 +242,7 @@ Use one systemd-supervised controller process, with restart backoff and an exclu
 
 P5 records measured disk allocations for controller state/WAL, clones, scratch, images, artifacts and logs. Enforce aggregate worker storage limits with supported host/storage quotas, retaining capacity for controller checkpoints and effect receipts; a free-space check alone is not a hard quota. Stop new admissions before the stated reserve threshold is crossed and safely pause/classify active work on storage pressure. If quotas/reserves cannot be enforced on the chosen host, do not enable autonomous remote execution. Default retention: rotated logs for 14 days within a 1 GiB cap; terminal disposable clones/artifacts for seven days only after their results are exported/backed up and no unresolved effect or active task refers to them; retain current, rollback and active-task images. Do not automatically delete authoritative transcripts, approvals or effect receipts in V1. Never prune active work or unresolved evidence to make room; alert and require an explicit retention/capacity decision instead.
 
-Back up the runtime, catalog, workspace changes and necessary encrypted configuration as one documented recovery set. Quiesce new work and reach a verified backup boundary; use supported SQLite backup/checkpoint mechanisms, not a raw live `.db` copy that ignores WAL. Restore testing starts with dispatch disabled. Credentials needed for off-host recovery must not exist solely on the failed VPS.
+Back up the runtime, catalog, native auth database and protected auth secret/configuration, workspace changes and necessary encrypted configuration as one documented recovery set. Quiesce new work and reach a verified backup boundary; use supported SQLite backup/checkpoint mechanisms, not a raw live `.db` copy that ignores WAL. Restore testing starts with dispatch disabled. Credentials needed for off-host recovery must not exist solely on the failed VPS.
 
 Pin the registry and migrations with each release. Drain or explicitly classify active work before upgrade. Retain compatible images and a pre-upgrade backup. Roll back code only when the stored schema/task versions remain compatible; otherwise restore into an isolated environment and reconcile remote effects before enabling execution. Do not restore an old database over a live agent fleet or promise zero data loss from a backup rollback.
 
@@ -252,7 +250,7 @@ Pin the registry and migrations with each release. Drain or explicitly classify 
 
 | ID | Decision | Alternative rejected / reason |
 | --- | --- | --- |
-| D1 | Public HTTPS, exactly one owner, gateway OIDC plus backend identity enforcement | VPN-only conflicts with confirmed access requirement; homemade passwords add avoidable security maintenance |
+| D1 (revised 2026-10-10) | Public HTTPS, exactly one owner, native maintained-library authentication and per-session MFA (Plan 0003) | Mandatory external IdP conflicts with the clarified product requirement; homemade security primitives remain rejected |
 | D2 | New Durable remote missions; preserve classic local sessions | Supervision alone does not satisfy checkpoint recovery; big-bang conversion risks incompatible histories/integrations |
 | D3 | One owning process and explicit runtime/workspace locks | Multiple writers are unsupported; conversation ownership is not an access-control capability |
 | D4 | Durable owns mission truth; catalog holds references | Dual transcript/status authorities create ambiguous recovery and non-atomic cross-store writes |
@@ -261,7 +259,7 @@ Pin the registry and migrations with each release. Drain or explicitly classify 
 | D7 | Two jobs, bounded resources and durable budgets | Unlimited retries/concurrency contradict personal VPS capacity and cost control |
 | D8 | Measured backup/restore and pinned upgrades | A durable framework does not supply host-loss recovery, high availability, or schema-compatible rollback |
 
-### Review resolutions
+### Original review resolutions (access implementation superseded by Plan 0003)
 
 | Reviewer / objection | Disposition and resolution |
 | --- | --- |
@@ -297,7 +295,7 @@ Implementation order and stop conditions:
 4. Review implementation against this full plan and verify every acceptance criterion as PASS, FAIL or BLOCKED — NOT PROVEN. Missing target access/credentials is a material stop, not permission to expose the current server, invent identities or silently reduce scope.
 5. Leave the tracking issue open until every criterion passes, including real VPS recovery/restore and the controlled soak. Do not publish a release or declare the deployment complete merely because local tests pass.
 
-### Implementation checkpoint
+### Historical P0 implementation checkpoint
 
 The isolated SDK spike is implemented in `scripts/durable-spike/`, with exact SDK pins and its own lockfile; root runtime dependencies and the existing classic graph remain unchanged. [P0 evidence](../../../durable-spike.md) records the bounded supported profile and 19 actual SIGKILL/reopen scenarios, including revision-recorded disposable Git clones, a real offline Node test, grant rejection/binding and frozen-profile checks. Missing legacy/herdr support stays explicit rather than silently broadening capabilities.
 
@@ -305,7 +303,13 @@ Independent Standards and Spec reviews identified local proof gaps: absence-awar
 
 Final local verification passed: build, 105/105 application tests, a fresh private-lockfile install followed by the 19-scenario spike, package exclusion checks (76 published files), no surviving fixture processes, and whitespace checks. Classic sources, the FR/EN UI and root lockfile are unchanged. [The evidence report](../../../durable-spike.md#one-shot-verification-and-full-scope-status) separates these results from unimplemented P1–P5. Issue #7 stays open; the whole request is **BLOCKED — NOT PROVEN**, not completed, deployed or released.
 
-P0's fixture-profile checks do not implement a remote backend or certify rootless containers, real OIDC/MFA, deployed recovery, arbitrary coding presets, or P1–P5. The owner has since designated Firetower and approved the sslip.io/Authelia defaults described above. The next human-only gates are authorized administrative setup, private owner/SMTP input and enrollment, followed by actual HTTPS/MFA verification; the required production application/runtime work and off-host backup selection remain outstanding. Neither SSH success nor a DNS answer proves authenticated deployment. Review and verification must continue to report the full request as BLOCKED — NOT PROVEN while these criteria remain unmet.
+P0's fixture-profile checks do not implement a remote backend or certify rootless containers, real OIDC/MFA, deployed recovery, arbitrary coding presets, or P1–P5. The owner subsequently replaced the Firetower/Authelia direction with native Cogitator authentication. The old administrative/SMTP handoff is suspended. Plan 0003 now governs access design/proof; production runtime/isolation, eventual HTTPS deployment and off-host backup acceptance remain outstanding. Neither SSH success nor a DNS answer proves authenticated deployment. Review and verification must continue to report the full request as BLOCKED — NOT PROVEN while these criteria remain unmet.
+
+### Native-auth local checkpoint — 2026-10-10
+
+Plan 0003's local backend/FR-EN increment is implemented and accepted after independent Standards/Spec re-reviews and review-driven corrections. Parent-run full builds, **140/140 tests** and six actual local HTTPS/browser journeys pass on Node 26.10.0 and clean Node 22.19.0. The P0 spike remains passing; package dry run contains 82 files with private state/tooling excluded. O4/O7 and ADR-006 now record the reviewed private-transport/auth-store boundary, without changing classic I3/I5/O6 or adopting production Durable storage.
+
+See the [detailed evidence](../../../native-auth-verification.md). The increment is uncommitted/unpublished, with no VPS changes. Same-UID execution is not contained, interrupted socket setup can require stopped-owner inspection, and deployed access/isolation/mission/scheduling/restore/soak gates remain **NOT PROVEN**. Issue #7 remains open; native authentication is progress within P1, not completion of the entire phase or request.
 
 ## 11. Primary references
 

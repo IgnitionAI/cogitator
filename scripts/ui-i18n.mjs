@@ -73,6 +73,7 @@ async function instrument(target, storage = {}) {
       const path = url.pathname;
       report.requests.push({ method: request.method(), path }); // Never log draft/key bodies.
       const respond = (data, status = 200) => request.respond({ status, contentType: 'application/json', body: JSON.stringify(data) });
+      if (request.method() === 'GET' && path === '/api/auth/status') return await respond({ mode: 'local' });
       if (request.method() !== 'GET') {
         await new Promise(resolve => setTimeout(resolve, 350));
         if (failWrites) return await respond({ error: path === '/api/mcp' ? 'serveur demo: command ou url requis' : rawError }, 503);

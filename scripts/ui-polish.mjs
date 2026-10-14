@@ -25,6 +25,7 @@ await page.setRequestInterception(true);
 page.on('request', async request => {
   const { pathname } = new URL(request.url());
   if (!pathname.startsWith('/api/')) return request.continue();
+  if (request.method() === 'GET' && pathname === '/api/auth/status') return request.respond({ contentType: 'application/json', body: JSON.stringify({ mode: 'local' }) });
   if (request.method() !== 'GET') {
     writes++;
     if (mutationDelay) await new Promise(resolve => setTimeout(resolve, mutationDelay));

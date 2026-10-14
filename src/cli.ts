@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { EventEmitter } from "node:events";
-import { mkdirSync } from "node:fs";
+import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { getPackageDir, RpcClient } from "@earendil-works/pi-coding-agent";
-import { HOST, PORT } from "./config.js";
+import { authenticationRequired, HOST, PORT } from "./config.js";
 import { CronService } from "./cron.js";
 import { setConversationStatus } from "./conversations.js";
 import { seedDefaultAgents } from "./default-agent.js";
@@ -11,71 +11,71 @@ import { openDb } from "./db.js";
 import { getPaths } from "./paths.js";
 import { PiPool } from "./pool.js";
 import { createApp } from "./server.js";
+import { authCommand } from "./auth-cli.js";
+import { loadAuth, lockHome, protectedRequired, type AuthState } from "./auth-state.js";
+import { listenOwnerSocket } from "./owner-transport.js";
 import { makeSpawner } from "./spawner.js";
+import { mkdirSync } from "node:fs";
 
-const paths = getPaths();
-mkdirSync(paths.home, { recursive: true });
-const { db, version } = openDb(paths.db);
-
-/** Cadences du service (bornes nommées : un chiffre nu ici est une décision, pas un détail). */
 const SWEEP_INTERVAL_MS = 60_000;
 const CRON_TICK_MS = 30_000;
-
-// Seed des agents par défaut : Majordome (opérateur) + Chef de Projet (PM)
-{
-  const seeded = seedDefaultAgents(db, paths);
-  if (seeded.majordome) console.log("[cogitator] agent par défaut créé : Majordome");
-  if (seeded.chef) console.log("[cogitator] agent créé : Chef de Projet");
-  if (seeded.architecte) console.log("[cogitator] agent créé : Architecte de Skills");
-}
-
-// I3 : tout spawn passe par ce pool (factory RpcClient officiel, cli.js du pi résolu)
-const factory = (opts: { cwd: string; args: string[]; env?: Record<string, string> }) =>
-  new RpcClient({ cliPath: join(getPackageDir(), "dist/cli.js"), cwd: opts.cwd, args: opts.args, env: opts.env });
-
-const pool = new PiPool({
-  factory,
-  callbacks: { onStatus: (convId, status) => setConversationStatus(db, convId, status) },
-});
-
-const events = new EventEmitter();
-const spawner = makeSpawner({ db, pool, paths });
-const cron = new CronService({
-  db, pool, spawner,
-  notify: (event) => events.emit("event", event),
-});
-
-const server = createApp({ db, dbPath: paths.db, dbVersion: version, paths, pool, cron, events });
-
-server.listen(PORT, HOST, () => {
-  console.log(`[cogitator] http://${HOST}:${PORT}`);
-  console.log(`[cogitator] data: ${paths.home}`);
-  console.log(`[cogitator] pi agents: ${paths.piAgentsDir}`);
-});
-
-server.on("error", (err: NodeJS.ErrnoException) => {
-  if (err.code === "EADDRINUSE") {
-    console.error(`[cogitator] port ${PORT} déjà utilisé — Cogitator tourne déjà ? (COGITATOR_PORT pour changer)`);
-    process.exit(1);
+const paths = getPaths();
+try {
+  const required = authenticationRequired();
+  const args = process.argv.slice(2);
+  if (args[0] === "auth") await authCommand(paths.home, PORT, args.slice(1));
+  else {
+    if (args.length > 1 || args.some(arg => arg !== "--auth-required")) throw new Error("Usage: cogitator [--auth-required] | cogitator auth <init|recover|setup-key>");
+    await start(required || args.length === 1);
   }
-  throw err;
-});
-
-// Recyclage idle toutes les minutes
-const sweeper = setInterval(() => {
-  pool.sweep().catch(() => undefined);
-}, SWEEP_INTERVAL_MS);
-cron.start(CRON_TICK_MS);
-
-async function shutdown(): Promise<void> {
-  clearInterval(sweeper);
-  cron.stop();
-  await pool.dispose();
-  server.close();
-  db.close();
-  process.exit(0);
+} catch (err) {
+  console.error(`[cogitator] ${err instanceof Error ? err.message : "Startup failed"}`);
+  process.exitCode = 1;
 }
 
-for (const sig of ["SIGINT", "SIGTERM"] as const) {
-  process.on(sig, () => void shutdown());
+async function start(explicit: boolean): Promise<void> {
+  mkdirSync(paths.home, { recursive: true });
+  const unlock = process.platform === "win32" ? () => {} : lockHome(paths.home);
+  let auth: AuthState | undefined;
+  let db: ReturnType<typeof openDb>["db"] | undefined;
+  const server = createServer((_req, res) => { res.writeHead(503, { "content-type": "application/json", "cache-control": "no-store" }); res.end('{"error":"AUTH_UNAVAILABLE"}'); });
+  let privateServer: Server | undefined;
+  try {
+    auth = protectedRequired(paths.home, explicit) ? loadAuth(paths.home) : undefined;
+    // Detect even an old incompatible binary on the configured port before catalog/seed side effects.
+    await new Promise<void>((done, reject) => { server.once("error", reject); server.listen(PORT, HOST, done); });
+    privateServer = auth ? await listenOwnerSocket(server, paths.home) : undefined;
+    const opened = openDb(paths.db);
+    db = opened.db;
+    seedDefaultAgents(db, paths);
+    const catalog = db;
+    const pool = new PiPool({
+      factory: (opts) => new RpcClient({ cliPath: join(getPackageDir(), "dist/cli.js"), cwd: opts.cwd, args: opts.args, env: opts.env }),
+      callbacks: { onStatus: (convId, status) => setConversationStatus(catalog, convId, status) },
+    });
+    const events = new EventEmitter();
+    const cron = new CronService({ db, pool, spawner: makeSpawner({ db, pool, paths }), notify: event => events.emit("event", event) });
+    server.removeAllListeners("request");
+    createApp({ db, dbPath: paths.db, dbVersion: opened.version, paths, pool, cron, events, auth, server });
+    console.log(`[cogitator] ${auth ? auth.config.origin : `http://${HOST}:${PORT}`}`);
+    const sweeper = setInterval(() => { pool.sweep().catch(() => undefined); }, SWEEP_INTERVAL_MS);
+    cron.start(CRON_TICK_MS);
+    let stopping = false;
+    const shutdown = async () => {
+      if (stopping) return;
+      stopping = true;
+      clearInterval(sweeper); cron.stop();
+      privateServer?.closeAllConnections(); server.closeAllConnections();
+      await Promise.all([close(server), ...(privateServer ? [close(privateServer)] : [])]);
+      await pool.dispose(); auth?.db.close(); catalog.close(); unlock();
+    };
+    for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => { void shutdown().catch(() => { process.exitCode = 1; }); });
+  } catch (err) {
+    privateServer?.closeAllConnections(); server.closeAllConnections();
+    if (privateServer?.listening) await close(privateServer);
+    if (server.listening) await close(server);
+    auth?.db.close(); db?.close(); unlock();
+    throw err;
+  }
 }
+function close(server: Server): Promise<void> { return new Promise((done, reject) => server.close(err => err ? reject(err) : done())); }

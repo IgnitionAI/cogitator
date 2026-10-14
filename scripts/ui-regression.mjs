@@ -25,6 +25,7 @@ try {
   page.on('request', async request => {
     const url = new URL(request.url());
     if (!url.pathname.startsWith('/api/')) return request.continue();
+    if (request.method() === 'GET' && url.pathname === '/api/auth/status') return request.respond({ contentType: 'application/json', body: JSON.stringify({ mode: 'local' }) });
     let result;
     let status = 200;
     let contentType = 'application/json';

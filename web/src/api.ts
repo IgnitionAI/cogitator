@@ -1,15 +1,25 @@
+import { recheckAccess } from "./auth-api";
+import { t } from "./i18n";
+import { authMessages } from "./locales/auth";
 import type {
   AgentPreset, BoardCard, Conversation, CronRun, CronTask, FeedEvent, FileChange, FileEvent, Health, ImageContentInput, ProviderView, SkillRef, Workspace, AgentWrite, CardWrite, ConversationWrite, ProviderWrite, ScheduleWrite, SseEvent, WorkspaceWrite } from "./types";
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
+  const mutation = method !== "GET" && method !== "HEAD";
   const res = await fetch(url, {
     method,
-    headers: body !== undefined ? { "content-type": "application/json" } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    credentials: "same-origin",
+    headers: mutation ? { "content-type": "application/json" } : undefined,
+    body: mutation && body !== undefined ? JSON.stringify(body) : undefined,
   });
+  if (res.status === 401 || res.status === 403) void recheckAccess();
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const failure = data as { error?: unknown; issues?: unknown };
+    const failure = (data && typeof data === "object" ? data : {}) as { error?: unknown; issues?: unknown };
+    if (res.status === 401 || res.status === 403) {
+      const key = `auth.error.${typeof failure.error === "string" ? failure.error : "UNKNOWN"}`;
+      throw new Error(Object.hasOwn(authMessages, key) ? t(key as keyof typeof authMessages) : t("auth.error.UNKNOWN"));
+    }
     const message = typeof failure.error === "string" ? failure.error : `HTTP ${res.status}`;
     const issues = Array.isArray(failure.issues) ? failure.issues.filter((issue): issue is string => typeof issue === "string") : [];
     throw new Error([message, ...issues].join("\n"));
@@ -104,36 +114,53 @@ export const api = {
   runs: (id: string) => req<{ runs: CronRun[] }>("GET", `/api/schedules/${id}/runs`),
 };
 
-/** SSE avec reconnexion native (le navigateur réessaie seul) ; onOpen à chaque (re)connexion
- *  pour réconcilier l'historique et combler les événements manqués pendant une coupure. */
+/** All feeds share bounded reconnects and the gate's fresh access check. */
 export type EventConnectionState = "connecting" | "connected" | "reconnecting" | "closed";
+const eventClosers = new Set<() => void>();
+export function closeAllEvents(): void { for (const close of eventClosers) close(); }
 
 export function openEvents(
   url: string,
   onEvent: (event: SseEvent) => void,
   opts?: { onOpen?: () => void; onClose?: () => void; onStateChange?: (state: EventConnectionState) => void },
 ): () => void {
-  const source = new EventSource(url);
-  opts?.onStateChange?.("connecting");
-  source.onmessage = (msg) => {
-    try {
-      onEvent(JSON.parse(msg.data) as SseEvent);
-    } catch {
-      /* événement non-JSON : ignoré */
-    }
-  };
-  source.onopen = () => {
-    opts?.onStateChange?.("connected");
-    opts?.onOpen?.();
-  };
-  // NE PAS fermer sur error : le navigateur rétablit la connexion tout seul
-  source.onerror = () => opts?.onStateChange?.(source.readyState === EventSource.CLOSED ? "closed" : "reconnecting");
-  return () => {
+  let source: EventSource | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let closed = false;
+  const disconnect = () => {
+    if (!source) return;
     source.onmessage = null;
     source.onopen = null;
     source.onerror = null;
     source.close();
+  };
+  const connect = () => {
+    if (closed) return;
+    source = new EventSource(url);
+    source.onmessage = (msg) => {
+      try { onEvent(JSON.parse(msg.data) as SseEvent); }
+      catch { /* Ignore non-JSON events. */ }
+    };
+    source.onopen = () => { opts?.onStateChange?.("connected"); opts?.onOpen?.(); };
+    source.onerror = () => {
+      disconnect();
+      opts?.onStateChange?.("reconnecting");
+      // Stop native retries while verifying; never reconnect a revoked session.
+      timer = setTimeout(() => {
+        void recheckAccess().then((allowed) => { if (allowed && !closed) connect(); });
+      }, 5000);
+    };
+  };
+  const close = () => {
+    closed = true;
+    clearTimeout(timer);
+    disconnect();
+    eventClosers.delete(close);
     opts?.onStateChange?.("closed");
     opts?.onClose?.();
   };
+  eventClosers.add(close);
+  opts?.onStateChange?.("connecting");
+  connect();
+  return close;
 }

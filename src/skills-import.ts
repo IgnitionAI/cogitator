@@ -1,3 +1,5 @@
+import { checkRequestAuthorization } from "./request-authorization.js";
+import { AuthError } from "./native-auth.js";
 import { execFile } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -48,6 +50,7 @@ export function scanSkillDirs(root: string, depth = 0, found: string[] = []): st
 
 /** Copie les skills trouvés sous srcDir vers destRoot (~/.agents/skills). */
 export function importFromDir(srcDir: string, destRoot: string, overwrite = false): ImportResult {
+  checkRequestAuthorization();
   const result: ImportResult = { imported: [], skipped: [] };
   const skills = scanSkillDirs(srcDir);
   mkdirSync(destRoot, { recursive: true });
@@ -108,6 +111,7 @@ export async function importFromGitHub(source: string, destRoot: string, overwri
     if (roots.length === 0) return { imported: [], skipped: [], error: "tarball vide" };
     return importFromDir(join(extractDir, roots[0]!), destRoot, overwrite);
   } catch (err) {
+    if (err instanceof AuthError) throw err;
     return { imported: [], skipped: [], error: err instanceof Error ? err.message : String(err) };
   } finally {
     rmSync(tmp, { recursive: true, force: true });
@@ -134,6 +138,7 @@ export function importSkills(source: string, destRoot: string, overwrite = false
  * (pas de quotes — limitation assumée, ponytail: découper avec un vrai shell-quote si besoin).
  */
 export async function runSkillCommand(cmd: string, destRoots: string[], timeoutMs = CLI_TIMEOUT_MS): Promise<ImportResult> {
+  checkRequestAuthorization();
   const tokens = cmd.split(/\s+/).filter(Boolean);
   const bin = tokens[0];
   if (bin !== "npx" && bin !== "npm") {
@@ -165,6 +170,7 @@ export async function runSkillCommand(cmd: string, destRoots: string[], timeoutM
     }
     return result;
   } catch (err) {
+    if (err instanceof AuthError) throw err;
     return { imported: [], skipped: [], error: err instanceof Error ? err.message : String(err) };
   }
 }

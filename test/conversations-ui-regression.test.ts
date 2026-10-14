@@ -1,4 +1,5 @@
 import * as i18n from "../web/src/i18n.js";
+import { authMessages } from "../web/src/locales/auth.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -136,31 +137,105 @@ test("failed send preserves draft; IME and repeat Enter do not submit; success k
   assert.ok(chat.find(chat.render(), (node) => node.type === "button" && node.props.className === "btn btn-sm btn-danger"));
 });
 
-test("SSE reports reconnects and removes handlers on cleanup without breaking legacy callers", () => {
+test("SSE reports reconnects and removes handlers on cleanup without breaking legacy callers", async () => {
   const states: string[] = [];
+  const instances: FakeSource[] = [];
   let instance!: FakeSource;
+  let clock = 0;
+  let timerId = 0;
+  let accessChecks = 0;
+  let resolveAccess!: (allowed: boolean) => void;
+  const timers = new Map<number, { at: number; callback: () => void }>();
+  const advance = (milliseconds: number) => {
+    clock += milliseconds;
+    for (const [id, timer] of timers) {
+      if (timer.at > clock) continue;
+      timers.delete(id);
+      timer.callback();
+    }
+  };
   class FakeSource {
     static CLOSED = 2;
     readyState = 0;
     onopen: (() => void) | null = null;
     onerror: (() => void) | null = null;
     onmessage: ((event: { data: string }) => void) | null = null;
-    constructor() { instance = this; }
+    constructor() { instance = this; instances.push(this); }
     close() { this.readyState = 2; }
   }
   const exports: { openEvents?: (url: string, onEvent: (event: unknown) => void, options?: unknown) => () => void } = {};
   runInNewContext(ts.transpileModule(readFileSync("web/src/api.ts", "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS },
-  }).outputText, { exports, EventSource: FakeSource });
+  }).outputText, {
+    exports, EventSource: FakeSource,
+    setTimeout(callback: () => void, delay: number) {
+      const id = ++timerId;
+      timers.set(id, { at: clock + delay, callback });
+      return id;
+    },
+    clearTimeout(id: number) { timers.delete(id); },
+    require(name: string) {
+      if (name === "./auth-api") return { recheckAccess: () => {
+        accessChecks++;
+        return new Promise<boolean>(resolve => { resolveAccess = resolve; });
+      } };
+      if (name === "./i18n") return i18n;
+      if (name === "./locales/auth") return { authMessages };
+      throw new Error(`Unexpected API import: ${name}`);
+    },
+  });
   const close = exports.openEvents!("/fake", () => {}, { onStateChange: (state: string) => states.push(state) });
+  const first = instance;
   instance.onopen!();
   instance.onerror!();
+  assert.equal(first.readyState, FakeSource.CLOSED, "native retries stop immediately");
+  assert.equal(first.onopen, null);
+  assert.equal(first.onmessage, null);
+  assert.equal(first.onerror, null);
+  advance(4999);
+  assert.equal(accessChecks, 0, "revalidation is bounded by the reconnect delay");
+  advance(1);
+  assert.equal(accessChecks, 1);
+  assert.equal(instances.length, 1, "no reconnect before access is approved");
+  resolveAccess(true);
+  await settle();
+  assert.equal(instances.length, 2);
+  assert.notEqual(instance, first);
   instance.onopen!();
   close();
   assert.deepEqual(states, ["connecting", "connected", "reconnecting", "connected", "closed"]);
   assert.equal(instance.onopen, null);
   assert.equal(instance.onmessage, null);
+  assert.equal(instance.onerror, null);
+  assert.equal(instance.readyState, FakeSource.CLOSED);
   exports.openEvents!("/legacy", () => {})();
+
+  const deniedClose = exports.openEvents!("/denied", () => {});
+  instance.onerror!();
+  advance(5000);
+  const count = instances.length;
+  resolveAccess(false);
+  await settle();
+  advance(60000);
+  assert.equal(instances.length, count, "denied access never reconnects");
+  assert.equal(timers.size, 0, "denial does not create a retry storm");
+  deniedClose();
+
+  const pendingClose = exports.openEvents!("/pending", () => {});
+  instance.onerror!();
+  advance(5000);
+  pendingClose();
+  resolveAccess(true);
+  await settle();
+  assert.equal(instances.length, count + 1, "cleanup wins over an in-flight access approval");
+
+  const scheduledClose = exports.openEvents!("/scheduled", () => {});
+  instance.onerror!();
+  const checksBeforeClose = accessChecks;
+  scheduledClose();
+  advance(5000);
+  assert.equal(accessChecks, checksBeforeClose, "cleanup cancels scheduled revalidation");
+  assert.equal(timers.size, 0);
 });
 
 test("attachments survive failure and only sent images are removed on success; scrolling respects position", async () => {

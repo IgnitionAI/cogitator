@@ -26,6 +26,7 @@ try {
       page.on('request', async request => {
         const path = new URL(request.url()).pathname;
         if (!path.startsWith('/api/')) return request.continue();
+        if (request.method() === 'GET' && path === '/api/auth/status') return request.respond({ contentType: 'application/json', body: JSON.stringify({ mode: 'local' }) });
         const conversation = { id: 'recovery', title: 'Reprise du flux', status: 'active', provider: 'test', model: 'test', updated_at: '', workspace_id: null, agent_id: null, thinking: null };
         let body = {};
         let status = 200;

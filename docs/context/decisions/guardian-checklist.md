@@ -10,3 +10,7 @@
 8. ☐ Idle recycling: 10 min without activity → pi process stopped, transparent respawn on the next message
 9. ☐ Standalone conversation (no workspace) works with an ad hoc provider/model
 10. ☐ Bind to `127.0.0.1` only (O4)
+11. ☐ 1–1 resume-last: `GET /api/conversations?agent_id=` omits `group_id` rows; click bot reopens last jsonl (ADR-010)
+12. ☐ Spawn without workspace_id uses preset `default_workspace_id`; deleted workspace → null → 400 + picker (O9)
+13. ☐ Group of 2–6: one bus SSE; no `@` → only host process receives the user line; `@slug` → only that member (O8)
+14. ☐ Group does not write a shared pi jsonl; each member has its own `session_file` (I5/I8)

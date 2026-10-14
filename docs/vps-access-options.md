@@ -1,6 +1,8 @@
-# VPS access: minimal Authelia option
+# Historical VPS access research: Authelia option
 
-Research note, not implementation, deployment instructions, or security certification.
+**Superseded on 2026-10-10:** [native product-owned authentication](context/plans/active/0003-native-owner-auth.md) is now the confirmed direction. Firetower provisioning and the administrator inventory are suspended. The research below records the former alternative, not a current requirement or request to configure an IdP.
+
+Historical research note, not implementation, deployment instructions, or security certification.
 Scope: one owner, selected Firetower VPS, no purchased domain or previously designated IdP. Later inspection found existing Authelia routing for AionUI; assess that service before choosing whether a new instance is necessary.
 Baseline: [approved plan 0002](context/plans/active/0002-secure-vps-durable.md), especially its access boundary and P1 gates.
 Official documentation below describes available behavior, not behavior verified on this VPS; pin versions and recheck during P1.
@@ -9,14 +11,14 @@ Official documentation below describes available behavior, not behavior verified
 
 Read-only inspection of the existing Caddy routing found the `/authelia` portal and `/api/authz/forward-auth` proxy targeting loopback port 9091. That port is occupied and must not be repurposed. OIDC discovery at the existing public prefix returned HTTP 404 and public configuration returned HTTP 403; neither response proves the effective OIDC/MFA configuration. No privileged configuration or user database was inspected.
 
-The immediate next step is the [administrator inventory](vps-access-setup.md), without service changes or credentials in chat. Prefer safe reuse if the existing service meets the required client policy; a fresh-service draft is not shipped/deployed before this assessment. The facts below remain relevant to either an explicitly approved extension or a separate service, not an instruction to duplicate the current IdP.
+The then-proposed next step was the [administrator inventory](vps-access-setup.md), without service changes or credentials in chat; that handoff is now suspended. Prefer safe reuse if the existing service meets the required client policy; a fresh-service draft is not shipped/deployed before this assessment. The facts below remain relevant to either an explicitly approved extension or a separate service, not an instruction to duplicate the current IdP.
 
-## Recommendation and plan boundary
+## Former recommendation and plan boundary
 
 **Proposal:** retain Caddy → oauth2-proxy → loopback Cogitator, with a separate Authelia OIDC service requiring two factors for this client.
 Use one file-backed owner, Authelia SQLite storage, and in-memory Authelia sessions; no Redis or external SQL server is necessary for this single-instance design [1–3].
 Keep Authelia state separate from Cogitator; isolate its user file, signing keys, encryption key and database from workers, and include them in protected backup/restore procedures.
-The owner has approved this access-preparation choice, and Plan 0002/ADR-008 now record the change from an assumed pre-existing external issuer to a dedicated self-hosted identity service.
+The owner had approved this access-preparation choice before confirming the replacement native-auth direction in Plan 0003/ADR-009. It is retained here only as historical context.
 Authelia is not homemade authentication, but hosting the IdP ourselves adds credential, MFA-enrollment, recovery and signing-key operations. Approval is not verification: this note does not certify the resulting configuration or authorize public application enablement before the remaining gates.
 Do not replace oauth2-proxy plus backend token checks with Authelia forward-auth alone.
 

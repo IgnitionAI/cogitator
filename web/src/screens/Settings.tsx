@@ -1,3 +1,4 @@
+import AuthSecurity from "../AuthSecurity";
 import { t as translate, formatNumber } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
@@ -83,6 +84,7 @@ export default function Settings() {
         </>
       ) : null}
       <ErrorText error={error} />
+      <AuthSecurity />
     </>
   );
 }

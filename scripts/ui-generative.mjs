@@ -46,6 +46,7 @@ await page.setRequestInterception(true);
 page.on('request', async request => {
   const path = new URL(request.url()).pathname;
   if (!path.startsWith('/api/')) return request.continue();
+  if (request.method() === 'GET' && path === '/api/auth/status') return request.respond({ contentType: 'application/json', body: JSON.stringify({ mode: 'local' }) });
   if (request.method() !== 'GET') {
     const body = JSON.parse(request.postData() ?? '{}');
     writes.push({ path, body });

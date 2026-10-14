@@ -1,3 +1,5 @@
+import { checkRequestAuthorization } from "./request-authorization.js";
+
 /**
  * PiProcessPool — un process `pi --mode rpc` par conversation active (I3 : unique point de spawn).
  * Spawn paresseux, recyclage idle, plafond avec éviction du plus vieux non-streaming.
@@ -107,7 +109,9 @@ export class PiPool {
       existing.lastActivityAt = Date.now();
       return {};
     }
+    checkRequestAuthorization();
     await this.makeRoom();
+    checkRequestAuthorization();
 
     const args = spawn.resumeSessionFile ? [...spawn.args, "--session", spawn.resumeSessionFile] : spawn.args;
     const client = this.opts.factory({ cwd: spawn.cwd, args, env: spawn.env });
@@ -139,6 +143,7 @@ export class PiPool {
     const oldestFirst = [...this.handles.values()].sort((a, b) => a.lastActivityAt - b.lastActivityAt);
     for (const h of oldestFirst) {
       if (await this.streaming(h)) continue; // jamais de kill d'un travail en cours
+      checkRequestAuthorization();
       await this.evict(h.convId);
       return;
     }

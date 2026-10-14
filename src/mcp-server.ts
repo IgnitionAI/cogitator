@@ -9,22 +9,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { BASE_URL } from "./config.js";
+import { ownerRequest } from "./owner-transport.js";
 import { packageVersion } from "./pi.js";
 import { CARD_PRIORITIES, CARD_STATUSES, thinkingSchema } from "./schemas.js";
 
-const BASE = BASE_URL;
-
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: body !== undefined ? { "content-type": "application/json" } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) throw new Error((data.error as string) ?? `HTTP ${res.status}`);
-  return data as T;
-}
+const call = ownerRequest;
 
 const server = new McpServer({
   name: "cogitator",
@@ -250,4 +239,4 @@ addTool("cogitator_board_comment", "Ajoute un commentaire à une carte (append-o
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-console.error(`[cogitator-mcp] connecté à ${BASE}`);
+console.error("[cogitator-mcp] connecté (stdio)");

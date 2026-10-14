@@ -19,6 +19,8 @@ export interface ConversationRow {
   status: string;
   created_at: string;
   updated_at: string;
+  /** conversation privée d'un membre de groupe (ADR-011) — jamais un fil 1–1 */
+  group_id?: string | null;
   /** jointure workspace */
   workspace_dir?: string | null;
 }
@@ -26,6 +28,7 @@ export interface ConversationRow {
 export interface CreateConversationInput {
   workspaceId?: string | null;
   agentId?: string | null;
+  groupId?: string | null;
   spawn: SpawnConfig;
 }
 
@@ -33,6 +36,7 @@ export function listConversations(db: Db, workspaceId?: string, agentId?: string
   const where = [
     workspaceId ? "c.workspace_id = ?" : "",
     agentId ? "c.agent_id = ?" : "",
+    "c.group_id IS NULL", // les sessions membres ne sont pas des fils 1–1 (resume-last, ADR-011)
   ].filter(Boolean).join(" AND ");
   const sql = `
     SELECT c.*, w.dir AS workspace_dir FROM conversation c
@@ -56,12 +60,13 @@ export function getConversation(db: Db, id: string): ConversationRow | null {
 export function createConversation(db: Db, input: CreateConversationInput): ConversationRow {
   const id = randomUUID();
   db.prepare(
-    `INSERT INTO conversation (id, workspace_id, agent_id, provider, model, thinking, spawn_args, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'idle')`,
+    `INSERT INTO conversation (id, workspace_id, agent_id, group_id, provider, model, thinking, spawn_args, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'idle')`,
   ).run(
     id,
     input.workspaceId ?? null,
     input.agentId ?? null,
+    input.groupId ?? null,
     input.spawn.provider,
     input.spawn.model,
     input.spawn.thinking ?? null,

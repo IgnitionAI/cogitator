@@ -108,6 +108,19 @@ const MIGRATE_V2_TO_V3 = `ALTER TABLE agent_preset ADD COLUMN is_default INTEGER
 
 const MIGRATE_V3_TO_V4 = `ALTER TABLE agent_preset ADD COLUMN default_workspace_id TEXT REFERENCES workspace(id) ON DELETE SET NULL;`;
 
+// v4 → v5 : groupes de bots (ADR-011) — agrégat Cogitator, membres = conversations privées
+const MIGRATE_V4_TO_V5 = `
+CREATE TABLE IF NOT EXISTS agent_group (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  host_agent_id TEXT NOT NULL REFERENCES agent_preset(id) ON DELETE CASCADE,
+  default_workspace_id TEXT REFERENCES workspace(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+ALTER TABLE conversation ADD COLUMN group_id TEXT REFERENCES agent_group(id) ON DELETE CASCADE;
+`;
+
 export type Db = Database.Database;
 
 export function openDb(dbPath: string): { db: Db; version: number } {
@@ -119,8 +132,9 @@ export function openDb(dbPath: string): { db: Db; version: number } {
     db.exec(SCHEMA_V2);
     db.exec(MIGRATE_V2_TO_V3);
     db.exec(MIGRATE_V3_TO_V4);
-    db.pragma("user_version = 4");
-    return { db, version: 4 };
+    db.exec(MIGRATE_V4_TO_V5);
+    db.pragma("user_version = 5");
+    return { db, version: 5 };
   }
   if (version < 2) {
     // FK OFF pendant la migration (pratique SQLite standard ; les parents peuvent être créés plus tard)
@@ -137,5 +151,9 @@ export function openDb(dbPath: string): { db: Db; version: number } {
     db.exec(MIGRATE_V3_TO_V4);
     db.pragma("user_version = 4");
   }
-  return { db, version: 4 };
+  if (version < 5) {
+    db.exec(MIGRATE_V4_TO_V5);
+    db.pragma("user_version = 5");
+  }
+  return { db, version: 5 };
 }

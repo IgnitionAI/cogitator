@@ -30,6 +30,10 @@ import {
   createConversation, deleteConversation, getConversation, listConversations,
   setConversationModel, setConversationTitle, type ConversationRow,
 } from "./conversations.js";
+import {
+  deleteGroup, getGroupWithMembers, insertGroup, listGroups,
+  type CreateGroupInput,
+} from "./groups.js";
 import { PiPool } from "./pool.js";
 import { makeSpawner, type Spawner } from "./spawner.js";
 import { readHistory, readEntries } from "./history.js";
@@ -41,10 +45,10 @@ import {
 } from "./board.js";
 import { importSkills } from "./skills-import.js";
 import {
-  agentInputSchema, conversationCreateSchema, messageSchema, modelSwitchSchema,
+  agentInputSchema, conversationCreateSchema, groupCreateSchema, messageSchema, modelSwitchSchema,
   providerUpsertSchema, scheduleCreateSchema, scheduleUpdateSchema, skillImportSchema,
   workspaceCreateSchema, workspaceUpdateSchema, boardCardSchema, boardCommentSchema,
-  type BoardCardInput, type ConversationCreate,
+  type BoardCardInput, type ConversationCreate, type GroupCreate,
 } from "./schemas.js";
 import { spawnConfigFromPreset, type SpawnConfig } from "./spawn.js";
 import {
@@ -789,6 +793,83 @@ function resolveSpawnTarget(
   return { agentId: preset.id, spawn: spawnConfigFromPreset(preset), workspaceId };
 }
 
+/** Groupes de bots (ADR-011) : création + liste uniquement (plan 0004 S4). */
+function groupRoutes(deps: Deps): Route[] {
+  const { db } = deps;
+  return [
+    ["GET", "/api/groups", (ctx) => {
+      sendJson(ctx.res, 200, { groups: listGroups(db) });
+    }],
+    ["POST", "/api/groups", async (ctx) => {
+      const b = parseBody(ctx.res, groupCreateSchema, ctx.body);
+      if (!b) return;
+      const prepared = prepareGroupCreate(deps, b);
+      if ("error" in prepared) return sendJson(ctx.res, prepared.status, { error: prepared.error });
+
+      // écritures DB atomiques, puis spawn idle des sessions membres (I3 : tout passe par le pool)
+      const members = db.transaction(() => {
+        const group = insertGroup(db, prepared);
+        return prepared.members.map((preset) => ({
+          preset,
+          conv: createConversation(db, {
+            workspaceId: prepared.defaultWorkspaceId ?? prepared.hostPreset.default_workspace_id ?? null,
+            agentId: preset.id,
+            groupId: group.id,
+            spawn: spawnConfigFromPreset(preset),
+          }),
+        }));
+      })();
+      try {
+        await Promise.all(members.map(({ conv }) => deps.spawner.ensure(conv)));
+      } catch (err) {
+        return sendJson(ctx.res, 502, { error: `spawn membre impossible : ${err instanceof Error ? err.message : String(err)}` });
+      }
+      ctx.check();
+      sendJson(ctx.res, 201, { group: getGroupWithMembers(db, members[0]!.conv.group_id!) });
+    }],
+    ["GET", "/api/groups/:id", (ctx) => {
+      const group = getGroupWithMembers(db, ctx.params.id!);
+      if (!group) return notFound(ctx.res, "groupe");
+      sendJson(ctx.res, 200, { group });
+    }],
+    ["DELETE", "/api/groups/:id", (ctx) => {
+      if (!getGroupWithMembers(db, ctx.params.id!)) return notFound(ctx.res, "groupe");
+      deleteGroup(db, ctx.params.id!); // conversations membres en CASCADE
+      sendJson(ctx.res, 200, { ok: true });
+    }],
+  ];
+}
+
+interface PreparedGroupCreate extends CreateGroupInput {
+  members: AgentPreset[];
+  hostPreset: AgentPreset;
+}
+
+/** Valide membres/hôte/workspace ; renvoie l'entrée préparée ou l'erreur HTTP. */
+function prepareGroupCreate(deps: Deps, b: GroupCreate): PreparedGroupCreate | { error: string; status: number } {
+  const { db } = deps;
+  const unique = [...new Set(b.member_agent_ids)];
+  if (unique.length < 2 || unique.length > 6) {
+    return { error: "un groupe contient 2 à 6 bots distincts", status: 400 };
+  }
+  const members = unique.map((id) => getAgent(db, id));
+  if (members.some((m) => !m)) return { error: "agent membre introuvable", status: 404 };
+  const hostId = b.host_agent_id ?? unique[0]!;
+  if (!unique.includes(hostId)) return { error: "l'hôte doit être un membre du groupe", status: 400 };
+  const hostPreset = members.find((m) => m!.id === hostId)!;
+  if (b.default_workspace_id && !getWorkspace(db, b.default_workspace_id)) {
+    return { error: "workspace introuvable", status: 404 };
+  }
+  return {
+    name: b.name,
+    memberAgentIds: unique,
+    hostAgentId: hostId,
+    defaultWorkspaceId: b.default_workspace_id ?? null,
+    members: members as AgentPreset[],
+    hostPreset,
+  };
+}
+
 /** Tâches planifiées (cron) + historique de runs. */
 function scheduleRoutes(deps: Deps): Route[] {
   const { db, cron } = deps;
@@ -888,6 +969,7 @@ export function createApp(opts: AppOptions): Server {
     ...agentRoutes(deps),
     ...workspaceRoutes(deps),
     ...boardRoutes(deps),
+    ...groupRoutes(deps),
     ...conversationRoutes(deps),
     ...scheduleRoutes(deps),
     // Events global (SSE) — les runs cron et les statuts de conversation

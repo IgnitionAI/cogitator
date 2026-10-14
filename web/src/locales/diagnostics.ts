@@ -95,6 +95,8 @@ export const diagnosticMessages = {
   'diagnostic.imageCount': { fr: '8 images max par message', en: '8 images max per message' },
   'diagnostic.messageRequired': { fr: 'text ou images requis', en: 'text or images required' },
   'diagnostic.sourceRequired': { fr: 'source requise (URL GitHub ou chemin local)', en: 'source required (GitHub URL or local path)' },
+  'diagnostic.groupMin': { fr: '2 bots minimum', en: '2 bots minimum' },
+  'diagnostic.groupMax': { fr: '6 bots maximum', en: '6 bots maximum' },
   // Shared generative-ui validation: field labels are authored content, not nested errors.
   'diagnostic.duplicateIds': { fr: 'Identifiants dupliqués', en: 'Duplicate identifiers' },
   'diagnostic.tableColumns': { fr: 'Chaque ligne doit contenir exactement les colonnes déclarées', en: 'Each row must contain exactly the declared columns' },

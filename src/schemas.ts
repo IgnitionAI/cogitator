@@ -81,6 +81,16 @@ export const workspaceUpdateSchema = z.object({
 });
 export type WorkspaceUpdate = z.infer<typeof workspaceUpdateSchema>;
 
+// ---------- Groupes (ADR-011) ----------
+
+export const groupCreateSchema = z.object({
+  name: z.string().min(1, "name requis").max(80),
+  member_agent_ids: z.array(z.string().min(1)).min(2, "2 bots minimum").max(6, "6 bots maximum"),
+  host_agent_id: z.string().optional(),
+  default_workspace_id: z.string().nullable().optional(),
+});
+export type GroupCreate = z.infer<typeof groupCreateSchema>;
+
 // ---------- Conversations ----------
 
 export const conversationCreateSchema = z.object({

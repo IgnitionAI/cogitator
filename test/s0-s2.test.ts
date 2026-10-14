@@ -45,7 +45,7 @@ let agentId: string;
 before(async () => {
   const opened = openDb(join(home, "cogitator.db"));
   db = opened.db;
-  assert.equal(opened.version, 4);
+  assert.equal(opened.version, 5);
   agentId = createAgent(db, {
     name: "Bot A", provider: "openai", model: "gpt-5.4", system_prompt: "", skills: [], mcp_servers: [],
   }).id;
@@ -73,11 +73,17 @@ test("v3 db migrates to v4 with default_workspace_id", () => {
     skills TEXT NOT NULL DEFAULT '[]', tools_allowlist TEXT, mcp_servers TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     is_default INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE TABLE conversation (
+    id TEXT PRIMARY KEY, workspace_id TEXT, agent_id TEXT, provider TEXT NOT NULL, model TEXT NOT NULL,
+    thinking TEXT, session_file TEXT UNIQUE, spawn_args TEXT NOT NULL DEFAULT '{}', title TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'idle',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );`);
   raw.pragma("user_version = 3");
   raw.close();
   const migrated = openDb(legacy);
-  assert.equal(migrated.version, 4);
+  assert.equal(migrated.version, 5);
   const cols = migrated.db.prepare("PRAGMA table_info(agent_preset)").all() as Array<{ name: string }>;
   assert.ok(cols.some((c) => c.name === "default_workspace_id"));
   migrated.db.close();

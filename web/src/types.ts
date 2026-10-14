@@ -78,7 +78,29 @@ export interface Conversation {
   title: string;
   status: string;
   updated_at: string;
+  group_id?: string | null;
   workspace_dir?: string | null;
+}
+
+export interface GroupMember {
+  agent_id: string;
+  name: string;
+  slug: string;
+  provider: string;
+  model: string;
+  conversation_id: string;
+  is_host: number;
+}
+
+/** Agrégat groupe (ADR-011) — le fil visible est le groupe, pas les conversations membres. */
+export interface Group {
+  id: string;
+  name: string;
+  host_agent_id: string;
+  default_workspace_id: string | null;
+  created_at: string;
+  updated_at: string;
+  members: GroupMember[];
 }
 
 export interface CronTask {
@@ -253,6 +275,13 @@ export interface ConversationWrite {
   tools?: string[];
   mcp_servers?: McpServerEntry[];
   prompt?: string;
+}
+
+export interface GroupWrite {
+  name: string;
+  member_agent_ids: string[];
+  host_agent_id?: string;
+  default_workspace_id?: string | null;
 }
 
 export interface CardWrite {

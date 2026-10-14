@@ -19,6 +19,70 @@ export const screensMessages = {
     "fr": "Parler",
     "en": "Talk"
   },
+  "screens.groups": {
+    "fr": "Groupes",
+    "en": "Groups"
+  },
+  "screens.newGroup": {
+    "fr": "Nouveau groupe",
+    "en": "New group"
+  },
+  "screens.noGroups": {
+    "fr": "Aucun groupe — réunis 2 à 6 bots dans un fil partagé.",
+    "en": "No groups yet — gather 2 to 6 bots in one shared thread."
+  },
+  "screens.groupName": {
+    "fr": "Nom du groupe",
+    "en": "Group name"
+  },
+  "screens.groupNameExample": {
+    "fr": "ex. Équipe produit",
+    "en": "e.g. Product crew"
+  },
+  "screens.groupMembers": {
+    "fr": "Membres (2 à 6)",
+    "en": "Members (2 to 6)"
+  },
+  "screens.groupMembersHint": {
+    "fr": "Chaque membre a sa session privée.",
+    "en": "Each member gets a private session."
+  },
+  "screens.groupHost": {
+    "fr": "Hôte",
+    "en": "Host"
+  },
+  "screens.groupHostHint": {
+    "fr": "Reçoit les messages sans @ ; le 1er membre par défaut.",
+    "en": "Receives messages without @; defaults to the first member."
+  },
+  "screens.groupHostNone": {
+    "fr": "— premier membre —",
+    "en": "— first member —"
+  },
+  "screens.groupWorkspace": {
+    "fr": "Workspace (optionnel)",
+    "en": "Workspace (optional)"
+  },
+  "screens.noWorkspace": {
+    "fr": "— aucun —",
+    "en": "— none —"
+  },
+  "screens.createGroup": {
+    "fr": "Créer le groupe",
+    "en": "Create group"
+  },
+  "screens.groupSub": {
+    "fr": "Groupe — fil partagé (@ pour adresser un membre, bientôt)",
+    "en": "Group — shared thread (@ to address a member, soon)"
+  },
+  "screens.groupEmpty": {
+    "fr": "Fil vide",
+    "en": "Empty thread"
+  },
+  "screens.groupEmptyHint": {
+    "fr": "Aucun message pour l'instant — l'échange @ arrive au ticket suivant (S4 routing).",
+    "en": "No messages yet — @ exchange lands in the next ticket (S4 routing)."
+  },
   "screens.agents": {
     "fr": "Agents",
     "en": "Agents"

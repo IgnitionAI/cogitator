@@ -130,18 +130,20 @@ export function listGroupMessages(db: Db, groupId: string, limit = GROUP_MESSAGE
     .all(groupId, limit) as unknown as GroupMessageRow[];
 }
 
+/** Première mention @nom/@slug qui correspond à un membre, ou null si aucune ne correspond. */
+export function matchGroupMention(group: GroupWithMembers, text: string): GroupMember | null {
+  const mention = text.match(/(?:^|\s)@([A-Za-z0-9][A-Za-z0-9_-]*)/);
+  if (!mention) return null;
+  const token = mention[1]!.toLowerCase();
+  return group.members.find(
+    (m) => m.name.toLowerCase() === token || m.slug.toLowerCase() === token,
+  ) ?? null;
+}
+
 /** Routage ADR-011 : la première mention @nom/@slug d'un membre le vise ; sinon l'hôte répond. */
 export function routeGroupMessage(group: GroupWithMembers, text: string): GroupMember {
-  const mention = text.match(/(?:^|\s)@([A-Za-z0-9][A-Za-z0-9_-]*)/);
-  if (mention) {
-    const token = mention[1]!.toLowerCase();
-    const member = group.members.find(
-      (m) => m.name.toLowerCase() === token || m.slug.toLowerCase() === token,
-    );
-    // ponytail: une seule mention visée par ligne ; mentions parallèles = ticket dédié
-    if (member) return member;
-  }
-  return group.members.find((m) => m.is_host === 1)!;
+  // ponytail: une seule mention visée par ligne ; mentions parallèles = ticket dédié
+  return matchGroupMention(group, text) ?? group.members.find((m) => m.is_host === 1)!;
 }
 
 /** Propriétaire groupe d'une conversation membre (fan-out bus), ou null pour un fil 1–1. */

@@ -32,7 +32,7 @@ import {
 } from "./conversations.js";
 import {
   appendGroupMessage, conversationGroupOwner, deleteGroup, getGroupWithMembers, insertGroup, listGroupMessages,
-  listGroups, routeGroupMessage,
+  listGroups, matchGroupMention, routeGroupMessage,
   type CreateGroupInput,
 } from "./groups.js";
 import { PiPool } from "./pool.js";
@@ -915,12 +915,14 @@ function prepareGroupCreate(deps: Deps, b: GroupCreate): PreparedGroupCreate | {
   };
 }
 
-/** Persiste sur le bus l'activité d'un membre : outils exécutés + réponse finale en fin de tour (ADR-011). */
+/** Persiste sur le bus l'activité d'un membre : outils exécutés + réponse finale en fin de tour (ADR-011).
+ *  onReply est appelé avec le texte de la réponse dès qu'elle est persistée (handoff #12). */
 function persistGroupActivity(
   db: Db,
   convId: string,
   owner: { group_id: string; agent_id: string | null; session_file: string | null },
   event: unknown,
+  onReply?: (text: string) => void,
 ): void {
   const ev = event as {
     type?: string;
@@ -954,6 +956,7 @@ function persistGroupActivity(
       groupId: owner.group_id, conversationId: convId, agentId: owner.agent_id,
       role: "assistant", text: lastAssistant.text,
     });
+    onReply?.(lastAssistant.text);
     return true;
   };
   if (!append()) {
@@ -1039,6 +1042,30 @@ export function createApp(opts: AppOptions): Server {
   const events = opts.events ?? new EventEmitter();
   events.setMaxListeners(MAX_SSE_LISTENERS);
 
+  const spawner = makeSpawner({ db, pool, paths });
+  // Tours déclenchés par un handoff : leur réponse ne re-handoffe pas (garde anti-boucle A↔B, #12)
+  const handoffTargets = new Set<string>();
+
+  // Handoff ADR-011 (#12) : une réponse de membre qui @ un autre membre est injectée dans sa session.
+  async function handleHandoff(sourceConvId: string, groupId: string, text: string): Promise<void> {
+    if (handoffTargets.delete(sourceConvId)) return; // réponse d'un tour déclenché par handoff : pas de cascade
+    const group = getGroupWithMembers(db, groupId);
+    if (!group) return;
+    const target = matchGroupMention(group, text);
+    if (!target || target.conversation_id === sourceConvId) return;
+    const conv = db
+      .prepare("SELECT * FROM conversation WHERE id = ?")
+      .get(target.conversation_id) as ConversationRow | undefined;
+    if (!conv) return;
+    handoffTargets.add(target.conversation_id);
+    try {
+      await spawner.ensure(conv);
+      await pool.prompt(conv.id, text);
+    } catch {
+      handoffTargets.delete(target.conversation_id);
+    }
+  }
+
   // Fan-out des événements pi vers les abonnés SSE par conversation
   const sseSubs = new Map<string, Set<SseSend>>();
   const groupSubs = new Map<string, Set<SseSend>>();
@@ -1047,7 +1074,7 @@ export function createApp(opts: AppOptions): Server {
     // ADR-011 : activité d'un membre de groupe → persistance bus + relais sur le SSE unique du fil
     const owner = conversationGroupOwner(db, convId);
     if (!owner) return;
-    persistGroupActivity(db, convId, owner, event);
+    persistGroupActivity(db, convId, owner, event, (text) => void handleHandoff(convId, owner.group_id, text));
     const envelope = { type: "group_activity", conversationId: convId, agentId: owner.agent_id, name: owner.name, event };
     for (const send of groupSubs.get(owner.group_id) ?? []) send(envelope);
   });
@@ -1062,7 +1089,7 @@ export function createApp(opts: AppOptions): Server {
     events,
     sseSubs,
     groupSubs,
-    spawner: makeSpawner({ db, pool, paths }),
+    spawner,
   };
 
   const routes: Route[] = [

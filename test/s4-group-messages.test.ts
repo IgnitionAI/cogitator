@@ -233,6 +233,76 @@ test("host tool activity and reply land on the bus attributed to that bot", asyn
   assert.equal(assistantRow.agent_id, botA); // la réponse apparaît comme ce bot
 });
 
+const replyAndEnd = (convId: string, text: string) => {
+  const client = clientFor(convId);
+  // une ligne user entre les réponses : sinon readEntries fusionne les blocs assistant consécutifs
+  writeFileSync(
+    client.sessionFile,
+    JSON.stringify({ type: "message", message: { role: "user", content: [{ type: "text", text: "(ligne précédente)" }] } }) + "\n",
+    { flag: "a" },
+  );
+  writeFileSync(
+    client.sessionFile,
+    JSON.stringify({
+      type: "message",
+      message: { role: "assistant", content: [{ type: "text", text }] },
+    }) + "\n",
+    { flag: "a" },
+  );
+  client.emit({ type: "agent_end" });
+};
+
+const waitFor = async (cond: () => boolean, ms = 2000): Promise<void> => {
+  const start = Date.now();
+  while (!cond()) {
+    if (Date.now() - start > ms) throw new Error("condition non atteinte (timeout)");
+    await new Promise((r) => setTimeout(r, 10));
+  }
+};
+
+test("member reply that @ another member hands off to that member's session", async () => {
+  promptCalls = [];
+  replyAndEnd(memberConvId, "@bot-a peux-tu relire le rapport ?");
+  await waitFor(() => promptCalls.length > 0);
+  // injection dans la session du membre mentionné (l'hôte), avec le texte du handoff
+  assert.deepEqual(
+    promptCalls.map((p) => [p.convId, p.text]),
+    [[hostConvId, "@bot-a peux-tu relire le rapport ?"]],
+  );
+
+  // la réponse du membre apparaît sur le fil attribuée à ce bot
+  const { messages } = await (await fetch(`${base}/api/groups/${group.id}/messages`)).json() as { messages: GroupMessage[] };
+  const row = messages.find((m) => m.role === "assistant" && m.text === "@bot-a peux-tu relire le rapport ?");
+  assert.ok(row);
+  assert.equal(row.agent_id, botB);
+
+  // la cible du handoff répond : son tour consomme le marqueur anti-cascade (pas de re-handoff, pas de @)
+  replyAndEnd(hostConvId, "Je relis le rapport maintenant.");
+  await new Promise((r) => setTimeout(r, 100));
+});
+
+test("host reply that @ a member hands off; the handoff reply cannot hand off again (anti-loop)", async () => {
+  promptCalls = [];
+  replyAndEnd(hostConvId, "@bot-b à toi de jouer");
+  await waitFor(() => promptCalls.length > 0);
+  assert.deepEqual(
+    promptCalls.map((p) => [p.convId, p.text]),
+    [[memberConvId, "@bot-b à toi de jouer"]],
+  );
+
+  // réponse du membre déclenché par le handoff : un @ vers l'hôte ne réinjecte pas (pas de cascade A↔B)
+  replyAndEnd(memberConvId, "@bot-a c'est fait");
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(promptCalls.length, 1);
+});
+
+test("member reply with unmatched @ wakes no one", async () => {
+  promptCalls = [];
+  replyAndEnd(hostConvId, "@inconnu tu vois ça ?");
+  await new Promise((r) => setTimeout(r, 200));
+  assert.deepEqual(promptCalls, []);
+});
+
 test("the group thread follows ONE SSE feed with member-attributed events", async () => {
   const res = await fetch(`${base}/api/groups/${group.id}/events`);
   assert.equal(res.status, 200);

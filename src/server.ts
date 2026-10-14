@@ -322,7 +322,8 @@ function registryRoutes(deps: Deps): Route[] {
 
 /** Presets d'agents + apply/unapply des définitions herdr. */
 function agentRoutes(deps: Deps): Route[] {
-  const { db, paths } = deps;
+  const { db, paths, events } = deps;
+  const changed = () => events.emit("event", { type: "agents_changed" });
   return [
     ["GET", "/api/agents", (ctx) => {
       sendJson(ctx.res, 200, { agents: listAgents(db) });
@@ -334,6 +335,7 @@ function agentRoutes(deps: Deps): Route[] {
         return sendJson(ctx.res, 404, { error: "workspace introuvable" });
       }
       const preset = createAgent(db, input);
+      changed();
       sendJson(ctx.res, 201, { agent: preset, apply: applyAgent(paths, preset) });
     }],
     ["GET", "/api/agents/:id", (ctx) => {
@@ -349,12 +351,14 @@ function agentRoutes(deps: Deps): Route[] {
       }
       const preset = updateAgent(db, ctx.params.id!, input);
       if (!preset) return notFound(ctx.res, "agent");
+      changed();
       sendJson(ctx.res, 200, { agent: preset, apply: applyAgent(paths, preset) });
     }],
     ["DELETE", "/api/agents/:id", (ctx) => {
       const existing = requireAgent(deps, ctx);
       if (!existing) return;
       deleteAgent(db, existing.id);
+      changed();
       sendJson(ctx.res, 200, { ok: true, unapplied: unapplyAgent(paths, existing.slug) });
     }],
     ["POST", "/api/agents/:id/validate", async (ctx) => {
@@ -364,6 +368,7 @@ function agentRoutes(deps: Deps): Route[] {
     }],
     ["POST", "/api/agents/:id/default", (ctx) => {
       if (!setDefaultAgent(db, ctx.params.id!)) return notFound(ctx.res, "agent");
+      changed();
       sendJson(ctx.res, 200, { ok: true });
     }],
   ];

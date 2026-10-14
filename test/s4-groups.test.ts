@@ -69,7 +69,7 @@ const post = (url: string, body: unknown) =>
 before(async () => {
   const opened = openDb(join(home, "cogitator.db"));
   db = opened.db;
-  assert.equal(opened.version, 5);
+  assert.equal(opened.version, 6);
   botA = createAgent(db, { name: "Bot A", provider: "openai", model: "gpt-5.4", system_prompt: "", skills: [], mcp_servers: [] }).id;
   botB = createAgent(db, { name: "Bot B", provider: "openai", model: "gpt-5.4", system_prompt: "", skills: [], mcp_servers: [] }).id;
   botC = createAgent(db, { name: "Bot C", provider: "openai", model: "gpt-5.4", system_prompt: "", skills: [], mcp_servers: [] }).id;
@@ -110,7 +110,7 @@ test("v4 db migrates to v5 with agent_group and conversation.group_id", () => {
   raw.pragma("user_version = 4");
   raw.close();
   const migrated = openDb(legacy);
-  assert.equal(migrated.version, 5);
+  assert.equal(migrated.version, 6);
   const tables = migrated.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='agent_group'").all();
   assert.equal(tables.length, 1);
   const cols = migrated.db.prepare("PRAGMA table_info(conversation)").all() as Array<{ name: string }>;

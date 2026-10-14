@@ -121,6 +121,22 @@ CREATE TABLE IF NOT EXISTS agent_group (
 ALTER TABLE conversation ADD COLUMN group_id TEXT REFERENCES agent_group(id) ON DELETE CASCADE;
 `;
 
+// v5 → v6 : bus de fil de groupe (ADR-011) — log Cogitator, pas un jsonl pi partagé
+const MIGRATE_V5_TO_V6 = `
+CREATE TABLE IF NOT EXISTS group_message (
+  id TEXT PRIMARY KEY,
+  group_id TEXT NOT NULL REFERENCES agent_group(id) ON DELETE CASCADE,
+  conversation_id TEXT REFERENCES conversation(id) ON DELETE SET NULL,
+  agent_id TEXT REFERENCES agent_preset(id) ON DELETE SET NULL,
+  role TEXT NOT NULL,
+  text TEXT NOT NULL DEFAULT '',
+  detail TEXT,
+  is_error INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_group_message_group ON group_message(group_id, created_at);
+`;
+
 export type Db = Database.Database;
 
 export function openDb(dbPath: string): { db: Db; version: number } {
@@ -133,8 +149,9 @@ export function openDb(dbPath: string): { db: Db; version: number } {
     db.exec(MIGRATE_V2_TO_V3);
     db.exec(MIGRATE_V3_TO_V4);
     db.exec(MIGRATE_V4_TO_V5);
-    db.pragma("user_version = 5");
-    return { db, version: 5 };
+    db.exec(MIGRATE_V5_TO_V6);
+    db.pragma("user_version = 6");
+    return { db, version: 6 };
   }
   if (version < 2) {
     // FK OFF pendant la migration (pratique SQLite standard ; les parents peuvent être créés plus tard)
@@ -155,5 +172,9 @@ export function openDb(dbPath: string): { db: Db; version: number } {
     db.exec(MIGRATE_V4_TO_V5);
     db.pragma("user_version = 5");
   }
-  return { db, version: 5 };
+  if (version < 6) {
+    db.exec(MIGRATE_V5_TO_V6);
+    db.pragma("user_version = 6");
+  }
+  return { db, version: 6 };
 }

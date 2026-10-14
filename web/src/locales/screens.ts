@@ -72,16 +72,24 @@ export const screensMessages = {
     "en": "Create group"
   },
   "screens.groupSub": {
-    "fr": "Groupe — fil partagé (@ pour adresser un membre, bientôt)",
-    "en": "Group — shared thread (@ to address a member, soon)"
+    "fr": "Groupe — fil partagé : écris pour l'hôte, @nom pour un membre.",
+    "en": "Group — shared thread: write for the host, @name for a member."
+  },
+  "screens.groupYou": {
+    "fr": "Vous",
+    "en": "You"
+  },
+  "screens.groupPlaceholder": {
+    "fr": "Message… sans @, l'hôte répond ; @nom vise un membre",
+    "en": "Message… no @, the host answers; @name targets a member"
   },
   "screens.groupEmpty": {
     "fr": "Fil vide",
     "en": "Empty thread"
   },
   "screens.groupEmptyHint": {
-    "fr": "Aucun message pour l'instant — l'échange @ arrive au ticket suivant (S4 routing).",
-    "en": "No messages yet — @ exchange lands in the next ticket (S4 routing)."
+    "fr": "Écris le premier message — le bot hôte du groupe répond ici.",
+    "en": "Write the first message — the group's host bot answers here."
   },
   "screens.agents": {
     "fr": "Agents",
@@ -130,6 +138,10 @@ export const screensMessages = {
   "screens.delete": {
     "fr": "Supprimer",
     "en": "Delete"
+  },
+  "screens.deleteGroupConfirm": {
+    "fr": "Supprimer le groupe « {name} » et ses sessions membres ?",
+    "en": "Delete group \"{name}\" and its member sessions?"
   },
   "screens.quickModel": {
     "fr": "Fournisseur et modèle : chaque changement est enregistré immédiatement.",

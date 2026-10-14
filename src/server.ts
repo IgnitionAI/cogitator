@@ -31,7 +31,8 @@ import {
   setConversationModel, setConversationTitle, type ConversationRow,
 } from "./conversations.js";
 import {
-  deleteGroup, getGroupWithMembers, insertGroup, listGroups,
+  appendGroupMessage, conversationGroupOwner, deleteGroup, getGroupWithMembers, insertGroup, listGroupMessages,
+  listGroups, routeGroupMessage,
   type CreateGroupInput,
 } from "./groups.js";
 import { PiPool } from "./pool.js";
@@ -254,6 +255,7 @@ interface Deps {
   events: EventEmitter;
   spawner: Spawner;
   sseSubs: Map<string, Set<SseSend>>;
+  groupSubs: Map<string, Set<SseSend>>;
 }
 
 /** Résout le :id d'une route en entité, ou répond 404 et renvoie null. */
@@ -798,9 +800,9 @@ function resolveSpawnTarget(
   return { agentId: preset.id, spawn: spawnConfigFromPreset(preset), workspaceId };
 }
 
-/** Groupes de bots (ADR-011) : création + liste uniquement (plan 0004 S4). */
+/** Groupes de bots (ADR-011) : création/liste + fil partagé (bus, routage hôte/@, SSE unique). */
 function groupRoutes(deps: Deps): Route[] {
-  const { db } = deps;
+  const { db, pool } = deps;
   return [
     ["GET", "/api/groups", (ctx) => {
       sendJson(ctx.res, 200, { groups: listGroups(db) });
@@ -836,6 +838,44 @@ function groupRoutes(deps: Deps): Route[] {
       const group = getGroupWithMembers(db, ctx.params.id!);
       if (!group) return notFound(ctx.res, "groupe");
       sendJson(ctx.res, 200, { group });
+    }],
+    // Bus du fil : rejeu pour le montage de l'UI (le streaming passe par le SSE unique ci-dessous)
+    ["GET", "/api/groups/:id/messages", (ctx) => {
+      if (!getGroupWithMembers(db, ctx.params.id!)) return notFound(ctx.res, "groupe");
+      sendJson(ctx.res, 200, { messages: listGroupMessages(db, ctx.params.id!) });
+    }],
+    // Une ligne utilisateur → bus + injection dans la session du seul membre visé (hôte sans @, ADR-011)
+    ["POST", "/api/groups/:id/messages", async (ctx) => {
+      const group = getGroupWithMembers(db, ctx.params.id!);
+      if (!group) return notFound(ctx.res, "groupe");
+      const b = parseBody(ctx.res, messageSchema, ctx.body);
+      if (!b) return;
+      const text = (b.text ?? "").trim();
+      const target = routeGroupMessage(group, text);
+
+      appendGroupMessage(db, { groupId: group.id, role: "user", text });
+      const conv = db
+        .prepare("SELECT * FROM conversation WHERE group_id = ? AND agent_id = ?")
+        .get(group.id, target.agent_id) as ConversationRow | undefined;
+      if (!conv) return sendJson(ctx.res, 500, { error: "session membre introuvable" });
+      await deps.spawner.ensure(conv);
+      ctx.check();
+      await pool.prompt(conv.id, text, b.images);
+      ctx.check();
+      sendJson(ctx.res, 200, { ok: true });
+    }],
+    // Fil du groupe suivi sur UN flux SSE (pas N flux des sessions membres) — événements pi enveloppés group_activity
+    ["GET", "/api/groups/:id/events", (ctx) => {
+      if (!getGroupWithMembers(db, ctx.params.id!)) return notFound(ctx.res, "groupe");
+      // événement initial : flush des en-têtes immédiat (sinon le client attend le premier heartbeat)
+      const send = openSse(ctx.res, { type: "group_ready", groupId: ctx.params.id! });
+      const subs = deps.groupSubs.get(ctx.params.id!) ?? new Set<SseSend>();
+      deps.groupSubs.set(ctx.params.id!, subs);
+      subs.add(send);
+      ctx.res.once("close", () => {
+        subs.delete(send);
+        if (!subs.size) deps.groupSubs.delete(ctx.params.id!);
+      });
     }],
     ["DELETE", "/api/groups/:id", (ctx) => {
       if (!getGroupWithMembers(db, ctx.params.id!)) return notFound(ctx.res, "groupe");
@@ -873,6 +913,55 @@ function prepareGroupCreate(deps: Deps, b: GroupCreate): PreparedGroupCreate | {
     members: members as AgentPreset[],
     hostPreset,
   };
+}
+
+/** Persiste sur le bus l'activité d'un membre : outils exécutés + réponse finale en fin de tour (ADR-011). */
+function persistGroupActivity(
+  db: Db,
+  convId: string,
+  owner: { group_id: string; agent_id: string | null; session_file: string | null },
+  event: unknown,
+): void {
+  const ev = event as {
+    type?: string;
+    toolCallId?: string;
+    toolName?: string;
+    result?: { content?: Array<{ type?: string; text?: string }> };
+    isError?: boolean;
+  };
+  if (ev.type === "tool_execution_end" && ev.toolCallId) {
+    const result = ev.result?.content
+      ?.filter((b) => b.type === "text" && typeof b.text === "string")
+      .map((b) => b.text!)
+      .join("\n");
+    appendGroupMessage(db, {
+      groupId: owner.group_id, conversationId: convId, agentId: owner.agent_id,
+      role: "tool", text: ev.toolName ?? "outil",
+      detail: JSON.stringify({ result }), isError: ev.isError === true,
+    });
+    return;
+  }
+  if (ev.type !== "agent_end") return;
+  const append = (): boolean => {
+    const lastAssistant = [...readEntries(owner.session_file ?? "")]
+      .reverse()
+      .find((e) => e.type === "assistant" && e.text.trim());
+    if (!lastAssistant || lastAssistant.type !== "assistant") return false; // jsonl pas encore flush : une reprise différée
+    // garde anti-doublon : même conversation + même texte déjà en tête de bus
+    const head = listGroupMessages(db, owner.group_id, 1)[0];
+    if (head?.role === "assistant" && head.conversation_id === convId && head.text === lastAssistant.text) return true;
+    appendGroupMessage(db, {
+      groupId: owner.group_id, conversationId: convId, agentId: owner.agent_id,
+      role: "assistant", text: lastAssistant.text,
+    });
+    return true;
+  };
+  if (!append()) {
+    const retry = setTimeout(() => {
+      try { append(); } catch { /* bus best-effort : le rejeu suivant complètera */ }
+    }, 1500);
+    retry.unref();
+  }
 }
 
 /** Tâches planifiées (cron) + historique de runs. */
@@ -952,8 +1041,15 @@ export function createApp(opts: AppOptions): Server {
 
   // Fan-out des événements pi vers les abonnés SSE par conversation
   const sseSubs = new Map<string, Set<SseSend>>();
+  const groupSubs = new Map<string, Set<SseSend>>();
   const unsubscribePool = pool.onEvent((convId, event) => {
     for (const send of sseSubs.get(convId) ?? []) send(event);
+    // ADR-011 : activité d'un membre de groupe → persistance bus + relais sur le SSE unique du fil
+    const owner = conversationGroupOwner(db, convId);
+    if (!owner) return;
+    persistGroupActivity(db, convId, owner, event);
+    const envelope = { type: "group_activity", conversationId: convId, agentId: owner.agent_id, name: owner.name, event };
+    for (const send of groupSubs.get(owner.group_id) ?? []) send(envelope);
   });
 
   const deps: Deps = {
@@ -965,6 +1061,7 @@ export function createApp(opts: AppOptions): Server {
     cron,
     events,
     sseSubs,
+    groupSubs,
     spawner: makeSpawner({ db, pool, paths }),
   };
 

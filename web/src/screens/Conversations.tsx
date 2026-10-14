@@ -15,7 +15,11 @@ import { parseUIResponse, uiRequestKey, type UIResponse } from "../../../src/gen
 
 
 let nextChatItemKey = 0;
-type ChatItem = (
+/** Clé de timeline unique (partagée entre les vues de fil : 1–1 et groupe). */
+export function bumpChatItemKey(): number {
+  return ++nextChatItemKey;
+}
+export type ChatItem = (
   | { kind: "user"; text: string; attachmentCount?: number }
   | { kind: "skill"; name: string; text: string; rest?: string }
   | { kind: "assistant"; text: string }
@@ -24,7 +28,7 @@ type ChatItem = (
   | { kind: "status"; text: string }
 ) & { key?: number };
 
-interface StreamState {
+export interface StreamState {
   assistantIndex: number | null;
   streaming: boolean;
   /** contentIndex pi → index dans la timeline (pour toolcall_end) */
@@ -39,7 +43,7 @@ function patchAt(prev: ChatItem[], index: number, patch: Partial<ChatItem>): Cha
 }
 
 /** Applique UN événement SSE à la timeline (pi n'émet pas d'événement user : l'UI fait l'écho local). */
-function applyEvent(prev: ChatItem[], ev: SseEvent, st: StreamState): ChatItem[] {
+export function applyEvent(prev: ChatItem[], ev: SseEvent, st: StreamState): ChatItem[] {
   const ame = ev.assistantMessageEvent;
   switch (ev.type) {
     case "turn_start":

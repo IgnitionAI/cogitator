@@ -104,6 +104,8 @@ export const conversationCreateSchema = z.object({
   skills: z.array(z.string()).optional(),
   tools: z.array(z.string()).optional(),
   mcp_servers: z.array(mcpServerEntrySchema).optional(),
+  /** Runtime figé à la création (Plan 0002 §6) ; durable = harnais Durable du contrôleur. */
+  runtime: z.enum(["classic", "durable"]).optional(),
 });
 export type ConversationCreate = z.infer<typeof conversationCreateSchema>;
 
@@ -114,9 +116,18 @@ export const imageContentSchema = z.object({
 });
 export type ImageContentInput = z.infer<typeof imageContentSchema>;
 
+export const REQUEST_ID_MAX = 128;
+export const requestIdSchema = z
+  .string()
+  .min(1)
+  .max(REQUEST_ID_MAX, `requestId > ${REQUEST_ID_MAX} caractères`)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "requestId : lettres, chiffres, . _ - ; commence par une lettre ou un chiffre");
+
 export const messageSchema = z.object({
   text: z.string().optional(),
   images: z.array(imageContentSchema).max(8, "8 images max par message").optional(),
+  /** Mode durable (obligatoire là-bas) : identité stable et bornée de soumission. */
+  requestId: requestIdSchema.optional(),
 }).refine((b) => (b.text?.trim() ?? "") !== "" || (b.images?.length ?? 0) > 0, {
   message: "text ou images requis",
 });

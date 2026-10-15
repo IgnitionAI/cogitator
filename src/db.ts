@@ -137,6 +137,9 @@ CREATE TABLE IF NOT EXISTS group_message (
 CREATE INDEX IF NOT EXISTS idx_group_message_group ON group_message(group_id, created_at);
 `;
 
+// v6 → v7 : runtime_kind figé à la création (classic | durable, Plan 0002 §6 ; D2/D3)
+const MIGRATE_V6_TO_V7 = `ALTER TABLE conversation ADD COLUMN runtime_kind TEXT NOT NULL DEFAULT 'classic';`;
+
 export type Db = Database.Database;
 
 export function openDb(dbPath: string): { db: Db; version: number } {
@@ -150,8 +153,9 @@ export function openDb(dbPath: string): { db: Db; version: number } {
     db.exec(MIGRATE_V3_TO_V4);
     db.exec(MIGRATE_V4_TO_V5);
     db.exec(MIGRATE_V5_TO_V6);
-    db.pragma("user_version = 6");
-    return { db, version: 6 };
+    db.exec(MIGRATE_V6_TO_V7);
+    db.pragma("user_version = 7");
+    return { db, version: 7 };
   }
   if (version < 2) {
     // FK OFF pendant la migration (pratique SQLite standard ; les parents peuvent être créés plus tard)
@@ -176,5 +180,9 @@ export function openDb(dbPath: string): { db: Db; version: number } {
     db.exec(MIGRATE_V5_TO_V6);
     db.pragma("user_version = 6");
   }
-  return { db, version: 6 };
+  if (version < 7) {
+    db.exec(MIGRATE_V6_TO_V7);
+    db.pragma("user_version = 7");
+  }
+  return { db, version: 7 };
 }

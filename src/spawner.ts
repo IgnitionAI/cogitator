@@ -33,6 +33,12 @@ export function makeSpawner(opts: SpawnerOptions): Spawner {
   return {
     tmpDir,
     async ensure(conv) {
+      // I3 (amendé Durable) : le pool classic ne spawn JAMAIS pour une conversation
+      // durable — la runtime Durable du contrôleur est le seul mécanisme (point
+      // de composition src/runtime.ts). Un spawn ici serait un processus non géré.
+      if (conv.runtime_kind === "durable") {
+        throw new Error("conversation durable : aucun processus pi classic (runtime.ts)");
+      }
       const spawn = JSON.parse(conv.spawn_args || "{}") as SpawnConfig;
       const mcpEnv = encodeMcpEnv(spawn.mcpServers ?? []);
       const result = await pool.ensure(conv.id, {

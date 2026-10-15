@@ -94,6 +94,7 @@ export const diagnosticMessages = {
   'diagnostic.imageMime': { fr: 'mimeType image/* requis', en: 'mimeType image/* required' },
   'diagnostic.imageCount': { fr: '8 images max par message', en: '8 images max per message' },
   'diagnostic.messageRequired': { fr: 'text ou images requis', en: 'text or images required' },
+  'diagnostic.requestIdCharacters': { fr: 'requestId : lettres, chiffres, . _ - ; commence par une lettre ou un chiffre', en: 'requestId: letters, digits, . _ -; starts with a letter or digit' },
   'diagnostic.sourceRequired': { fr: 'source requise (URL GitHub ou chemin local)', en: 'source required (GitHub URL or local path)' },
   'diagnostic.groupMin': { fr: '2 bots minimum', en: '2 bots minimum' },
   'diagnostic.groupMax': { fr: '6 bots maximum', en: '6 bots maximum' },

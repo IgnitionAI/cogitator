@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { existsSync, statSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, extname, join, normalize, relative, sep } from "node:path";
@@ -37,6 +38,9 @@ import {
 } from "./groups.js";
 import { PiPool } from "./pool.js";
 import { makeSpawner, type Spawner } from "./spawner.js";
+import { composeRuntime, runtimeKindOf, type ConversationRuntime } from "./runtime.js";
+import { DurableRuntimeManager } from "./durable/manager.js";
+import { assertDurableAdmission, durableToolchainRegistry } from "./durable/compatibility.js";
 import { readHistory, readEntries } from "./history.js";
 import { readFileChanges, readFileEvents, readFileDetail, type FileChange } from "./file-changes.js";
 import { workspaceTree, readWorkspaceFile } from "./workspace-files.js";
@@ -257,6 +261,9 @@ interface Deps {
   spawner: Spawner;
   sseSubs: Map<string, Set<SseSend>>;
   groupSubs: Map<string, Set<SseSend>>;
+  /** Point de composition explicite unique des runtimes (I3 amendé, Plan 0002 §6). */
+  compose: (conv: ConversationRow) => ConversationRuntime;
+  durable: DurableRuntimeManager;
 }
 
 /** Résout le :id d'une route en entité, ou répond 404 et renvoie null. */
@@ -678,35 +685,60 @@ function conversationRoutes(deps: Deps): Route[] {
       if (!b) return;
       const resolved = resolveSpawnTarget(deps, b);
       if ("error" in resolved) return sendJson(ctx.res, resolved.status, { error: resolved.error });
+      const runtimeKind = b.runtime ?? "classic";
+      if (runtimeKind === "durable") {
+        // Admission fail closed : capacités non classées → refus, aucun travail caché.
+        try {
+          assertDurableAdmission(durableToolchainRegistry(), resolved.spawn);
+        } catch (err) {
+          return sendJson(ctx.res, 403, { error: err instanceof Error ? err.message : String(err) });
+        }
+      }
 
-      let conv = createConversation(db, { workspaceId: resolved.workspaceId, agentId: resolved.agentId, spawn: resolved.spawn });
+      let conv = createConversation(db, { workspaceId: resolved.workspaceId, agentId: resolved.agentId, spawn: resolved.spawn, runtimeKind });
       const prompt = b.prompt?.trim();
       if (prompt) {
-        await deps.spawner.ensure(conv);
+        const runtime = deps.compose(conv);
+        await runtime.ensure(conv);
         ctx.check();
-        await pool.prompt(conv.id, prompt);
+        const ack = await runtime.prompt(conv, prompt, runtimeKind === "durable" ? randomUUID() : undefined);
         ctx.check();
         setConversationTitle(db, conv.id, prompt);
         conv = getConversation(db, conv.id)!;
+        if (ack.accepted) return sendJson(ctx.res, 201, { conversation: conv, accepted: ack.accepted });
       }
       sendJson(ctx.res, 201, { conversation: conv });
     }],
     ["GET", "/api/conversations/:id", async (ctx) => {
       const conv = requireConversation(deps, ctx);
       if (!conv) return;
-      sendJson(ctx.res, 200, { conversation: conv, live: pool.isLive(conv.id), streaming: await pool.isStreaming(conv.id) });
+      const runtime = deps.compose(conv);
+      sendJson(ctx.res, 200, {
+        conversation: conv,
+        runtime: runtime.kind,
+        live: runtime.isLive(conv),
+        streaming: runtime.kind === "classic" ? await pool.isStreaming(conv.id) : runtime.isLive(conv),
+      });
     }],
     ["GET", "/api/conversations/:id/events", async (ctx) => {
       const conv = requireConversation(deps, ctx);
       if (!conv) return;
-      const spawned = await deps.spawner.ensure(conv);
-      const send = openSse(ctx.res, { type: "session", sessionFile: spawned.sessionFile ?? conv.session_file });
+      const runtime = deps.compose(conv);
+      const spawned = await runtime.ensure(conv);
+      // Mode durable : aucun spawn (la runtime vit dans le contrôleur) ; la lecture
+      // d'événements ne crée jamais de mission (Plan 0002 §7).
+      const send = openSse(ctx.res, runtime.kind === "durable"
+        ? { type: "session", runtimeKind: "durable" }
+        : { type: "session", sessionFile: spawned.sessionFile ?? conv.session_file });
       const subs = deps.sseSubs.get(conv.id) ?? new Set<SseSend>();
       deps.sseSubs.set(conv.id, subs);
       subs.add(send);
+      let detach: (() => void) | undefined;
+      if (runtime.kind === "durable") void runtime.attachEvents(conv, send).then((off) => { detach = off; });
       ctx.res.once("close", () => {
         subs.delete(send);
         if (!subs.size) deps.sseSubs.delete(conv.id);
+        detach?.();
       });
     }],
     ["GET", "/api/conversations/:id/history", (ctx) => {
@@ -733,22 +765,31 @@ function conversationRoutes(deps: Deps): Route[] {
       const b = parseBody(ctx.res, messageSchema, ctx.body);
       if (!b) return;
       const text = (b.text ?? "").trim();
-      await deps.spawner.ensure(conv);
+      const runtime = deps.compose(conv);
+      if (runtime.kind === "durable" && !b.requestId) {
+        return sendJson(ctx.res, 400, { error: "requestId requis pour une conversation durable" });
+      }
+      await runtime.ensure(conv);
       ctx.check();
-      await pool.prompt(conv.id, text, b.images);
+      const ack = await runtime.prompt(conv, text, b.requestId, b.images);
       ctx.check();
       if (text) setConversationTitle(db, conv.id, text);
-      sendJson(ctx.res, 200, { ok: true });
+      // Durable : accusé renvoyé après acceptation durable, avec l'identité acceptée.
+      sendJson(ctx.res, 200, ack.accepted ? { ok: true, accepted: ack.accepted } : { ok: true });
     }],
     ["POST", "/api/conversations/:id/stop", async (ctx) => {
       const conv = requireConversation(deps, ctx);
       if (!conv) return;
-      await pool.abort(conv.id);
+      await deps.compose(conv).abort(conv);
       sendJson(ctx.res, 200, { ok: true });
     }],
     ["POST", "/api/conversations/:id/model", async (ctx) => {
       const conv = requireConversation(deps, ctx);
       if (!conv) return;
+      if (runtimeKindOf(conv) === "durable") {
+        // Modèle figé par mission (O6) : pas de bascule à chaud sur une runtime durable.
+        return sendJson(ctx.res, 409, { error: "modèle figé pour une mission durable (créer une nouvelle conversation)" });
+      }
       const b = parseBody(ctx.res, modelSwitchSchema, ctx.body);
       if (!b) return;
       await pool.setModel(conv.id, b.provider, b.id);
@@ -760,10 +801,12 @@ function conversationRoutes(deps: Deps): Route[] {
     ["DELETE", "/api/conversations/:id", async (ctx) => {
       const conv = requireConversation(deps, ctx);
       if (!conv) return;
-      await pool.evict(conv.id);
+      await deps.compose(conv).evict(conv);
       ctx.check();
       deleteConversation(db, conv.id);
-      sendJson(ctx.res, 200, { ok: true }); // le .jsonl pi survit sur disque (I5)
+      // L'historique survit sur disque : pi .jsonl en classic (I5), stockage
+      // Durable propre en durable (ADR-006 amendé).
+      sendJson(ctx.res, 200, { ok: true });
     }],
   ];
 }
@@ -1041,6 +1084,8 @@ export interface AppOptions {
   events?: EventEmitter;
   auth?: AuthState;
   server?: Server;
+  /** Gestionnaire durable injecté (tests : modèle faux) ; défaut : production. */
+  durable?: DurableRuntimeManager;
 }
 
 export function createApp(opts: AppOptions): Server {
@@ -1049,6 +1094,10 @@ export function createApp(opts: AppOptions): Server {
   events.setMaxListeners(MAX_SSE_LISTENERS);
 
   const spawner = makeSpawner({ db, pool, paths });
+  // Runtime Durable : un seul gestionnaire dans le processus contrôleur (bail OS
+  // par conversation). Les tests injectent un modèle contrôlé via opts.durable.
+  const durable = opts.durable ?? new DurableRuntimeManager({ paths, toolchain: durableToolchainRegistry() });
+  const compose = composeRuntime({ pool, spawner, durable });
   // Tours déclenchés par un handoff : leur réponse ne re-handoffe pas (garde anti-boucle A↔B, #12)
   const handoffTargets = new Set<string>();
 
@@ -1096,6 +1145,8 @@ export function createApp(opts: AppOptions): Server {
     sseSubs,
     groupSubs,
     spawner,
+    compose,
+    durable,
   };
 
   const routes: Route[] = [
@@ -1117,7 +1168,10 @@ export function createApp(opts: AppOptions): Server {
 
   const app = opts.server ?? createServer();
   if (opts.auth) { app.requestTimeout = 30_000; app.headersTimeout = 10_000; app.maxHeadersCount = 100; }
-  app.once("close", unsubscribePool);
+  app.once("close", () => {
+    unsubscribePool();
+    void durable.dispose();
+  });
   app.on("request", async (req, res) => {
     res.setHeader("content-security-policy", "frame-ancestors 'none'");
     res.setHeader("x-frame-options", "DENY");

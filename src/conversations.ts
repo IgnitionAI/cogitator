@@ -19,6 +19,8 @@ export interface ConversationRow {
   status: string;
   created_at: string;
   updated_at: string;
+  /** runtime figé à la création : "classic" (défaut historique) ou "durable" (Plan 0002 §6). */
+  runtime_kind?: string;
   /** conversation privée d'un membre de groupe (ADR-011) — jamais un fil 1–1 */
   group_id?: string | null;
   /** jointure workspace */
@@ -30,6 +32,8 @@ export interface CreateConversationInput {
   agentId?: string | null;
   groupId?: string | null;
   spawn: SpawnConfig;
+  /** Figé à l'INSERT ; aucun setter n'existe (jamais mutable). */
+  runtimeKind?: "classic" | "durable";
 }
 
 export function listConversations(db: Db, workspaceId?: string, agentId?: string): ConversationRow[] {
@@ -60,8 +64,8 @@ export function getConversation(db: Db, id: string): ConversationRow | null {
 export function createConversation(db: Db, input: CreateConversationInput): ConversationRow {
   const id = randomUUID();
   db.prepare(
-    `INSERT INTO conversation (id, workspace_id, agent_id, group_id, provider, model, thinking, spawn_args, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'idle')`,
+    `INSERT INTO conversation (id, workspace_id, agent_id, group_id, provider, model, thinking, spawn_args, status, runtime_kind)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?)`,
   ).run(
     id,
     input.workspaceId ?? null,
@@ -71,6 +75,7 @@ export function createConversation(db: Db, input: CreateConversationInput): Conv
     input.spawn.model,
     input.spawn.thinking ?? null,
     JSON.stringify({ ...input.spawn, uiInstructions: UI_INSTRUCTIONS }),
+    input.runtimeKind ?? "classic",
   );
   return getConversation(db, id)!;
 }

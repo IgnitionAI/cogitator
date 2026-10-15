@@ -139,6 +139,31 @@ export const modelSwitchSchema = z.object({
 });
 export type ModelSwitch = z.infer<typeof modelSwitchSchema>;
 
+// ---------- Approbations et budget des missions durables (#16) ----------
+
+/**
+ * Décision owner sur une action en attente créée côté SERVEUR : le client ne
+ * choisit jamais l'action à approuver, seulement la décision ( approve/deny ).
+ */
+export const approvalDecisionSchema = z.object({
+  pendingActionId: z.string().uuid("pendingActionId invalide"),
+  decision: z.enum(["approved", "denied"]),
+  denialReason: z.string().max(500).optional(),
+});
+export type ApprovalDecisionInput = z.infer<typeof approvalDecisionSchema>;
+
+/**
+ * Changement EXPLICITE de politique de budget par l'owner : c'est le seul
+ * moyen de délier une limite de mission (aucun reset implicite, UA3).
+ */
+export const budgetUpdateSchema = z.object({
+  missionCalls: z.number().int().min(0).max(1_000_000).optional(),
+  missionTokens: z.number().int().min(0).max(10_000_000_000).optional(),
+  dailyCalls: z.number().int().min(0).max(1_000_000).optional(),
+  dailyTokens: z.number().int().min(0).max(10_000_000_000).optional(),
+});
+export type BudgetUpdateInput = z.infer<typeof budgetUpdateSchema>;
+
 // ---------- Schedules ----------
 
 export const scheduleCreateSchema = z.object({

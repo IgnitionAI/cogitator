@@ -22,9 +22,12 @@ export function runtimeKindOf(conv: ConversationRow): RuntimeKind {
 
 export interface AcceptedSubmission {
   requestId: string;
-  submissionId: SubmissionId;
+  /** Présent si l'input a été dispatché au SDK (absent s'il est retenu en file). */
+  submissionId?: SubmissionId;
   /** true quand ce requestId était déjà accepté : aucun travail dupliqué. */
   duplicate: boolean;
+  /** true quand l'envoi est accepté durablement mais retenu en file visible (queued/budget_paused). */
+  queued?: boolean;
 }
 
 export interface PromptAck {

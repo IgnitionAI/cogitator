@@ -2,7 +2,7 @@ import { recheckAccess } from "./auth-api";
 import { t } from "./i18n";
 import { authMessages } from "./locales/auth";
 import type {
-  AgentPreset, BoardCard, Conversation, CronRun, CronTask, FeedEvent, FileChange, FileEvent, Group, GroupMessage, GroupWrite, Health, ImageContentInput, ProviderView, SkillRef, Workspace, AgentWrite, CardWrite, ConversationWrite, ProviderWrite, ScheduleWrite, SseEvent, WorkspaceWrite } from "./types";
+  AgentPreset, ApprovalGrantView, BoardCard, Conversation, CronRun, CronTask, EffectReceiptView, FeedEvent, FileChange, FileEvent, Group, GroupMessage, GroupWrite, Health, ImageContentInput, MissionStatusView, PendingActionView, ProviderView, SkillRef, Workspace, AgentWrite, CardWrite, ConversationWrite, ProviderWrite, ScheduleWrite, SseEvent, WorkspaceWrite } from "./types";
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const mutation = method !== "GET" && method !== "HEAD";
@@ -70,7 +70,8 @@ export const api = {
     const qs = q.toString();
     return req<{ conversations: Conversation[] }>("GET", `/api/conversations${qs ? `?${qs}` : ""}`);
   },
-  conversation: (id: string) => req<{ conversation: Conversation; live: boolean; streaming: boolean }>("GET", `/api/conversations/${id}`),
+  conversation: (id: string) =>
+    req<{ conversation: Conversation; live: boolean; streaming: boolean; runtime?: string }>("GET", `/api/conversations/${id}`),
   createConversation: (b: ConversationWrite) => req<{ conversation: Conversation }>("POST", "/api/conversations", b),
   deleteConversation: (id: string) => req<{ ok: true }>("DELETE", `/api/conversations/${id}`),
 
@@ -82,8 +83,17 @@ export const api = {
   sendGroupMessage: (id: string, text: string) =>
     req<{ ok: true }>("POST", `/api/groups/${id}/messages`, { text }),
   sendMessage: (id: string, text: string, images?: ImageContentInput[]) =>
-    req<{ ok: true }>("POST", `/api/conversations/${id}/messages`, { text, images }),
+    req<{ ok: true; accepted?: { requestId: string; submissionId?: number; duplicate: boolean; queued?: boolean } }>("POST", `/api/conversations/${id}/messages`, { text, images }),
   stopConversation: (id: string) => req<{ ok: true }>("POST", `/api/conversations/${id}/stop`),
+  // Missions durables : statut, approbations, budget (#16)
+  mission: (id: string) => req<{ mission: MissionStatusView }>("GET", `/api/conversations/${id}/mission`),
+  approvals: (id: string) =>
+    req<{ pendingActions: PendingActionView[]; grants: ApprovalGrantView[]; receipts: EffectReceiptView[] }>("GET", `/api/conversations/${id}/approvals`),
+  decideApproval: (id: string, pendingActionId: string, decision: "approved" | "denied", denialReason?: string) =>
+    req<{ ok: true }>("POST", `/api/conversations/${id}/approvals`, { pendingActionId, decision, denialReason }),
+  revokeGrant: (id: string, grantId: string) => req<{ ok: true }>("POST", `/api/conversations/${id}/approvals/${grantId}/revoke`),
+  updateBudget: (id: string, b: { missionCalls?: number; missionTokens?: number; dailyCalls?: number; dailyTokens?: number }) =>
+    req<{ ok: true; mission: MissionStatusView }>("POST", `/api/conversations/${id}/budget`, b),
   switchModel: (id: string, provider: string, modelId: string) =>
     req<{ ok: true }>("POST", `/api/conversations/${id}/model`, { provider, id: modelId }),
   history: (id: string) =>

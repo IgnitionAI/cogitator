@@ -222,6 +222,64 @@ export type HistoryEntry =
   | HistoryEntryTool;
 
 // Événements SSE pi (sous-ensemble rendu par l'UI)
+// ---------- Missions durables : approbations, budget, admission (#16) ----------
+
+/** Action sensible créée côté serveur, immuable dans ses champs de scope. */
+export interface PendingActionView {
+  id: string;
+  operation: string;
+  target: string;
+  artifactDigest: string;
+  argumentDigest: string;
+  consequence: string;
+  expiresAt: number;
+  allowedUses: number;
+  createdAt: number;
+  decision: "pending" | "approved" | "denied";
+  decidedAt: number;
+  denialReason?: string;
+}
+
+export interface ApprovalGrantView {
+  id: string;
+  operation: string;
+  target: string;
+  artifactDigest: string;
+  argumentDigest: string;
+  expiresAt: number;
+  remainingUses: number;
+  revoked: boolean;
+  decidedAt: number;
+  valid: boolean;
+}
+
+export interface EffectReceiptView {
+  intentKey: string;
+  operation: string;
+  target: string;
+  status: "intent_committed" | "observed" | "unknown";
+  observed?: { at: number; outcome: string; reference?: string };
+  unknownReason?: string;
+  updatedAt: number;
+}
+
+export interface MissionBudgetView {
+  policy: { missionCalls?: number; missionTokens?: number; dailyCalls?: number; dailyTokens?: number };
+  missionUsed: { calls: number; tokens: number };
+  dailyUsed: { calls: number; tokens: number };
+  binding?: { kind: string; limit: number; used: number; nextAction: string };
+}
+
+export interface MissionStatusView {
+  state: "idle" | "running" | "queued" | "waiting_approval" | "budget_paused" | "needs_attention";
+  reason?: string;
+  queueLength: number;
+  budget: MissionBudgetView;
+  workspaceDir: string;
+  workspaceClaimed: boolean;
+  workspaceClaimedBy?: string;
+}
+
 export interface SseEvent {
   type: string;
   sessionFile?: string;
@@ -237,6 +295,8 @@ export interface SseEvent {
   result?: { content?: Array<{ type: string; text?: string }> };
   partialResult?: { content?: Array<{ type: string; text?: string }> };
   isError?: boolean;
+  /** État de mission durable (queued / budget_paused / waiting_approval / …). */
+  mission?: MissionStatusView;
   assistantMessageEvent?: {
     type: string;
     contentIndex?: number;

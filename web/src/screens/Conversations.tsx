@@ -11,6 +11,8 @@ import { Markdown } from "../markdown";
 import { Icon } from "../icons";
 import { ToolResult } from "../ToolResult";
 import { AssistantContent, UserContent } from "../ChatMessage";
+import { ApprovalPanel, GrantsPanel, MissionBanner } from "../ApprovalPanel";
+import type { ApprovalGrantView, EffectReceiptView, MissionStatusView, PendingActionView } from "../types";
 import { parseUIResponse, uiRequestKey, type UIResponse } from "../../../src/generative-ui";
 
 
@@ -316,6 +318,20 @@ export function ChatView(props: {
 
   const [filesLoading, setFilesLoading] = useState(false);
   const [filesError, setFilesError] = useState<string | null>(null);
+  // Missions durables : état d'admission/approbation/budget (#16) — panneau à
+  // contenu serveur-fixe, distinct des formulaires génératifs du modèle.
+  const [runtimeKind, setRuntimeKind] = useState<string | null>(null);
+  const [mission, setMission] = useState<MissionStatusView | null>(null);
+  const [pendingActions, setPendingActions] = useState<PendingActionView[]>([]);
+  const [grants, setGrants] = useState<ApprovalGrantView[]>([]);
+  const [receipts, setReceipts] = useState<EffectReceiptView[]>([]);
+  const refreshMission = useCallback(() => {
+    if (runtimeKind !== "durable") return;
+    api.mission(conversation.id).then((r) => setMission(r.mission)).catch(() => undefined);
+    api.approvals(conversation.id)
+      .then((r) => { setPendingActions(r.pendingActions); setGrants(r.grants); setReceipts(r.receipts); })
+      .catch(() => undefined);
+  }, [conversation.id, runtimeKind]);
   const filesRequest = useRef(0);
   const refreshFiles = useCallback(() => {
     const current = ++filesRequest.current;
@@ -377,6 +393,12 @@ export function ChatView(props: {
       (e) => {
         const ev = e as SseEvent;
         eventRevision.current++;
+        if (ev.type === "mission_state" && ev.mission) {
+          // État d'admission/approbation/budget poussé par le serveur (file, pause, …).
+          setMission(ev.mission);
+          refreshMission();
+          return;
+        }
         setTimeline((prev) => applyEvent(prev, ev, streamRef.current).map((item) => item.key === undefined ? { ...item, key: ++nextChatItemKey } : item));
         if (ev.type === "agent_start" || ev.type === "turn_start" || ev.type === "message_update") setRunning(true);
         if (ev.type === "message_update" && ev.assistantMessageEvent?.type === "text_start") setStreaming(true);
@@ -391,6 +413,7 @@ export function ChatView(props: {
         onOpen: () => {
           const revision = eventRevision.current;
           api.conversation(conversation.id).then((r) => {
+            setRuntimeKind(r.runtime ?? "classic");
             setSessionStatus(r.live ? r.conversation.status : "idle");
             if (revision === eventRevision.current && (typeof r.streaming === "boolean" || !r.live)) {
               const active = r.live && r.streaming === true;
@@ -407,7 +430,7 @@ export function ChatView(props: {
       clearTimeout(refetch);
       close();
     };
-  }, [conversation.id, loadHistory]);
+  }, [conversation.id, loadHistory, refreshMission]);
 
   useEffect(() => {
     if (nearBottom.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -581,6 +604,13 @@ export function ChatView(props: {
         scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
         setShowLatest(false);
       }}><Icon name="download" size={14} /> {t("chat.latest")}</button> : null}
+      {runtimeKind === "durable" ? (
+        <div className="mission-panels">
+          <MissionBanner mission={mission} />
+          <ApprovalPanel conversationId={conversation.id} pendingActions={pendingActions} onDecided={refreshMission} />
+          <GrantsPanel conversationId={conversation.id} grants={grants} receipts={receipts} onChanged={refreshMission} />
+        </div>
+      ) : null}
       <div className="composer">
       <ErrorText error={sendError ? t("chat.sendError", { error: sendError }) : null} />
       <div className="chat-input">

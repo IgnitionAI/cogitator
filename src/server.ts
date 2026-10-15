@@ -53,6 +53,7 @@ import {
   agentInputSchema, conversationCreateSchema, groupCreateSchema, messageSchema, modelSwitchSchema,
   providerUpsertSchema, scheduleCreateSchema, scheduleUpdateSchema, skillImportSchema,
   workspaceCreateSchema, workspaceUpdateSchema, boardCardSchema, boardCommentSchema,
+  approvalDecisionSchema, budgetUpdateSchema,
   type BoardCardInput, type ConversationCreate, type GroupCreate,
 } from "./schemas.js";
 import { spawnConfigFromPreset, type SpawnConfig } from "./spawn.js";
@@ -734,11 +735,17 @@ function conversationRoutes(deps: Deps): Route[] {
       deps.sseSubs.set(conv.id, subs);
       subs.add(send);
       let detach: (() => void) | undefined;
-      if (runtime.kind === "durable") void runtime.attachEvents(conv, send).then((off) => { detach = off; });
+      let detachMission: (() => void) | undefined;
+      if (runtime.kind === "durable") {
+        void runtime.attachEvents(conv, send).then((off) => { detach = off; });
+        // États de mission (queued / budget_paused / waiting_approval / …) en direct.
+        detachMission = deps.durable.onMissionState(conv.id, (state) => send({ type: "mission_state", mission: state }));
+      }
       ctx.res.once("close", () => {
         subs.delete(send);
         if (!subs.size) deps.sseSubs.delete(conv.id);
         detach?.();
+        detachMission?.();
       });
     }],
     ["GET", "/api/conversations/:id/history", (ctx) => {
@@ -776,6 +783,53 @@ function conversationRoutes(deps: Deps): Route[] {
       if (text) setConversationTitle(db, conv.id, text);
       // Durable : accusé renvoyé après acceptation durable, avec l'identité acceptée.
       sendJson(ctx.res, 200, ack.accepted ? { ok: true, accepted: ack.accepted } : { ok: true });
+    }],
+    // ---------- Missions durables : statut, approbations, budget (#16) ----------
+    ["GET", "/api/conversations/:id/mission", async (ctx) => {
+      const conv = requireConversation(deps, ctx);
+      if (!conv) return;
+      if (runtimeKindOf(conv) !== "durable") return sendJson(ctx.res, 409, { error: "pas une mission durable" });
+      sendJson(ctx.res, 200, { mission: await deps.durable.missionStatus(conv) });
+    }],
+    ["GET", "/api/conversations/:id/approvals", async (ctx) => {
+      const conv = requireConversation(deps, ctx);
+      if (!conv) return;
+      if (runtimeKindOf(conv) !== "durable") return sendJson(ctx.res, 409, { error: "pas une mission durable" });
+      const runtime = await deps.durable.get(conv);
+      sendJson(ctx.res, 200, await runtime.approvalsView());
+    }],
+    // Décision owner sur une action immuable créée côté serveur ; rien d'autre
+    // n'est acceptable ici (le client ne fabrique jamais l'action à approuver).
+    ["POST", "/api/conversations/:id/approvals", async (ctx) => {
+      const conv = requireConversation(deps, ctx);
+      if (!conv) return;
+      if (runtimeKindOf(conv) !== "durable") return sendJson(ctx.res, 409, { error: "pas une mission durable" });
+      const b = parseBody(ctx.res, approvalDecisionSchema, ctx.body);
+      if (!b) return;
+      const runtime = await deps.durable.get(conv);
+      const result = await runtime.decideApproval(b.pendingActionId, b.decision, b.denialReason);
+      if (result.kind === "error") return sendJson(ctx.res, 409, { error: result.reason });
+      sendJson(ctx.res, 200, result.grant ? { ok: true, pendingAction: result.pendingAction, grant: result.grant } : { ok: true, pendingAction: result.pendingAction });
+    }],
+    ["POST", "/api/conversations/:id/approvals/:grantId/revoke", async (ctx) => {
+      const conv = requireConversation(deps, ctx);
+      if (!conv) return;
+      if (runtimeKindOf(conv) !== "durable") return sendJson(ctx.res, 409, { error: "pas une mission durable" });
+      const runtime = await deps.durable.get(conv);
+      const result = await runtime.revokeGrant(ctx.params.grantId!);
+      if (!result.ok) return sendJson(ctx.res, 404, { error: result.reason });
+      sendJson(ctx.res, 200, { ok: true });
+    }],
+    // Changement EXPLICITE de limite (le seul déliement possible d'une limite de mission).
+    ["POST", "/api/conversations/:id/budget", async (ctx) => {
+      const conv = requireConversation(deps, ctx);
+      if (!conv) return;
+      if (runtimeKindOf(conv) !== "durable") return sendJson(ctx.res, 409, { error: "pas une mission durable" });
+      const b = parseBody(ctx.res, budgetUpdateSchema, ctx.body);
+      if (!b) return;
+      const runtime = await deps.durable.get(conv);
+      await runtime.setBudgetPolicy(b);
+      sendJson(ctx.res, 200, { ok: true, mission: await runtime.missionStatus() });
     }],
     ["POST", "/api/conversations/:id/stop", async (ctx) => {
       const conv = requireConversation(deps, ctx);

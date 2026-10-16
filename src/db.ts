@@ -154,8 +154,9 @@ export function openDb(dbPath: string): { db: Db; version: number } {
     db.exec(MIGRATE_V4_TO_V5);
     db.exec(MIGRATE_V5_TO_V6);
     db.exec(MIGRATE_V6_TO_V7);
-    db.pragma("user_version = 7");
-    return { db, version: 7 };
+    db.exec("ALTER TABLE conversation ADD COLUMN pending_configuration TEXT");
+    db.pragma("user_version = 8");
+    return { db, version: 8 };
   }
   if (version < 2) {
     // FK OFF pendant la migration (pratique SQLite standard ; les parents peuvent être créés plus tard)
@@ -184,5 +185,9 @@ export function openDb(dbPath: string): { db: Db; version: number } {
     db.exec(MIGRATE_V6_TO_V7);
     db.pragma("user_version = 7");
   }
-  return { db, version: 7 };
+  if (version < 8) {
+    db.exec("ALTER TABLE conversation ADD COLUMN pending_configuration TEXT");
+    db.pragma("user_version = 8");
+  }
+  return { db, version: 8 };
 }

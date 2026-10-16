@@ -1,0 +1,38 @@
+# Live provider, model and reasoning controls
+
+## Request and decisions
+
+User request: every agent can change provider, LLM and reasoning on the fly. The owner explicitly excludes autonomous Durable missions (2026-10-16). This plan is the source of truth for the oneshot run, based on analysis of the existing preset editor, classic RPC pool, conversation snapshots and groups.
+
+Scope: classic standalone/embedded bot chats, individual group members, and preset defaults. Changes apply after the current response, without aborting it or replacing history. Scope defaults to this conversation only; an explicit option also updates the linked bot defaults for future conversations. Other existing conversations never change implicitly (O6). Configured herdr subagents retain their existing defaults editor; external running child processes and Durable reconfiguration are out of scope. No deployment or new dependency.
+
+## Implementation
+
+1. Persist effective provider/model/thinking together in conversation columns and the same three spawn snapshot fields. Add a nullable pending configuration JSON field, with request id, tuple, scope and pending/failed status. One outstanding pending request per conversation; reject competing requests. Preserve unrelated snapshot and preset fields. Commit successful effective settings, pending removal and optional preset-default update atomically. Failed requests are visible and retryable/dismissible. Group metadata comes from member conversations, not current presets.
+2. Serialize classic startup, configuration and prompt dispatch per conversation in the existing pool. Retain subsequent prompts server-side while a response is active. Apply pending configuration at `agent_settled`, never merely `agent_end`, before the next retained prompt. Preserve parallelism across conversations. Applying/active handles cannot be swept/evicted; stop/delete clears retained prompts with explicit feedback. Pending configuration survives reload/controller restart; ordinary classic message queues retain their existing non-durable delivery guarantee. Security clarification from implementation: after a controller restart, a pending request is marked failed and requires explicit authorized retry, because its originating process-local authorization cannot be reconstructed safely. It is never silently replayed under a later viewer's identity.
+3. Use official RPC setters and authoritative readback. Validate catalog membership, then model-specific reasoning support after selecting the target model; reject unsupported levels instead of pretending they applied. Omitted reasoning preserves current effective reasoning if supported. Never silently change global pi defaults. On partial failure restore and verify old settings; if rollback fails, stop/quarantine that client and reconcile from committed settings before further dispatch. Resumed sessions reconcile their effective settings before prompts. Deferred operations retain their originating authorization checks.
+4. Extend existing model endpoint and expose effective/pending state in reads and SSE. Durable requests reject before mutation/spawn. Keep the old provider/id payload compatible. Add a dismiss endpoint for failed changes. Document semantics and O6's explicit conversation override.
+5. Add one shared, accessible editor using native selects and existing UI tokens to classic ChatView and every group member. Add reasoning to preset QuickModel and explicitly label defaults as future-conversation settings. Apply all three fields together with a button. Show effective, pending and failed states separately; keep draft/history/composer intact. FR/EN, keyboard, loading/errors and mobile layouts are required. Hide controls for Durable and retain server rejection.
+
+## Shared API contract
+
+- `POST /api/conversations/:id/model`: `{ provider: string, id: string, thinking?: ThinkingLevel, scope?: "conversation" | "preset" }`. Default scope is conversation. `preset` means this conversation plus linked preset defaults, not sibling conversations.
+- `200` applied, `202` pending. Response is the authoritative conversation object. Existing callers ignoring response remain compatible.
+- Conversation reads add `runtime_kind` and `pending_configuration` (parsed object or null). Pending object: `{ request_id, provider, model, thinking, scope, status: "pending" | "failed", error?: string }`. `thinking` may be null when preserving unspecified initial reasoning; applied state uses actual runtime reasoning.
+- `DELETE /api/conversations/:id/model`: dismiss failed request only; cannot silently cancel applying/accepted work. Response authoritative conversation.
+- SSE event `{ type: "configuration_changed", conversation }`, delivered through existing conversation and group event transport. Publish pending, applied and failed transitions.
+- Optional current `available_thinking_levels` in conversation response may expose runtime-supported levels without mutating the model merely for UI discovery. The server remains authoritative for target validation.
+- Errors: malformed 400; missing conversation/preset 404; Durable/outstanding request/invalid scope 409; unsupported configuration 422; runtime failure 502; capacity 503. Deferred failures persist in pending state and emit SSE.
+
+## Acceptance and verification
+
+A1. Classic live-idle, never-started and evicted conversations change all three settings; effective RPC state, DB/snapshot and subsequent calls agree. Same conversation/session/history survive restart.
+A2. During streaming, request returns pending, current response completes uninterrupted, and the next message uses the new tuple. No setter runs on `agent_end` alone, retries/compaction, or before acceptance completes. Concurrent requests have deterministic rejection; group members retain independent ordering.
+A3. Conversation-only leaves presets/siblings unchanged. Preset scope preserves unrelated fields, updates future conversations only, and is refused for ad-hoc chats. Group host/non-host edits target exactly their own conversations and expose actual settings.
+A4. Invalid model/reasoning, RPC/readback/persistence failure and authorization loss never report false success. Verified rollback or quarantine prevents divergent prompts; failed state can be retried/dismissed. Pending requests recover safely across restart. Durable requests perform zero mutations and zero RPC calls.
+A5. UI controls cover standalone/embedded chats, group members and preset reasoning. FR/EN, explicit scope, keyboard, pending/error feedback, reload/reconnect, no history/composer loss and mobile usability are proven in a browser. Durable has no live editor.
+A6. Relevant regression tests, full `npm test`, typecheck and build pass. Real official RPC proof records state and event ordering for a switch and resume; browser evidence records API/SSE/readback and screenshots. Mock tests are identified separately from real runtime proof. Never infer model choice from assistant self-report.
+
+## Review and repository boundaries
+
+Review baseline: `3d111e5b4cd5c8394d56d734e6858daac37945d2`. Run separate Standards and Spec reviews, fix findings, rerun affected stages. A dedicated GitHub issue is warranted by the cross-subsystem work and schema migration. Close only this run's issue after every criterion passes. Commit implementation on the current branch per implement workflow, but do not push without authorization. Do not modify/stage `cogitator.board.json` or `.bak`. Repository has no `docs/agents/issue-tracker.md` or special attribution file; use the existing GitHub remote and identify agent-authored reports explicitly.

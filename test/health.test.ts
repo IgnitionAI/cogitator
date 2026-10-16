@@ -4,7 +4,8 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
+import { openDb } from "../src/db.js";
 import { createApp } from "../src/server.js";
 import { getPaths } from "../src/paths.js";
 import { PiPool } from "../src/pool.js";
@@ -16,28 +17,21 @@ let base: string;
 
 before(async () => {
   home = mkdtempSync(join(tmpdir(), "cogitator-test-"));
-  db = new Database(join(home, "cogitator.db"));
-  db.exec(`
-    CREATE TABLE agent_preset (id TEXT PRIMARY KEY);
-    CREATE TABLE subagent_setup (id TEXT PRIMARY KEY);
-    CREATE TABLE workspace (id TEXT PRIMARY KEY);
-    CREATE TABLE conversation (id TEXT PRIMARY KEY);
-    CREATE TABLE cron_task (id TEXT PRIMARY KEY);
-    CREATE TABLE cron_run (id TEXT PRIMARY KEY);
-  `);
+  const opened = openDb(join(home, "cogitator.db"));
+  db = opened.db;
   server = createApp({
     db,
     dbPath: join(home, "cogitator.db"),
-    dbVersion: 3,
-    paths: getPaths(),
-    pool: new PiPool({ factory: () => ({ start: async () => {}, stop: async () => {}, onEvent: () => () => {}, getState: async () => ({}), prompt: async () => ({}), abort: async () => {}, setModel: async () => ({}) }) }),
+    dbVersion: opened.version,
+    paths: getPaths({ COGITATOR_HOME: home }),
+    pool: new PiPool({ factory: () => { throw new Error("health requests must not spawn pi"); } }),
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
 
 after(() => {
-  server.close();
+  server?.close();
   db.close();
   rmSync(home, { recursive: true, force: true });
 });
@@ -50,7 +44,7 @@ test("GET /api/health répond le contrat", async () => {
   assert.equal(typeof body.version, "string");
   assert.ok("pi_version" in body);
   assert.equal(body.sessions_active, 0);
-  assert.equal(body.db.version, 3);
+  assert.equal(body.db.version, 8);
   assert.equal(body.db.path, join(home, "cogitator.db"));
 });
 

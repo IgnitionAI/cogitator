@@ -67,7 +67,20 @@ export interface Workspace {
   conversation_count?: number;
 }
 
+export interface PendingConfiguration {
+  request_id: string;
+  provider: string;
+  model: string;
+  thinking: ThinkingLevel | null;
+  scope: "conversation" | "preset";
+  status: "pending" | "failed";
+  error?: string;
+}
+
 export interface Conversation {
+  runtime_kind?: "classic" | "durable";
+  pending_configuration?: PendingConfiguration | null;
+  available_thinking_levels?: ThinkingLevel[];
   id: string;
   workspace_id: string | null;
   agent_id: string | null;
@@ -83,6 +96,9 @@ export interface Conversation {
 }
 
 export interface GroupMember {
+  thinking?: string | null;
+  runtime_kind?: "classic" | "durable";
+  pending_configuration?: PendingConfiguration | null;
   agent_id: string;
   name: string;
   slug: string;
@@ -281,6 +297,7 @@ export interface MissionStatusView {
 }
 
 export interface SseEvent {
+  conversation?: Conversation;
   type: string;
   sessionFile?: string;
   /** notifications cron globales (cron_run_started / cron_run_finished) */

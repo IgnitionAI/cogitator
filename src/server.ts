@@ -1,3 +1,4 @@
+import { changeConfiguration, dismissConfiguration, ConfigurationError, recoverConfigurations } from "./classic-configuration.js";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
@@ -29,7 +30,7 @@ import {
 } from "./cron.js";
 import {
   createConversation, deleteConversation, getConversation, listConversations,
-  setConversationModel, setConversationTitle, type ConversationRow,
+  setConversationTitle, type ConversationRow,
 } from "./conversations.js";
 import {
   appendGroupMessage, conversationGroupOwner, deleteGroup, getGroupWithMembers, insertGroup, listGroupMessages,
@@ -846,11 +847,23 @@ function conversationRoutes(deps: Deps): Route[] {
       }
       const b = parseBody(ctx.res, modelSwitchSchema, ctx.body);
       if (!b) return;
-      await pool.setModel(conv.id, b.provider, b.id);
-      ctx.check();
-      const spawn = { ...(JSON.parse(conv.spawn_args || "{}") as SpawnConfig), provider: b.provider, model: b.id };
-      setConversationModel(db, conv.id, b.provider, b.id, spawn);
-      sendJson(ctx.res, 200, { ok: true });
+      try {
+        const result = await changeConfiguration({ db, pool, paths: deps.paths, ensure: c => deps.spawner.ensure(c), onPresetChanged: () => deps.events.emit("event", { type: "agents_changed" }) }, conv.id, b);
+        sendJson(ctx.res, result.status, result.conversation);
+      } catch (error) {
+        if (error instanceof AuthError) throw error;
+        sendJson(ctx.res, error instanceof ConfigurationError ? error.status : (error as { code?: string }).code === "pool_full" ? 503 : 502,
+          { error: error instanceof Error ? error.message : String(error) });
+      }
+    }],
+    ["DELETE", "/api/conversations/:id/model", async (ctx) => {
+      const conv = requireConversation(deps, ctx);
+      if (!conv) return;
+      try { sendJson(ctx.res, 200, dismissConfiguration(db, pool, conv.id)); }
+      catch (error) {
+        if (!(error instanceof ConfigurationError)) throw error;
+        sendJson(ctx.res, error.status, { error: error.message });
+      }
     }],
     ["DELETE", "/api/conversations/:id", async (ctx) => {
       const conv = requireConversation(deps, ctx);
@@ -1147,6 +1160,7 @@ export function createApp(opts: AppOptions): Server {
   const events = opts.events ?? new EventEmitter();
   events.setMaxListeners(MAX_SSE_LISTENERS);
 
+  recoverConfigurations(db);
   const spawner = makeSpawner({ db, pool, paths });
   // Runtime Durable : un seul gestionnaire dans le processus contrôleur (bail OS
   // par conversation). Les tests injectent un modèle contrôlé via opts.durable.

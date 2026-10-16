@@ -6,7 +6,18 @@ import { UI_INSTRUCTIONS } from "./generative-ui.js";
 /** Longueur max du titre dérivé d'un message (contrainte d'affichage de l'UI). */
 const TITLE_MAX = 80;
 
+export interface PendingConfiguration {
+  request_id: string;
+  provider: string;
+  model: string;
+  thinking: string | null;
+  scope: "conversation" | "preset";
+  status: "pending" | "failed";
+  error?: string;
+}
+
 export interface ConversationRow {
+  pending_configuration?: PendingConfiguration | null;
   id: string;
   workspace_id: string | null;
   agent_id: string | null;
@@ -48,7 +59,7 @@ export function listConversations(db: Db, workspaceId?: string, agentId?: string
     ${where ? `WHERE ${where}` : ""}
     ORDER BY c.updated_at DESC`;
   const params = [workspaceId, agentId].filter((v): v is string => Boolean(v));
-  return (params.length ? db.prepare(sql).all(...params) : db.prepare(sql).all()) as unknown as ConversationRow[];
+  return ((params.length ? db.prepare(sql).all(...params) : db.prepare(sql).all()) as ConversationRow[]).map(parseConversation);
 }
 
 export function getConversation(db: Db, id: string): ConversationRow | null {
@@ -58,7 +69,7 @@ export function getConversation(db: Db, id: string): ConversationRow | null {
        LEFT JOIN workspace w ON w.id = c.workspace_id WHERE c.id = ?`,
     )
     .get(id) as ConversationRow | undefined;
-  return row ?? null;
+  return row ? parseConversation(row) : null;
 }
 
 export function createConversation(db: Db, input: CreateConversationInput): ConversationRow {
@@ -94,12 +105,11 @@ export function setConversationTitle(db: Db, id: string, title: string): void {
   ).run(title.slice(0, TITLE_MAX), id);
 }
 
-export function setConversationModel(db: Db, id: string, provider: string, model: string, spawn: SpawnConfig): void {
-  db.prepare(
-    "UPDATE conversation SET provider = ?, model = ?, spawn_args = ?, updated_at = datetime('now') WHERE id = ?",
-  ).run(provider, model, JSON.stringify(spawn), id);
-}
-
 export function deleteConversation(db: Db, id: string): boolean {
   return db.prepare("DELETE FROM conversation WHERE id = ?").run(id).changes > 0;
+}
+
+function parseConversation(row: ConversationRow): ConversationRow {
+  const raw = row.pending_configuration;
+  return { ...row, pending_configuration: typeof raw === "string" ? JSON.parse(raw) as PendingConfiguration : raw ?? null };
 }

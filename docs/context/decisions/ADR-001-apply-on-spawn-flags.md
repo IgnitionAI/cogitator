@@ -5,7 +5,7 @@
 
 ## Context
 
-An agent's configuration (provider, model, thinking, skills, prompt, tools, MCP) must apply to pi sessions. pi cannot be reconfigured on the fly: it reads its configuration at process startup and exposes no reconfiguration RPC (pi-web-simple ran into this by writing directly to `settings.json`/`auth.json`).
+An agent's configuration (provider, model, thinking, skills, prompt, tools, MCP) must apply to pi sessions. Startup flags remain the configuration boundary for skills, prompt, tools and MCP. Correction (2026-10-16, #21): pi does expose session-scoped model and thinking RPC setters; the original claim that no reconfiguration RPC exists was too broad. These setters do not require writes to global `settings.json` or `auth.json`.
 
 ## Decision
 
@@ -17,7 +17,7 @@ Each conversation is spawned with **native CLI flags** materialized from the pre
 - `--tools` / `--exclude-tools`
 - MCP: `pi.registerMcpServer()` by the extension at `session_start`
 
-An open session **keeps its configuration frozen**; preset changes affect only subsequent spawns.
+Preset changes affect only **new conversations**, not existing snapshots or their later process respawns. Amendment (2026-10-16, Plan 0005 / #21): the owner may explicitly override provider/model/thinking for a classic conversation at a settled response boundary. The runtime's verified effective tuple is persisted in that conversation's snapshot for resume. Updating bot defaults is a separate explicit scope and never propagates to sibling conversations. Skills, prompt, tools and MCP remain frozen. Durable missions are excluded and keep their entire frozen profile.
 
 ## Consequences
 

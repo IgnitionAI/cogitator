@@ -1,3 +1,4 @@
+import { FakeConfiguration } from "./fixtures/fake-configuration.js";
 /**
  * Intégration serveur du seam durable (ticket #15) : création d'une
  * conversation à runtime durable via le point de composition, requestId borné
@@ -25,6 +26,10 @@ import { DurableRuntimeManager } from "../src/durable/manager.js";
 import { durableToolchainRegistry } from "../src/durable/compatibility.js";
 
 class RecordingClient implements PiClientLike {
+  configuration = new FakeConfiguration(() => this.opts.args);
+  getAvailableModels() { return this.configuration.getAvailableModels(); }
+  getAvailableThinkingLevels() { return this.configuration.getAvailableThinkingLevels(); }
+  setThinkingLevel(level: Parameters<FakeConfiguration["setThinkingLevel"]>[0]) { return this.configuration.setThinkingLevel(level); }
   static prompted: Array<{ convId: string; text: string }> = [];
   constructor(private opts: { cwd: string; args: string[] }) {}
   async start() {}
@@ -33,16 +38,14 @@ class RecordingClient implements PiClientLike {
     return () => {};
   }
   async getState() {
-    return { sessionFile: "/tmp/fake.jsonl", isStreaming: false };
+    return { ...await this.configuration.getState(), sessionFile: "/tmp/fake.jsonl", isStreaming: false };
   }
   async prompt(message: string) {
     RecordingClient.prompted.push({ convId: this.opts.args.join(" "), text: message });
     return {};
   }
   async abort() {}
-  async setModel() {
-    return {};
-  }
+  async setModel(provider: string, id: string) { return this.configuration.setModel(provider, id); }
 }
 
 async function fixture() {

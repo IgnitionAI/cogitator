@@ -136,6 +136,8 @@ export type MessageInput = z.infer<typeof messageSchema>;
 export const modelSwitchSchema = z.object({
   provider: z.string().min(1),
   id: z.string().min(1),
+  thinking: thinkingSchema.optional(),
+  scope: z.string().optional(),
 });
 export type ModelSwitch = z.infer<typeof modelSwitchSchema>;
 

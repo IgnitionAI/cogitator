@@ -1,3 +1,4 @@
+import { FakeConfiguration } from "./fixtures/fake-configuration.js";
 import assert from "node:assert/strict";
 import { test, before, after } from "node:test";
 import type { AddressInfo } from "node:net";
@@ -27,15 +28,19 @@ const { PiPool } = await import("../src/pool.js");
 const { setConversationStatus } = await import("../src/conversations.js");
 
 class FakeClient {
+  configuration = new FakeConfiguration(() => this.opts.args);
+  getAvailableModels() { return this.configuration.getAvailableModels(); }
+  getAvailableThinkingLevels() { return this.configuration.getAvailableThinkingLevels(); }
+  setThinkingLevel(level: Parameters<FakeConfiguration["setThinkingLevel"]>[0]) { return this.configuration.setThinkingLevel(level); }
   sessionFile = `/fake/sessions/${Math.random()}.jsonl`;
   constructor(public opts: { cwd: string; args: string[] }) {}
   async start() {}
   async stop() {}
   onEvent() { return () => {}; }
-  async getState() { return { sessionFile: this.sessionFile, isStreaming: false }; }
+  async getState() { return { ...await this.configuration.getState(), sessionFile: this.sessionFile, isStreaming: false }; }
   async prompt() { return {}; }
   async abort() {}
-  async setModel() { return {}; }
+  async setModel(provider: string, id: string) { return this.configuration.setModel(provider, id); }
 }
 
 let db: Database.Database;

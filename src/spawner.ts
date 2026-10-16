@@ -1,7 +1,9 @@
+import { checkRequestAuthorization } from "./request-authorization.js";
+import { reconcileConfiguration } from "./classic-configuration.js";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { setConversationSession, type ConversationRow } from "./conversations.js";
+import { getConversation, setConversationSession, type ConversationRow } from "./conversations.js";
 import type { Db } from "./db.js";
 import { UI_INSTRUCTIONS, UI_PRESENTATION_POLICY } from "./generative-ui.js";
 import { MCP_ENV_VAR, encodeMcpEnv } from "./mcp-env.js";
@@ -33,23 +35,30 @@ export function makeSpawner(opts: SpawnerOptions): Spawner {
   return {
     tmpDir,
     async ensure(conv) {
-      // I3 (amendé Durable) : le pool classic ne spawn JAMAIS pour une conversation
-      // durable — la runtime Durable du contrôleur est le seul mécanisme (point
-      // de composition src/runtime.ts). Un spawn ici serait un processus non géré.
-      if (conv.runtime_kind === "durable") {
-        throw new Error("conversation durable : aucun processus pi classic (runtime.ts)");
-      }
-      const spawn = JSON.parse(conv.spawn_args || "{}") as SpawnConfig;
-      const mcpEnv = encodeMcpEnv(spawn.mcpServers ?? []);
-      const result = await pool.ensure(conv.id, {
-        cwd: conv.workspace_dir ?? homedir(),
-        // Host presentation capability: also available to legacy sessions, without rewriting their snapshot.
-        args: buildArgs({ ...spawn, uiInstructions: `${spawn.uiInstructions ?? UI_INSTRUCTIONS}\n\n${UI_PRESENTATION_POLICY}\n\n${ENVIRONMENT_NOTICE}` }, tmpDir, conv.id),
-        resumeSessionFile: conv.session_file,
-        env: mcpEnv ? { [MCP_ENV_VAR]: mcpEnv } : undefined,
+      return pool.serial(conv.id, async () => {
+        conv = getConversation(db, conv.id) ?? conv;
+        // I3 (amendé Durable) : le pool classic ne spawn JAMAIS pour une conversation
+        // durable — la runtime Durable du contrôleur est le seul mécanisme (point
+        // de composition src/runtime.ts). Un spawn ici serait un processus non géré.
+        if (conv.runtime_kind === "durable") {
+          throw new Error("conversation durable : aucun processus pi classic (runtime.ts)");
+        }
+        const spawn = JSON.parse(conv.spawn_args || "{}") as SpawnConfig;
+        const mcpEnv = encodeMcpEnv(spawn.mcpServers ?? []);
+        const result = await pool.ensure(conv.id, {
+          cwd: conv.workspace_dir ?? homedir(),
+          // Host presentation capability: also available to legacy sessions, without rewriting their snapshot.
+          args: buildArgs({ ...spawn, uiInstructions: `${spawn.uiInstructions ?? UI_INSTRUCTIONS}\n\n${UI_PRESENTATION_POLICY}\n\n${ENVIRONMENT_NOTICE}` }, tmpDir, conv.id),
+          resumeSessionFile: conv.session_file,
+          initialize: client => reconcileConfiguration(db, pool, conv.id, client),
+          env: mcpEnv ? { [MCP_ENV_VAR]: mcpEnv } : undefined,
+        });
+        try {
+          checkRequestAuthorization();
+          if (result.sessionFile) setConversationSession(db, conv.id, result.sessionFile);
+        } catch (error) { await pool.evict(conv.id); throw error; }
+        return result;
       });
-      if (result.sessionFile) setConversationSession(db, conv.id, result.sessionFile);
-      return result;
     },
   };
 }

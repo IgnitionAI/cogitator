@@ -1,3 +1,4 @@
+import { FakeConfiguration } from "./fixtures/fake-configuration.js";
 import assert from "node:assert/strict";
 import { test, before, after } from "node:test";
 import type { AddressInfo } from "node:net";
@@ -27,6 +28,10 @@ const { setConversationStatus } = await import("../src/conversations.js");
 const { createAgent } = await import("../src/agents.js");
 
 class FakeClient {
+  configuration = new FakeConfiguration(() => this.opts.args);
+  getAvailableModels() { return this.configuration.getAvailableModels(); }
+  getAvailableThinkingLevels() { return this.configuration.getAvailableThinkingLevels(); }
+  setThinkingLevel(level: Parameters<FakeConfiguration["setThinkingLevel"]>[0]) { return this.configuration.setThinkingLevel(level); }
   sessionFile = join(sessionsDir, `${randomUUID()}.jsonl`);
   private listener: ((event: unknown) => void) | null = null;
   constructor(public opts: { cwd: string; args: string[] }) {}
@@ -42,15 +47,13 @@ class FakeClient {
   async getState() {
     // le fichier doit exister pour la relecture de la réponse finale (agent_end → bus)
     writeFileSync(this.sessionFile, "", { flag: "a" });
-    return { sessionFile: this.sessionFile, isStreaming: false };
+    return { ...await this.configuration.getState(), sessionFile: this.sessionFile, isStreaming: false };
   }
   async prompt() {
     return {};
   }
   async abort() {}
-  async setModel() {
-    return {};
-  }
+  async setModel(provider: string, id: string) { return this.configuration.setModel(provider, id); }
 }
 
 interface GroupMember {
@@ -103,7 +106,7 @@ const clientFor = (convId: string): FakeClient => {
 before(async () => {
   const opened = openDb(join(home, "cogitator.db"));
   db = opened.db;
-  assert.equal(opened.version, 7);
+  assert.equal(opened.version, 8);
   botA = createAgent(db, { name: "Bot A", provider: "openai", model: "gpt-5.4", system_prompt: "", skills: [], mcp_servers: [] }).id;
   botB = createAgent(db, { name: "Bot B", provider: "openai", model: "gpt-5.4", system_prompt: "", skills: [], mcp_servers: [] }).id;
   const pool = new PiPool({
@@ -161,7 +164,7 @@ test("v5 db migrates to v6 with the group_message bus table", () => {
   raw.pragma("user_version = 5");
   raw.close();
   const migrated = openDb(legacy);
-  assert.equal(migrated.version, 7);
+  assert.equal(migrated.version, 8);
   const tables = migrated.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='group_message'").all();
   assert.equal(tables.length, 1);
   migrated.db.close();

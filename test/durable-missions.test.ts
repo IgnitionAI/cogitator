@@ -1,3 +1,4 @@
+import { FakeConfiguration } from "./fixtures/fake-configuration.js";
 /**
  * Intégration serveur des missions durables (ticket #16, P3b) — faux provider,
  * extension fixture à effet protégé passant par la passerelle d'autorisation :
@@ -99,14 +100,18 @@ const slowTool = defineTool({
 const fixtureExtension = defineExtension({ name: "fixture-effects", tools: [deployTool, slowTool] });
 
 class RecordingClient implements PiClientLike {
+  configuration = new FakeConfiguration(() => this.opts.args);
+  getAvailableModels() { return this.configuration.getAvailableModels(); }
+  getAvailableThinkingLevels() { return this.configuration.getAvailableThinkingLevels(); }
+  setThinkingLevel(level: Parameters<FakeConfiguration["setThinkingLevel"]>[0]) { return this.configuration.setThinkingLevel(level); }
   constructor(private opts: { cwd: string; args: string[] }) {}
   async start() {}
   async stop() {}
   onEvent() { return () => {}; }
-  async getState() { return { sessionFile: "/tmp/fake.jsonl", isStreaming: false }; }
+  async getState() { return { ...await this.configuration.getState(), sessionFile: "/tmp/fake.jsonl", isStreaming: false }; }
   async prompt() { return {}; }
   async abort() {}
-  async setModel() { return {}; }
+  async setModel(provider: string, id: string) { return this.configuration.setModel(provider, id); }
 }
 
 async function fixture(opts: { slots?: number } = {}) {

@@ -1,4 +1,5 @@
 import * as i18n from "../web/src/i18n.js";
+import { THINKING_LEVELS } from "../web/src/types.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -17,14 +18,25 @@ function harness(screen: string, api: object, fetch?: unknown, component = "defa
   let mounted = false;
   const effects: Array<() => void> = [];
   const exports: Record<string, (props: unknown) => Element> = {};
-  const jsx = (type: unknown, props: Element["props"]): Element => ({ type, props });
+  const jsx = (type: unknown, props: Element["props"]): Element =>
+    typeof type === "function" ? type(props) as Element : { type, props };
   const source = readFileSync(`web/src/screens/${screen}.tsx`, "utf8") + (component === "default" ? "" : `\nexport { ${component} };`);
   runInNewContext(ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   }).outputText, {
     exports, fetch, Error, window: { location: { origin: "http://localhost:9876" } },
     setInterval: () => 0, clearInterval() {},
-    require(name: string) {
+    require: function requireModule(name: string): unknown {
+      if (name === "../ModelConfiguration") {
+        // Render the real shared fields, rather than replacing the extracted
+        // component with an empty import and losing its native options.
+        const shared = {};
+        runInNewContext(ts.transpileModule(readFileSync("web/src/ModelConfiguration.tsx", "utf8"), {
+          compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
+        }).outputText, { exports: shared, require: requireModule });
+        return shared;
+      }
+      if (name === "./types" || name === "../types") return { THINKING_LEVELS };
       if (name === "./i18n" || name === "../i18n") return i18n;
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (name === "react") return {
@@ -36,8 +48,8 @@ function harness(screen: string, api: object, fetch?: unknown, component = "defa
         useCallback: (callback: unknown) => callback,
         useEffect: (effect: () => void) => { if (!mounted) effects.push(effect); },
       };
-      if (name === "../api") return { api };
-      if (name === "../ui") return { Modal: "Modal", PageHead: "PageHead", ErrorText: "ErrorText", Field: "Field", useToast: () => () => {} };
+      if (name === "./api" || name === "../api") return { api };
+      if (name === "./ui" || name === "../ui") return { Modal: "Modal", PageHead: "PageHead", ErrorText: "ErrorText", Field: "Field", useToast: () => () => {} };
       return {};
     },
   });

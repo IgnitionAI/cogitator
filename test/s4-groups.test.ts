@@ -1,3 +1,4 @@
+import { FakeConfiguration } from "./fixtures/fake-configuration.js";
 import assert from "node:assert/strict";
 import { test, before, after } from "node:test";
 import type { AddressInfo } from "node:net";
@@ -26,15 +27,19 @@ const { setConversationStatus } = await import("../src/conversations.js");
 const { createAgent } = await import("../src/agents.js");
 
 class FakeClient {
+  configuration = new FakeConfiguration(() => this.opts.args);
+  getAvailableModels() { return this.configuration.getAvailableModels(); }
+  getAvailableThinkingLevels() { return this.configuration.getAvailableThinkingLevels(); }
+  setThinkingLevel(level: Parameters<FakeConfiguration["setThinkingLevel"]>[0]) { return this.configuration.setThinkingLevel(level); }
   sessionFile = `/fake/sessions/${Math.random()}.jsonl`;
   constructor(public opts: { cwd: string; args: string[] }) {}
   async start() {}
   async stop() {}
   onEvent() { return () => {}; }
-  async getState() { return { sessionFile: this.sessionFile, isStreaming: false }; }
+  async getState() { return { ...await this.configuration.getState(), sessionFile: this.sessionFile, isStreaming: false }; }
   async prompt() { return {}; }
   async abort() {}
-  async setModel() { return {}; }
+  async setModel(provider: string, id: string) { return this.configuration.setModel(provider, id); }
 }
 
 interface GroupMember {
@@ -69,7 +74,7 @@ const post = (url: string, body: unknown) =>
 before(async () => {
   const opened = openDb(join(home, "cogitator.db"));
   db = opened.db;
-  assert.equal(opened.version, 7);
+  assert.equal(opened.version, 8);
   botA = createAgent(db, { name: "Bot A", provider: "openai", model: "gpt-5.4", system_prompt: "", skills: [], mcp_servers: [] }).id;
   botB = createAgent(db, { name: "Bot B", provider: "openai", model: "gpt-5.4", system_prompt: "", skills: [], mcp_servers: [] }).id;
   botC = createAgent(db, { name: "Bot C", provider: "openai", model: "gpt-5.4", system_prompt: "", skills: [], mcp_servers: [] }).id;
@@ -110,7 +115,7 @@ test("v4 db migrates to v5 with agent_group and conversation.group_id", () => {
   raw.pragma("user_version = 4");
   raw.close();
   const migrated = openDb(legacy);
-  assert.equal(migrated.version, 7);
+  assert.equal(migrated.version, 8);
   const tables = migrated.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='agent_group'").all();
   assert.equal(tables.length, 1);
   const cols = migrated.db.prepare("PRAGMA table_info(conversation)").all() as Array<{ name: string }>;

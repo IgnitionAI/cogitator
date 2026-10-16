@@ -1,4 +1,21 @@
 export const chatMessages = {
+  "configuration.title": {"en": "Model settings", "fr": "Réglages du modèle"},
+  "configuration.effective": {"en": "Effective", "fr": "Effectif"},
+  "configuration.apply": {"en": "Apply settings", "fr": "Appliquer les réglages"},
+  "configuration.applying": {"en": "Applying settings…", "fr": "Application des réglages…"},
+  "configuration.pending": {"en": "Pending: applies after the current response.", "fr": "En attente : application après la réponse en cours."},
+  "configuration.failed": {"en": "Change failed. Effective settings are shown above.", "fr": "Échec du changement. Les réglages effectifs figurent ci-dessus."},
+  "configuration.dismiss": {"en": "Dismiss failed change", "fr": "Ignorer le changement échoué"},
+  "configuration.retry": {"en": "Retry settings", "fr": "Réessayer les réglages"},
+  "configuration.scope": {"en": "Apply to", "fr": "Appliquer à"},
+  "configuration.conversation": {"en": "This conversation only", "fr": "Cette conversation uniquement"},
+  "configuration.preset": {"en": "This conversation + future bot conversations", "fr": "Cette conversation + futures conversations du bot"},
+  "configuration.future": {"en": "Defaults for future conversations only. Existing conversations stay unchanged.", "fr": "Valeurs par défaut des futures conversations uniquement. Les conversations existantes restent inchangées."},
+  "configuration.preserve": {"en": "Keep current reasoning", "fr": "Conserver le raisonnement actuel"},
+  "configuration.validation": {"en": "Reasoning support is validated when you apply.", "fr": "Le raisonnement pris en charge est vérifié à l’application."},
+  "configuration.applied": {"en": "Settings applied", "fr": "Réglages appliqués"},
+  "configuration.loading": {"en": "Loading model settings…", "fr": "Chargement des réglages du modèle…"},
+
   // ---------- Missions durables : approbations, admission, budget (#16) ----------
   "mission.approvalsTitle": {"fr": "Approbation requise — action sensible", "en": "Approval required — sensitive action"},
   "mission.serverFixed": {"fr": "Contenu fixe défini par le serveur — distinct des formulaires générés par le modèle", "en": "Server-fixed content — distinct from model-generated forms"},

@@ -66,8 +66,29 @@ Protected local stdio MCP uses a private owner-only Unix HTTP socket with the sa
 | GET | `/api/conversations/:id/events` | **SSE** — pi events (tokens, tool calls, status) |
 | POST | `/api/conversations/:id/messages` | Send a message `{ text, images? }` |
 | POST | `/api/conversations/:id/stop` | Interrupt the current turn |
-| POST | `/api/conversations/:id/model` | Change the model during a session (native pi support) |
+| POST | `/api/conversations/:id/model` | Apply `{ provider, id, thinking?, scope?: "conversation" \| "preset" }` to a classic conversation; `200` applied or `202` pending, full conversation object (no wrapper) |
+| DELETE | `/api/conversations/:id/model` | Dismiss a failed configuration request only; return full conversation object |
 | DELETE | `/api/conversations/:id` | Close + remove from the pool (the `.jsonl` remains) |
+
+### Live classic configuration
+
+Conversation objects include `runtime_kind` and parsed `pending_configuration` (object or null):
+
+```json
+{"request_id":"uuid","provider":"provider","model":"model-id","thinking":"high","scope":"conversation","status":"pending"}
+```
+
+`status` is `pending` or `failed`; failures add `error`. Pending `thinking` may be null when initial reasoning was unspecified. Effective `provider`, `model`, and `thinking` remain the committed tuple until verified RPC readback and the database transaction succeed. The same three snapshot fields are updated; unrelated snapshot content and session/history remain intact. Initial/resumed classic startup reconciles and records actual reasoning before dispatch.
+
+Scope defaults to `conversation`. Explicit `preset` updates this conversation **and** the linked preset defaults (including Apply), preserving unrelated fields. It does not change sibling conversations or running external subagents. Ad-hoc conversations cannot use preset scope. This is the explicit classic override to O6; preset edits otherwise affect future conversations only. Durable rejects before any mutation or spawn.
+
+During a run, configuration waits for `agent_settled`, not `agent_end` (retries and compaction may follow the latter). Further messages are retained server-side and dispatched after configuration. Their delivery remains non-durable. Stop/delete clears retained messages with `queue_cleared` feedback; retained prompt failures emit `queue_error`. Pending/applying handles cannot be swept. One outstanding configuration is accepted per conversation. Failed requests can be retried with POST or dismissed with DELETE; accepted pending work cannot be dismissed.
+
+Omitted thinking preserves effective reasoning if supported by the target model; unsupported levels are rejected, never silently clamped. Official RPC setters are session-only: global pi defaults are not changed. Partial failure restores and verifies the previous tuple; failed rollback quarantines/stops the client and clears its retained messages. Future startup reconciles committed settings before prompts.
+
+SSE publishes `{ type: "configuration_changed", conversation }` for pending, applied, failed and dismissed transitions on the conversation stream. Groups carry it in the existing `group_activity.event` envelope. Group member metadata (`provider`, `model`, `thinking`, `runtime_kind`, `pending_configuration`) comes from member conversations, not preset defaults.
+
+Errors: malformed input `400`, missing conversation/preset `404`, Durable/outstanding request/invalid scope `409`, unsupported model/reasoning `422`, runtime/readback/persistence failure `502`, capacity `503`. Authentication errors retain their existing status. Deferred errors persist as failed pending state and emit SSE. Retained configuration and prompts recheck their originating authorization before execution; configuration checks again before commit. After a controller restart, pending requests become visible failed requests requiring an explicit authorized retry: the old process-local authorization check cannot safely be recreated from persisted JSON.
 
 ## Groups (specified, not implemented — ADR-011)
 
@@ -85,7 +106,7 @@ Protected local stdio MCP uses a private owner-only Unix HTTP socket with the sa
 
 Handoff: a member reply that `@` another member is stored on the bus and injected into that process (same as a user mention). Generative-UI replies stay on the member’s 1–1-style `POST /conversations/:id/messages` and are copied onto the bus as that agent’s message.
 
-Responses to interactive components use the same `POST /messages`: a `cogitator-response` envelope in `text`, with no action endpoint or additional execution authorization. The rendering contract and automatic presentation policy are supplied by the spawner at startup/resume, including for older sessions; their snapshots and transcripts are not rewritten. See [the generative UI contract](../chat-generative-ui.md).
+Responses to interactive components use the same `POST /messages`: a `cogitator-response` envelope in `text`, with no action endpoint or additional execution authorization. The rendering contract and automatic presentation policy are supplied by the spawner at startup/resume, including for older sessions; their presentation snapshot fields and transcripts are not rewritten (effective configuration fields may be reconciled as described above). See [the generative UI contract](../chat-generative-ui.md).
 
 ## Schedules (cron)
 

@@ -1,3 +1,4 @@
+import { FakeConfiguration } from "./fixtures/fake-configuration.js";
 import assert from "node:assert/strict";
 import { test, before, after } from "node:test";
 import type { AddressInfo } from "node:net";
@@ -33,6 +34,10 @@ const { browseDir } = await import("../src/workspaces.js");
 let fakeCounter = 0;
 
 class FakeClient {
+  configuration = new FakeConfiguration(() => this.opts.args);
+  getAvailableModels() { return this.configuration.getAvailableModels(); }
+  getAvailableThinkingLevels() { return this.configuration.getAvailableThinkingLevels(); }
+  setThinkingLevel(level: Parameters<FakeConfiguration["setThinkingLevel"]>[0]) { return this.configuration.setThinkingLevel(level); }
   static instances: FakeClient[] = [];
   opts: { cwd: string; args: string[] };
   sessionFile: string;
@@ -44,10 +49,10 @@ class FakeClient {
   async start() {}
   async stop() {}
   onEvent() { return () => {}; }
-  async getState() { return { sessionFile: this.sessionFile, isStreaming: false }; }
+  async getState() { return { ...await this.configuration.getState(), sessionFile: this.sessionFile, isStreaming: false }; }
   async prompt() { return {}; }
   async abort() {}
-  async setModel() { return {}; }
+  async setModel(provider: string, id: string) { return this.configuration.setModel(provider, id); }
 }
 
 function lastClient(): FakeClient {

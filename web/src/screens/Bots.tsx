@@ -1,3 +1,4 @@
+import { LiveConfiguration } from "../ModelConfiguration";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, openEvents, type EventConnectionState } from "../api";
 import type { AgentPreset, Conversation, Group, GroupMessage, Workspace } from "../types";
@@ -239,6 +240,16 @@ function busRowsToItems(rows: GroupMessage[], group: Group): GroupItem[] {
 function GroupView(props: { group: Group; onClose: () => void }) {
   const toast = useToast();
   const { group } = props;
+  const [memberConversations, setMemberConversations] = useState<Record<string, Conversation>>({});
+  const [configurationError, setConfigurationError] = useState<string | null>(null);
+  const updateMember = useCallback((conversation: Conversation) => {
+    setMemberConversations((current) => ({ ...current, [conversation.id]: conversation }));
+  }, []);
+  const loadConfigurations = useCallback(() => {
+    Promise.all(group.members.map((member) => api.conversation(member.conversation_id)))
+      .then((responses) => { responses.forEach((response) => updateMember(response.conversation)); setConfigurationError(null); })
+      .catch((error: Error) => setConfigurationError(error.message));
+  }, [group, updateMember]);
   const [busItems, setBusItems] = useState<GroupItem[]>([]);
   const [liveItems, setLiveItems] = useState<GroupItem[]>([]);
   const [input, setInput] = useState("");
@@ -277,6 +288,7 @@ function GroupView(props: { group: Group; onClose: () => void }) {
         authorRef.current = envelope.name ?? memberName(envelope.agentId);
         runnerRef.current = envelope.conversationId ?? runnerRef.current;
         const inner = envelope.event;
+        if (inner.type === "configuration_changed" && inner.conversation) { updateMember(inner.conversation); return; }
         setLiveItems((prev) =>
           (applyEvent(prev, inner, streamRef.current) as GroupItem[]).map((item) =>
             (item.kind === "assistant" || item.kind === "tool") && !item.author && authorRef.current
@@ -299,12 +311,12 @@ function GroupView(props: { group: Group; onClose: () => void }) {
       },
       {
         // à chaque (re)connexion : combler le trou via le rejeu du bus
-        onOpen: () => { loadBus(); setLiveItems([]); },
+        onOpen: () => { loadBus(); loadConfigurations(); setLiveItems([]); },
         onStateChange: setConnection,
       },
     );
     return close;
-  }, [group.id, loadBus, memberName]);
+  }, [group.id, loadBus, memberName, loadConfigurations, updateMember]);
 
   const items = [...busItems, ...liveItems].filter((i) => i.kind !== "status");
 
@@ -367,6 +379,14 @@ function GroupView(props: { group: Group; onClose: () => void }) {
           {t("screens.delete")}
         </button>
       </header>
+      <div className="group-configurations">
+        <ErrorText error={configurationError} />
+        {configurationError ? <button type="button" className="btn btn-sm" onClick={loadConfigurations}>{t("screens.retryOptions")}</button> : null}
+        {group.members.map((member) => {
+          const conversation = memberConversations[member.conversation_id];
+          return conversation ? <LiveConfiguration key={member.conversation_id} name={member.name} conversation={conversation} onChanged={updateMember} /> : null;
+        })}
+      </div>
       <div className="chat-body">
         <div className="chat-main">
           <div

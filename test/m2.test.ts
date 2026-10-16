@@ -1,3 +1,4 @@
+import { FakeConfiguration } from "./fixtures/fake-configuration.js";
 import assert from "node:assert/strict";
 import { test, before, after } from "node:test";
 import type { AddressInfo } from "node:net";
@@ -34,6 +35,10 @@ const { setConversationStatus } = await import("../src/conversations.js");
 // ---------- Fake pi client ----------
 
 class FakeClient {
+  configuration = new FakeConfiguration(() => this.opts.args);
+  getAvailableModels() { return this.configuration.getAvailableModels(); }
+  getAvailableThinkingLevels() { return this.configuration.getAvailableThinkingLevels(); }
+  setThinkingLevel(level: Parameters<FakeConfiguration["setThinkingLevel"]>[0]) { return this.configuration.setThinkingLevel(level); }
   static instances: FakeClient[] = [];
   opts: { cwd: string; args: string[] };
   prompts: Array<{ text: string; images?: unknown[] }> = [];
@@ -50,14 +55,15 @@ class FakeClient {
   async start() {}
   async stop() { this.stopped = true; }
   onEvent(l: (e: unknown) => void) { this.listeners.add(l); return () => this.listeners.delete(l); }
-  async getState() { return this.state; }
+  async getState() { return { ...await this.configuration.getState(), ...this.state }; }
   async prompt(text: string, images?: unknown[]) {
     this.prompts.push({ text, images });
     for (const l of this.listeners) l({ type: "message_update", text });
-    return { disposition: "accepted" };
+    for (const l of this.listeners) l({ type: "agent_settled" });
+    return { disposition: "started" };
   }
   async abort() { this.aborted++; }
-  async setModel(p: string, m: string) { this.modelsSet.push([p, m]); }
+  async setModel(p: string, m: string) { this.modelsSet.push([p, m]); await this.configuration.setModel(p, m); }
 }
 
 function lastClient(): FakeClient {
@@ -244,7 +250,7 @@ test("migration v1 → v2 : session_file devient nullable + spawn_args", () => {
   legacy.close();
 
   const { db: migrated, version } = openDb(v1db);
-  assert.equal(version, 7);
+  assert.equal(version, 8);
   const row = migrated.prepare("SELECT * FROM conversation WHERE id = 'legacy-1'").get() as { session_file: string; spawn_args: string };
   assert.equal(row.session_file, "/s.jsonl");
   assert.equal(row.spawn_args, "{}");

@@ -1,3 +1,4 @@
+import { FakeConfiguration } from "./fixtures/fake-configuration.js";
 import * as i18n from "../web/src/i18n.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -42,9 +43,13 @@ test("automatic UI reaches new and resumed legacy sessions without changing snap
   let prompts = 0;
   const pool = new PiPool({ factory: (options) => {
     launches.push(options);
+    const configuration = new FakeConfiguration(() => options.args);
     return {
       async start() {}, async stop() {}, onEvent: () => () => {},
-      async getState() { return { isStreaming: false }; },
+      async getState() { return { ...await configuration.getState(), isStreaming: false }; },
+      getAvailableModels: () => configuration.getAvailableModels(),
+      getAvailableThinkingLevels: () => configuration.getAvailableThinkingLevels(),
+      setThinkingLevel: level => configuration.setThinkingLevel(level),
       async prompt() { prompts++; }, async abort() {}, async setModel() {},
     };
   } });
@@ -65,7 +70,7 @@ test("automatic UI reaches new and resumed legacy sessions without changing snap
       assert.equal(prompt.split("## Interfaces Cogitator (contrat v1)").length, 2);
       assert(prompt.includes(UI_INSTRUCTIONS));
       assert(prompt.includes(UI_PRESENTATION_POLICY));
-      assert.equal(getConversation(db, id)!.spawn_args, snapshot);
+      assert.deepEqual(JSON.parse(getConversation(db, id)!.spawn_args), { ...JSON.parse(snapshot), thinking: "off" });
       assert.equal(args[args.indexOf("--tools") + 1], "read");
     }
     assert.equal(launches[1]!.args.at(-2), "--session");

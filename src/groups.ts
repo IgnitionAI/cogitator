@@ -1,3 +1,4 @@
+import type { PendingConfiguration } from "./conversations.js";
 import { randomUUID } from "node:crypto";
 import type { Db } from "./db.js";
 
@@ -21,6 +22,9 @@ export interface GroupMember {
   provider: string;
   model: string;
   conversation_id: string;
+  thinking: string | null;
+  runtime_kind: string;
+  pending_configuration: PendingConfiguration | null;
   is_host: number;
 }
 
@@ -41,9 +45,9 @@ export function getGroup(db: Db, id: string): GroupRow | null {
 }
 
 export function listGroupMembers(db: Db, groupId: string): GroupMember[] {
-  return db
+  const rows = db
     .prepare(
-      `SELECT c.agent_id, p.name, p.slug, p.provider, p.model, c.id AS conversation_id,
+      `SELECT c.agent_id, p.name, p.slug, c.provider, c.model, c.thinking, c.runtime_kind, c.pending_configuration, c.id AS conversation_id,
               (g.host_agent_id = c.agent_id) AS is_host
        FROM conversation c
        JOIN agent_preset p ON p.id = c.agent_id
@@ -52,6 +56,7 @@ export function listGroupMembers(db: Db, groupId: string): GroupMember[] {
        ORDER BY c.created_at`,
     )
     .all(groupId) as unknown as GroupMember[];
+  return rows.map(row => ({ ...row, pending_configuration: typeof row.pending_configuration === "string" ? JSON.parse(row.pending_configuration) as PendingConfiguration : null }));
 }
 
 export function listGroups(db: Db): GroupWithMembers[] {

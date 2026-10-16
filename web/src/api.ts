@@ -94,8 +94,9 @@ export const api = {
   revokeGrant: (id: string, grantId: string) => req<{ ok: true }>("POST", `/api/conversations/${id}/approvals/${grantId}/revoke`),
   updateBudget: (id: string, b: { missionCalls?: number; missionTokens?: number; dailyCalls?: number; dailyTokens?: number }) =>
     req<{ ok: true; mission: MissionStatusView }>("POST", `/api/conversations/${id}/budget`, b),
-  switchModel: (id: string, provider: string, modelId: string) =>
-    req<{ ok: true }>("POST", `/api/conversations/${id}/model`, { provider, id: modelId }),
+  switchModel: (id: string, provider: string, modelId: string, thinking?: import("./types").ThinkingLevel, scope: "conversation" | "preset" = "conversation") =>
+    req<Conversation>("POST", `/api/conversations/${id}/model`, { provider, id: modelId, thinking, scope }),
+  dismissConfiguration: (id: string) => req<Conversation>("DELETE", `/api/conversations/${id}/model`),
   history: (id: string) =>
     req<{ messages: Array<{ role: string; text: string }>; entries: import("./types").HistoryEntry[] }>(
       "GET", `/api/conversations/${id}/history`,

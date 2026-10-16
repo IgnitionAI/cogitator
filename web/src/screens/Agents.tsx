@@ -1,3 +1,4 @@
+import { ModelFields, type ModelDraft } from "../ModelConfiguration";
 import { t as translate, localizeText, formatNumber, thinkingLabel, getLocale } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
@@ -91,66 +92,33 @@ function QuickModel(props: {
   providers: ProviderView[];
   onChanged: () => void;
 }) {
-  const toast = useToast();
   const { agent, providers } = props;
-  const provider = providers.find((p) => p.id === agent.provider);
-  const models = provider?.models ?? [];
+  const [draft, setDraft] = useState<ModelDraft | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const switchTo = async (providerId: string, modelId: string) => {
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const value = draft ?? agent;
+  const apply = async () => {
     if (busy) return;
     setBusy(true);
+    setError(null);
+    setSaved(false);
     try {
-      const full = await api.agent(agent.id); // PUT exige le preset complet : on récupère puis on patch
-      await api.updateAgent(agent.id, {
-        ...full.agent,
-        provider: providerId,
-        model: modelId,
-      });
+      const full = await api.agent(agent.id);
+      await api.updateAgent(agent.id, { ...full.agent, provider: value.provider, model: value.model, thinking: value.thinking });
+      setSaved(true);
       props.onChanged();
-    } catch (e) {
-      toast((e as Error).message, true);
-    } finally {
-      setBusy(false);
-    }
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : translate("screens.operationFailed"));
+    } finally { setBusy(false); }
   };
-
-  return (
-    <div style={{ marginTop: 8 }}>
-      <p className="muted">{translate("screens.quickModel")}</p>
-      <div className="form-row">
-      <select
-        value={agent.provider}
-        onChange={(e) => {
-          const nextProvider = providers.find((p) => p.id === e.target.value);
-          void switchTo(e.target.value, nextProvider?.models[0]?.id ?? "");
-        }}
-        aria-label={translate("screens.agentProvider", { name: agent.name })}
-        disabled={busy}
-        title={translate("screens.provider")}
-      >
-        {!provider ? <option value={agent.provider}>{agent.provider} {translate("screens.unavailable")}</option> : null}
-        {providers.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.id} {p.auth.ready === true ? translate("screens.readyParen") : p.auth.ready === false ? translate("screens.authParen") : translate("screens.unknownParen")}
-          </option>
-        ))}
-      </select>
-      <select
-        value={agent.model}
-        onChange={(e) => void switchTo(agent.provider, e.target.value)}
-        aria-label={translate("screens.agentModel", { name: agent.name })}
-        disabled={busy}
-        title={translate("screens.model")}
-      >
-        {!models.some((m) => m.id === agent.model) ? <option value={agent.model}>{agent.model}</option> : null}
-        {models.map((m) => (
-          <option key={m.id} value={m.id}>{m.id}</option>
-        ))}
-      </select>
-      </div>
-    </div>
-  );
+  return <fieldset className="form-fields preset-configuration" disabled={busy} aria-label={`${agent.name} · ${translate("configuration.title")}`}>
+    <p className="muted">{translate("configuration.future")}</p>
+    <ModelFields value={value} providers={providers} onChange={(next) => { setDraft(next); setSaved(false); }} />
+    <ErrorText error={error} />
+    {saved ? <p role="status">{translate("configuration.applied")}</p> : null}
+    <button type="button" className="btn btn-sm" disabled={!value.provider || !value.model} onClick={() => void apply()}>{busy ? translate("configuration.applying") : translate("configuration.apply")}</button>
+  </fieldset>;
 }
 
 function ImportSkillsModal(props: { onClose: () => void }) {

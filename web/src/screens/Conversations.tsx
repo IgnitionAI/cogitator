@@ -1,3 +1,4 @@
+import { LiveConfiguration } from "../ModelConfiguration";
 import { t, formatNumber, statusLabel, thinkingLabel, localizeText } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, openEvents, type EventConnectionState } from "../api";
@@ -286,7 +287,7 @@ export function ChatView(props: {
   onDeleted: () => void;
   embedded?: boolean;
 }) {
-  const { conversation } = props;
+  const [conversation, setConversation] = useState(props.conversation);
   const toast = useToast();
   const [timeline, setTimeline] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
@@ -393,6 +394,7 @@ export function ChatView(props: {
       (e) => {
         const ev = e as SseEvent;
         eventRevision.current++;
+        if (ev.type === "configuration_changed" && ev.conversation) { setConversation(ev.conversation); return; }
         if (ev.type === "mission_state" && ev.mission) {
           // État d'admission/approbation/budget poussé par le serveur (file, pause, …).
           setMission(ev.mission);
@@ -413,7 +415,8 @@ export function ChatView(props: {
         onOpen: () => {
           const revision = eventRevision.current;
           api.conversation(conversation.id).then((r) => {
-            setRuntimeKind(r.runtime ?? "classic");
+            setConversation(r.conversation);
+            setRuntimeKind(r.conversation.runtime_kind ?? r.runtime ?? "classic");
             setSessionStatus(r.live ? r.conversation.status : "idle");
             if (revision === eventRevision.current && (typeof r.streaming === "boolean" || !r.live)) {
               const active = r.live && r.streaming === true;
@@ -533,6 +536,7 @@ export function ChatView(props: {
           }}
         />
       </header>
+      {conversation.runtime_kind !== "durable" && runtimeKind !== "durable" && (conversation.runtime_kind || runtimeKind) ? <LiveConfiguration key={conversation.id} conversation={conversation} onChanged={setConversation} /> : null}
       <div className="chat-body">
       <div className="chat-main">
       <div className="chat-scroll" ref={scrollRef} role="log" aria-label={t("chat.history")} aria-live="off" tabIndex={0}

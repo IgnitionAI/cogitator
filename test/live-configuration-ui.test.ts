@@ -215,6 +215,16 @@ test("group configuration and queued-message events do not redirect Stop away fr
   assert.deepEqual(ui.stopped, ["a"]);
 });
 
+test("image-only queue failures remain visible without offering an empty text retry", () => {
+  i18n.setLocale("en");
+  for (const group of [false, true]) {
+    const ui = screenHarness(group);
+    ui.emit({ type: "queue_error", message: "", error: "offline" }, "b");
+    assert.ok(find(ui.render(), (node) => node.type === "p" && node.props.children === "Queued attachment was not delivered. Attach it again to retry."));
+    assert.equal(find(ui.render(), (node) => node.type === "button" && node.props.children === "Add message to draft"), undefined);
+  }
+});
+
 test("queue cancellation/failure stays visible and restoration appends to drafts without sending, in both chat surfaces", async () => {
   i18n.setLocale("en");
   for (const group of [false, true]) {

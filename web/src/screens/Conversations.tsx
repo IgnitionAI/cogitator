@@ -52,7 +52,7 @@ export function applyEvent(prev: ChatItem[], ev: SseEvent, st: StreamState): Cha
   const ame = ev.assistantMessageEvent;
   switch (ev.type) {
     case "queue_error":
-      return ev.message ? [...prev, { kind: "queue", text: ev.message, reason: "failed", error: ev.error }] : prev;
+      return [...prev, { kind: "queue", text: ev.message ?? "", reason: "failed", error: ev.error }];
     case "queue_cleared":
       return [...prev, ...(ev.messages ?? []).map((text): QueueFailure => ({ kind: "queue", text, reason: "stopped" }))];
     case "turn_start":

@@ -1,4 +1,5 @@
 export const chatMessages = {
+  "chat.queueAttachment": { "en": "Queued attachment was not delivered. Attach it again to retry.", "fr": "La pièce jointe en attente n’a pas été transmise. Joignez-la à nouveau pour réessayer." },
   "chat.queueFailed": { "en": "Queued message failed before delivery. Restore it to edit and retry.", "fr": "Le message en attente n’a pas été transmis. Restaurez-le pour le modifier et réessayer." },
   "chat.queueStopped": { "en": "Queued message canceled when the conversation stopped.", "fr": "Message en attente annulé à l’arrêt de la conversation." },
   "chat.restoreQueued": { "en": "Add message to draft", "fr": "Ajouter le message au brouillon" },

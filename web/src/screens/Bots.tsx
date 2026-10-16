@@ -304,7 +304,7 @@ function GroupView(props: { group: Group; onClose: () => void }) {
         setLiveItems((prev) =>
           (applyEvent(prev, inner, streamRef.current) as GroupItem[]).map((item) =>
             item.kind === "queue" && !item.author && member
-              ? { ...item, author: member.name, text: member.is_host ? item.text : `@${member.slug} ${item.text}` }
+              ? { ...item, author: member.name, text: member.is_host || !item.text ? item.text : `@${member.slug} ${item.text}` }
               : (item.kind === "assistant" || item.kind === "tool") && !item.author && authorRef.current
               ? { ...item, author: authorRef.current }
               : item,

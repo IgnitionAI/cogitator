@@ -9,9 +9,11 @@ export function appendRecoveredMessage(draft: string, message: string): string {
 /** Recovery only restores editable text, never sends another prompt. */
 export function QueueRecovery({ item, onRestore }: { item: QueueFailure; onRestore: (text: string) => void }) {
   return <div className="msg msg-status" role="alert">
-    <p>{t(item.reason === "failed" ? "chat.queueFailed" : "chat.queueStopped")}</p>
+    <p>{t(!item.text ? "chat.queueAttachment" : item.reason === "failed" ? "chat.queueFailed" : "chat.queueStopped")}</p>
     {item.error ? <p>{localizeText(item.error)}</p> : null}
-    <p className="queue-message">{item.text}</p>
-    <button type="button" className="btn btn-sm" onClick={() => onRestore(item.text)}>{t("chat.restoreQueued")}</button>
+    {item.text ? <>
+      <p className="queue-message">{item.text}</p>
+      <button type="button" className="btn btn-sm" onClick={() => onRestore(item.text)}>{t("chat.restoreQueued")}</button>
+    </> : null}
   </div>;
 }

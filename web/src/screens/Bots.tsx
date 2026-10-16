@@ -1,3 +1,4 @@
+import { QueueRecovery, appendRecoveredMessage } from "../QueueRecovery";
 import { LiveConfiguration } from "../ModelConfiguration";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, openEvents, type EventConnectionState } from "../api";
@@ -242,12 +243,21 @@ function GroupView(props: { group: Group; onClose: () => void }) {
   const { group } = props;
   const [memberConversations, setMemberConversations] = useState<Record<string, Conversation>>({});
   const [configurationError, setConfigurationError] = useState<string | null>(null);
+  // A member's SSE/write invalidates only its own in-flight configuration read.
+  const configurationRevisions = useRef<Record<string, number>>({});
   const updateMember = useCallback((conversation: Conversation) => {
+    configurationRevisions.current[conversation.id] = (configurationRevisions.current[conversation.id] ?? 0) + 1;
     setMemberConversations((current) => ({ ...current, [conversation.id]: conversation }));
   }, []);
   const loadConfigurations = useCallback(() => {
-    Promise.all(group.members.map((member) => api.conversation(member.conversation_id)))
-      .then((responses) => { responses.forEach((response) => updateMember(response.conversation)); setConfigurationError(null); })
+    Promise.all(group.members.map(async (member) => {
+      const id = member.conversation_id;
+      const revision = (configurationRevisions.current[id] ?? 0) + 1;
+      configurationRevisions.current[id] = revision;
+      const response = await api.conversation(id);
+      if (configurationRevisions.current[id] === revision) updateMember(response.conversation);
+    }))
+      .then(() => setConfigurationError(null))
       .catch((error: Error) => setConfigurationError(error.message));
   }, [group, updateMember]);
   const [busItems, setBusItems] = useState<GroupItem[]>([]);
@@ -285,33 +295,37 @@ function GroupView(props: { group: Group; onClose: () => void }) {
       (e) => {
         const envelope = e as GroupActivity;
         if (envelope.type !== "group_activity" || !envelope.event) return;
-        authorRef.current = envelope.name ?? memberName(envelope.agentId);
-        runnerRef.current = envelope.conversationId ?? runnerRef.current;
         const inner = envelope.event;
         if (inner.type === "configuration_changed" && inner.conversation) { updateMember(inner.conversation); return; }
+        authorRef.current = envelope.name ?? memberName(envelope.agentId);
+        const isActiveEvent = inner.type === "agent_start" || inner.type === "turn_start" || inner.type === "message_update";
+        if (isActiveEvent) runnerRef.current = envelope.conversationId ?? runnerRef.current;
+        const member = group.members.find((entry) => entry.conversation_id === envelope.conversationId);
         setLiveItems((prev) =>
           (applyEvent(prev, inner, streamRef.current) as GroupItem[]).map((item) =>
-            (item.kind === "assistant" || item.kind === "tool") && !item.author && authorRef.current
+            item.kind === "queue" && !item.author && member
+              ? { ...item, author: member.name, text: member.is_host ? item.text : `@${member.slug} ${item.text}` }
+              : (item.kind === "assistant" || item.kind === "tool") && !item.author && authorRef.current
               ? { ...item, author: authorRef.current }
               : item,
           ),
         );
-        if (inner.type === "agent_start" || inner.type === "turn_start" || inner.type === "message_update") setRunning(true);
+        if (isActiveEvent) setRunning(true);
         if (inner.type === "message_update" && inner.assistantMessageEvent?.type === "text_start") setStreaming(true);
-        if (inner.type === "agent_end") {
+        if (inner.type === "agent_end" && envelope.conversationId === runnerRef.current) {
           setRunning(false);
           setStreaming(false);
           // le serveur écrit la réponse finale sur le bus ~1,5 s après agent_end : rejeu, puis on purge le live
           setTimeout(() => {
             loadBus();
-            setLiveItems([]);
+            setLiveItems((current) => current.filter((item) => item.kind === "queue"));
             streamRef.current = { assistantIndex: null, streaming: false, toolByContent: {} };
           }, 1700);
         }
       },
       {
         // à chaque (re)connexion : combler le trou via le rejeu du bus
-        onOpen: () => { loadBus(); loadConfigurations(); setLiveItems([]); },
+        onOpen: () => { loadBus(); loadConfigurations(); setLiveItems((current) => current.filter((item) => item.kind === "queue")); },
         onStateChange: setConnection,
       },
     );
@@ -405,6 +419,7 @@ function GroupView(props: { group: Group; onClose: () => void }) {
               <Empty title={t("screens.groupEmpty")}>{t("screens.groupEmptyHint")}</Empty>
             ) : null}
             {items.map((m, i) => {
+              if (m.kind === "queue") return <QueueRecovery key={m.key ?? i} item={m} onRestore={(text) => { setInput((draft) => appendRecoveredMessage(draft, text)); taRef.current?.focus(); }} />;
               if (m.kind === "tool") {
                 return (
                   <div key={m.key ?? i}>

@@ -993,9 +993,24 @@ function groupRoutes(deps: Deps): Route[] {
         if (!subs.size) deps.groupSubs.delete(ctx.params.id!);
       });
     }],
-    ["DELETE", "/api/groups/:id", (ctx) => {
-      if (!getGroupWithMembers(db, ctx.params.id!)) return notFound(ctx.res, "groupe");
-      deleteGroup(db, ctx.params.id!); // conversations membres en CASCADE
+    ["DELETE", "/api/groups/:id", async (ctx) => {
+      const group = getGroupWithMembers(db, ctx.params.id!);
+      if (!group) return notFound(ctx.res, "groupe");
+      // Hold member dispatch locks until the cascade: no restart between eviction and deletion.
+      const remove = async (index: number): Promise<void> => {
+        const member = group.members[index];
+        if (!member) {
+          ctx.check();
+          deleteGroup(db, group.id);
+          return;
+        }
+        await pool.serial(member.conversation_id, async () => {
+          ctx.check();
+          await pool.evict(member.conversation_id);
+          await remove(index + 1);
+        });
+      };
+      await remove(0);
       sendJson(ctx.res, 200, { ok: true });
     }],
   ];

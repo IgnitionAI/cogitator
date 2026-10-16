@@ -850,3 +850,5 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
   .live-configuration > summary { min-height: 44px; padding: 12px 16px; font-size: 14px; }
   .configuration-fields > .field { flex-basis: 100%; }
 }
+
+.queue-message { white-space: pre-wrap; overflow-wrap: anywhere; }

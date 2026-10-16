@@ -36,7 +36,9 @@ export function makeSpawner(opts: SpawnerOptions): Spawner {
     tmpDir,
     async ensure(conv) {
       return pool.serial(conv.id, async () => {
-        conv = getConversation(db, conv.id) ?? conv;
+        const current = getConversation(db, conv.id);
+        if (!current) throw new Error("conversation not found");
+        conv = current;
         // I3 (amendé Durable) : le pool classic ne spawn JAMAIS pour une conversation
         // durable — la runtime Durable du contrôleur est le seul mécanisme (point
         // de composition src/runtime.ts). Un spawn ici serait un processus non géré.

@@ -1,3 +1,4 @@
+import { QueueRecovery, appendRecoveredMessage, type QueueFailure } from "../QueueRecovery";
 import { LiveConfiguration } from "../ModelConfiguration";
 import { t, formatNumber, statusLabel, thinkingLabel, localizeText } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -23,6 +24,7 @@ export function bumpChatItemKey(): number {
   return ++nextChatItemKey;
 }
 export type ChatItem = (
+  | QueueFailure
   | { kind: "user"; text: string; attachmentCount?: number }
   | { kind: "skill"; name: string; text: string; rest?: string }
   | { kind: "assistant"; text: string }
@@ -49,6 +51,10 @@ function patchAt(prev: ChatItem[], index: number, patch: Partial<ChatItem>): Cha
 export function applyEvent(prev: ChatItem[], ev: SseEvent, st: StreamState): ChatItem[] {
   const ame = ev.assistantMessageEvent;
   switch (ev.type) {
+    case "queue_error":
+      return ev.message ? [...prev, { kind: "queue", text: ev.message, reason: "failed", error: ev.error }] : prev;
+    case "queue_cleared":
+      return [...prev, ...(ev.messages ?? []).map((text): QueueFailure => ({ kind: "queue", text, reason: "stopped" }))];
     case "turn_start":
       st.assistantIndex = null;
       st.toolByContent = {}; // contentIndex est par message : on évite les collisions entre tours
@@ -288,6 +294,11 @@ export function ChatView(props: {
   embedded?: boolean;
 }) {
   const [conversation, setConversation] = useState(props.conversation);
+  const configurationRevision = useRef(0);
+  const updateConfiguration = useCallback((next: Conversation) => {
+    configurationRevision.current++;
+    setConversation(next);
+  }, []);
   const toast = useToast();
   const [timeline, setTimeline] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
@@ -394,7 +405,7 @@ export function ChatView(props: {
       (e) => {
         const ev = e as SseEvent;
         eventRevision.current++;
-        if (ev.type === "configuration_changed" && ev.conversation) { setConversation(ev.conversation); return; }
+        if (ev.type === "configuration_changed" && ev.conversation) { updateConfiguration(ev.conversation); return; }
         if (ev.type === "mission_state" && ev.mission) {
           // État d'admission/approbation/budget poussé par le serveur (file, pause, …).
           setMission(ev.mission);
@@ -414,8 +425,9 @@ export function ChatView(props: {
         // à chaque (re)connexion : combler le trou d'événements via l'historique
         onOpen: () => {
           const revision = eventRevision.current;
+          const configurationRead = ++configurationRevision.current;
           api.conversation(conversation.id).then((r) => {
-            setConversation(r.conversation);
+            if (configurationRead === configurationRevision.current) updateConfiguration(r.conversation);
             setRuntimeKind(r.conversation.runtime_kind ?? r.runtime ?? "classic");
             setSessionStatus(r.live ? r.conversation.status : "idle");
             if (revision === eventRevision.current && (typeof r.streaming === "boolean" || !r.live)) {
@@ -433,7 +445,7 @@ export function ChatView(props: {
       clearTimeout(refetch);
       close();
     };
-  }, [conversation.id, loadHistory, refreshMission]);
+  }, [conversation.id, loadHistory, refreshMission, updateConfiguration]);
 
   useEffect(() => {
     if (nearBottom.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -536,7 +548,7 @@ export function ChatView(props: {
           }}
         />
       </header>
-      {conversation.runtime_kind !== "durable" && runtimeKind !== "durable" && (conversation.runtime_kind || runtimeKind) ? <LiveConfiguration key={conversation.id} conversation={conversation} onChanged={setConversation} /> : null}
+      {conversation.runtime_kind !== "durable" && runtimeKind !== "durable" && (conversation.runtime_kind || runtimeKind) ? <LiveConfiguration key={conversation.id} conversation={conversation} onChanged={updateConfiguration} /> : null}
       <div className="chat-body">
       <div className="chat-main">
       <div className="chat-scroll" ref={scrollRef} role="log" aria-label={t("chat.history")} aria-live="off" tabIndex={0}
@@ -555,6 +567,7 @@ export function ChatView(props: {
         </Empty>
       ) : null}
         {timeline.map((m, i) => {
+          if (m.kind === "queue") return <QueueRecovery key={m.key ?? i} item={m} onRestore={(text) => { updateInput((draft) => appendRecoveredMessage(draft, text)); taRef.current?.focus(); }} />;
           if (m.kind === "status") return <div key={m.key ?? i} className="msg-status">{m.text === "Tour terminé" ? t("chat.turnDone") : localizeText(m.text)}</div>;
           if (m.kind === "skill") {
             return (

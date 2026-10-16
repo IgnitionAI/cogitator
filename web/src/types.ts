@@ -297,6 +297,10 @@ export interface MissionStatusView {
 }
 
 export interface SseEvent {
+  message?: string;
+  messages?: string[];
+  count?: number;
+  reason?: "stopped";
   conversation?: Conversation;
   type: string;
   sessionFile?: string;

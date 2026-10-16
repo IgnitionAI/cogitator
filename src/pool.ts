@@ -119,7 +119,7 @@ export class PiPool {
       const next = h.queue.shift()!;
       this.queueChanged(h);
       try { await next.run(); }
-      catch (error) { this.emit(h.convId, { type: "queue_error", error: String(error) }); }
+      catch (error) { this.emit(h.convId, { type: "queue_error", message: next.text, error: String(error) }); }
     }
   }
 

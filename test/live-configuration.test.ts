@@ -195,7 +195,7 @@ test("queued prompt retains its own authorization, and stop reports cleared mess
     await requestAuthorization.run(() => { if (!allowed) throw new Error("prompt revoked"); }, () => f.pool.prompt(f.conv.id, "forbidden"));
     allowed = false; f.client.state.isStreaming = false; f.client.emit("agent_settled"); await tick();
     assert(!f.client.calls.includes("forbidden"));
-    assert(events.some(event => (event as { type: string }).type === "queue_error"));
+    assert(events.some(event => (event as { type: string; message: string }).type === "queue_error" && (event as { message: string }).message === "forbidden"));
     await f.pool.prompt(f.conv.id, "again"); await f.pool.prompt(f.conv.id, "cleared");
     await f.pool.abort(f.conv.id); await tick();
     assert(!f.client.calls.includes("cleared"));
@@ -280,5 +280,49 @@ test("HTTP model endpoint returns full authoritative conversation with specified
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()));
     await f.close(); rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("group deletion cancels retained prompts/configuration before cascade and ignores late settlement", async () => {
+  const { db } = openDb(":memory:");
+  const home = mkdtempSync(join(tmpdir(), "cog-group-delete-"));
+  const paths = getPaths({ COGITATOR_HOME: home, COGITATOR_PI_AGENT_DIR: join(home, "pi") });
+  const clients: Client[] = [];
+  const pool = new PiPool({ factory: () => { const client = new Client(); clients.push(client); return client; } });
+  const events: Array<{ id: string; event: { type?: string; conversation?: { pending_configuration?: { status: string } } } }> = [];
+  pool.onEvent((id, event) => events.push({ id, event: event as typeof events[number]["event"] }));
+  const server = createApp({ db, dbPath: ":memory:", dbVersion: 8, paths, pool });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const post = (path: string, body: unknown) => fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  try {
+    const ids = ["host", "member"].map(name => createAgent(db, { name, provider: "p", model: "old", thinking: "low" }).id);
+    const response = await post("/api/groups", { name: "delete me", member_agent_ids: ids });
+    assert.equal(response.status, 201);
+    const { group } = await response.json() as { group: { id: string; members: Array<{ conversation_id: string }> } };
+    const target = group.members[0]!.conversation_id;
+    await pool.prompt(target, "first");
+    await pool.prompt(target, "second must not run");
+    assert.equal((await post(`/api/conversations/${target}/model`, { provider: "p", id: "new" })).status, 202);
+    const unrelated = createConversation(db, { spawn: { provider: "p", model: "old" } });
+    await pool.ensure(unrelated.id, { cwd: home, args: [] });
+    const deleted = await fetch(`${base}/api/groups/${group.id}`, { method: "DELETE" });
+    assert.equal(deleted.status, 200);
+    for (const member of group.members) {
+      assert.equal(pool.isLive(member.conversation_id), false);
+      assert.equal(getConversation(db, member.conversation_id), null);
+    }
+    assert.equal(pool.isLive(unrelated.id), true);
+    assert(events.some(e => e.id === target && e.event.type === "queue_cleared"));
+    assert(events.some(e => e.id === target && e.event.conversation?.pending_configuration?.status === "failed"));
+    const count = events.length;
+    for (const client of clients.slice(0, 2)) { client.state.isStreaming = false; client.emit("agent_settled"); }
+    await tick();
+    assert.equal(events.length, count, "late events from deleted members must be ignored");
+    assert.deepEqual(clients[0]!.calls, ["first", "stop"]);
+    assert.deepEqual(clients[1]!.calls, ["stop"]);
+  } finally {
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    await pool.dispose(); db.close(); rmSync(home, { recursive: true, force: true });
   }
 });

@@ -24,6 +24,7 @@ const held = new Map<number, () => void>();
 let holdNext = false;
 const fixture = createServer(async (req, res) => {
   try {
+    if (req.method === 'POST' && req.url === '/control/disconnect') { app.closeAllConnections(); res.end('{}'); return; }
     if (req.method === 'POST' && req.url === '/control/hold') { holdNext = true; res.end('{}'); return; }
     if (req.method === 'POST' && req.url === '/control/release') { for (const release of held.values()) release(); res.end('{}'); return; }
     if (req.method === 'GET' && req.url === '/control/state') { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ held: held.size, requests })); return; }
@@ -51,9 +52,9 @@ const providers = Object.fromEntries(['fixture-a', 'fixture-b'].map(provider => 
 writeFileSync(paths.piModelsJson, JSON.stringify({ providers }));
 writeFileSync(paths.piAuthJson, JSON.stringify(Object.fromEntries(Object.keys(providers).map(p => [p, { type: 'api_key', key: 'local-fixture-only' }]))));
 writeFileSync(join(paths.piAgentDir, 'settings.json'), JSON.stringify({ defaultProvider: 'fixture-a', defaultModel: 'model-one', defaultThinkingLevel: 'low', retry: { enabled: false } }));
-const opened = openDb(paths.db);
+let opened = openDb(paths.db);
 const clients: RpcClient[] = [];
-const pool = new PiPool({ max: 8, factory: opts => {
+const makePool = () => new PiPool({ max: 8, factory: opts => {
   const client = new RpcClient({ cliPath: join(getPackageDir(), 'dist/cli.js'), cwd: join(root, 'workspace'),
     args: [...opts.args, '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '--no-tools', '--offline'], env: opts.env });
   const clientId = clients.push(client);
@@ -69,10 +70,11 @@ const pool = new PiPool({ max: 8, factory: opts => {
   client.onEvent(event => record('rpc_event', { clientId, event }));
   return client;
 }, callbacks: { onStatus: (id, status) => setConversationStatus(opened.db, id, status) } });
-const app = createApp({ ...opened, dbPath: paths.db, dbVersion: opened.version, paths, pool });
+let pool = makePool();
+let app = createApp({ ...opened, dbPath: paths.db, dbVersion: opened.version, paths, pool });
 await new Promise<void>(resolve => app.listen(0, '127.0.0.1', resolve));
-const url = `http://127.0.0.1:${(app.address() as { port: number }).port}`;
-const state: Record<string, unknown> = { url, fixtureUrl: `http://127.0.0.1:${fixturePort}`, root, stage: 'implementation harness; not final verification', fixture: 'local deterministic HTTP; real official RpcClient subprocess', limitations: ['Fault injection, authorization revocation, retry/compaction and pending-controller-crash coverage require separate regression tests.', 'Full npm test, typecheck, build and screenshot inspection are separate final-stage gates.'] };
+let url = `http://127.0.0.1:${(app.address() as { port: number }).port}`;
+const state: Record<string, unknown> = { url, fixtureUrl: `http://127.0.0.1:${fixturePort}`, root, stage: 'implementation harness; not final verification', fixture: 'local deterministic HTTP; real official RpcClient subprocess', limitations: ['Fault injection, authorization revocation, retry/compaction coverage require separate regression tests.', 'Full npm test, typecheck, build and screenshot inspection are separate final-stage gates.'] };
 const save = () => writeFileSync(join(root, 'evidence.json'), JSON.stringify(state, null, 2));
 async function api(path: string, method = 'GET', body?: unknown, expected = 200) {
   const response = await fetch(`${url}/api${path}`, { method, headers: { 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30000) });
@@ -90,6 +92,23 @@ const switchModel = (id: string, body = target, expected = 200) => api(`/convers
 const prompt = (id: string, text: string) => api(`/conversations/${id}/messages`, 'POST', { text });
 const settled = (from: number) => trace.slice(from).some(e => e.kind === 'rpc_event' && (e.event as { type: string }).type === 'agent_settled');
 async function completePrompt(id: string, text: string) { const start = trace.length; await prompt(id, text); await until(() => settled(start)); }
+async function restart(crash = false) {
+  app.closeAllConnections();
+  await new Promise<void>((resolve, reject) => app.close(error => error ? reject(error) : resolve()));
+  if (crash) {
+    // Abandon process-local queued closures, as a controller crash would. dispose()
+    // would cancel the accepted request and test graceful stop instead of recovery.
+    await Promise.all(clients.map(client => client.stop()));
+  } else await pool.dispose();
+  opened.db.close();
+  opened = openDb(paths.db);
+  pool = makePool();
+  app = createApp({ ...opened, dbPath: paths.db, dbVersion: opened.version, paths, pool });
+  await new Promise<void>(resolve => app.listen(0, '127.0.0.1', resolve));
+  url = `http://127.0.0.1:${(app.address() as { port: number }).port}`;
+  state.url = url;
+  record('controller_restart', { crash, db: paths.db, url }); save();
+}
 async function shutdown() {
   for (const release of held.values()) release();
   await pool.dispose(); app.closeAllConnections(); app.close(); fixture.closeAllConnections(); fixture.close(); opened.db.close();
@@ -157,6 +176,36 @@ try {
   const row = opened.db.prepare('SELECT * FROM conversation WHERE id = ?').get(conversation.id) as { spawn_args: string; provider: string; model: string; thinking: string };
   assert.deepEqual(tuple(row), ['fixture-b', 'model-two', 'high']);
   assert.deepEqual(tuple(JSON.parse(row.spawn_args)), tuple(row));
+  // Whole controller recreation, same database and filesystem (not just eviction).
+  await restart();
+  assert.equal((await read(conversation.id)).session_file, before.session_file);
+  assert.deepEqual(tuple(await read(conversation.id)), ['fixture-b', 'model-two', 'high']);
+  await completePrompt(conversation.id, 'LIVE-STANDALONE controller restart history marker');
+  assert(JSON.stringify(requests.at(-1)!.body.messages).includes('first history marker'));
+  assert.deepEqual([requests.at(-1)!.provider, requests.at(-1)!.model, requests.at(-1)!.reasoning], ['fixture-b', 'model-two', 'high']);
+  // Accepted pending request must survive as a visible failure, never replayed.
+  holdNext = true;
+  await prompt(conversation.id, 'LIVE-STANDALONE interrupted by controller restart');
+  await until(() => held.size === 1);
+  const interrupted = await switchModel(conversation.id, { provider: 'fixture-a', id: 'model-one', thinking: 'low' }, 202);
+  const requestId = (interrupted.conversation ?? interrupted).pending_configuration.request_id;
+  await restart(true);
+  const recovered = await read(conversation.id);
+  assert.equal(recovered.pending_configuration.request_id, requestId);
+  assert.equal(recovered.pending_configuration.status, 'failed');
+  assert.match(recovered.pending_configuration.error, /Controller restarted.*authorization/);
+  assert.deepEqual(tuple(recovered), ['fixture-b', 'model-two', 'high']);
+  assert.equal(pool.size, 0, 'Recovery must not spawn/replay under a later viewer');
+  await completePrompt(conversation.id, 'LIVE-STANDALONE no implicit pending replay');
+  assert.deepEqual(tuple(await read(conversation.id)), ['fixture-b', 'model-two', 'high']);
+  assert.equal((await read(conversation.id)).pending_configuration.status, 'failed');
+  assert.equal((await read(conversation.id)).session_file, before.session_file);
+  assert(JSON.stringify(requests.at(-1)!.body.messages).includes('first history marker'));
+  await api(`/conversations/${conversation.id}/model`, 'DELETE');
+  await switchModel(conversation.id, { provider: 'fixture-a', id: 'model-one', thinking: 'low' });
+  assert.equal((await read(conversation.id)).pending_configuration, null);
+  await switchModel(conversation.id);
+  state.restartChecks = ['idle controller restart preserves tuple/session/history', 'pending restart visibly failed, no automatic replay, explicit fresh local-owner retry'];
   // A3 scope isolation and future conversations.
   assert.deepEqual(tuple(await read(sibling.id)), ['fixture-a', 'model-one', 'low']);
   assert.deepEqual(tuple((await api(`/agents/${agent.id}`)).agent), ['fixture-a', 'model-one', 'low']);
@@ -170,6 +219,7 @@ try {
   await switchModel(conversation.id, { ...target, id: 'does-not-exist' }, 422);
   await switchModel(conversation.id, { ...target, thinking: 'xhigh' }, 422);
   assert.deepEqual(tuple(await read(conversation.id)), ['fixture-b', 'model-two', 'high']);
+  await api(`/conversations/${conversation.id}/model`, 'DELETE');
   const adhoc = (await api('/conversations', 'POST', { provider: 'fixture-a', model: 'model-one', thinking: 'low', workspace_id: workspace.id }, 201)).conversation;
   await api(`/conversations/${adhoc.id}/model`, 'POST', { ...target, scope: 'preset' }, 409);
   // Seed Durable without starting a mission: the live endpoint must reject before any RPC/mutation.
@@ -179,7 +229,12 @@ try {
   await switchModel(durable.id, target, 409);
   assert.deepEqual(opened.db.prepare('SELECT * FROM conversation WHERE id = ?').get(durable.id), durableBefore);
   assert.equal(trace.filter(e => e.kind === 'rpc_command').length, rpcBefore);
+  opened.db.prepare('UPDATE conversation SET title = ? WHERE id = ?').run('LIVE-DURABLE', durable.id);
   state.durableId = durable.id;
+  const pm = await makeAgent('Chef de projet');
+  const embedded = (await api('/conversations', 'POST', { agent_id: pm.id, workspace_id: workspace.id }, 201)).conversation;
+  state.embeddedId = embedded.id;
+  state.embeddedAgentId = pm.id;
   const group = (await api('/groups', 'POST', { name: 'LIVE-GROUP', member_agent_ids: [agent.id, second.id], host_agent_id: agent.id, default_workspace_id: workspace.id }, 201)).group;
   state.group = group;
   const members = group.members;

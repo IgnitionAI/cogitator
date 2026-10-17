@@ -1,6 +1,6 @@
 import { t as translate, formatNumber } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
-import { api } from "../api";
+import { api, openEvents } from "../api";
 import type { ProviderView } from "../types";
 import { Badge, Empty, ErrorText, Field, Modal, PageHead, useToast } from "../ui";
 import { Icon } from "../icons";
@@ -13,8 +13,8 @@ const APIS = [
 export default function Providers() {
   const toast = useToast();
   const [providers, setProviders] = useState<ProviderView[]>([]);
+  const [showLogin, setShowLogin] = useState<string | true | null>(null);
   const [showAdd, setShowAdd] = useState(false);
-  const [keyFor, setKeyFor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,12 +29,12 @@ export default function Providers() {
       <PageHead
         title={translate("screens.providers")}
         sub={translate("screens.providersSub")}
-        actions={<button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}><Icon name="plus" /> {translate("screens.addProvider")}</button>}
+        actions={<button type="button" className="btn btn-primary" onClick={() => setShowLogin(true)}><Icon name="plus" /> {translate("screens.addProvider")}</button>}
       />
       <ErrorText error={error} />
       {error ? <button type="button" className="btn" onClick={refresh}>{translate("screens.retry")}</button> : null}
       {loading ? <p role="status">{translate("screens.loading")}</p> : error && providers.length === 0 ? null : providers.length === 0 ? (
-        <Empty title={translate("screens.noProviders")} action={<button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}><Icon name="plus" /> {translate("screens.addProvider")}</button>}>
+        <Empty title={translate("screens.noProviders")} action={<button type="button" className="btn btn-primary" onClick={() => setShowLogin(true)}><Icon name="plus" /> {translate("screens.addProvider")}</button>}>
           {translate("screens.providersEmpty")}
         </Empty>
       ) : (
@@ -52,7 +52,7 @@ export default function Providers() {
                 <td><Badge color={p.auth.ready === true ? "var(--success)" : p.auth.ready === false ? "var(--todo)" : "var(--muted)"}>{p.auth.ready === true ? translate("screens.ready") : p.auth.ready === false ? translate("screens.configure") : translate("screens.unknown")}</Badge></td>
                 <td>{formatNumber(p.models.length)}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  <button className="btn btn-sm" onClick={() => setKeyFor(p.id)}>{translate("screens.apiKey")}</button>{" "}
+                  <button className="btn btn-sm" onClick={() => setShowLogin(p.id)}>{translate("screens.signIn")}</button>{" "}
                   {p.source === "custom" ? (
                     <button
                       className="btn btn-sm btn-danger"
@@ -72,9 +72,180 @@ export default function Providers() {
         </table>
         </div>
       )}
+      {showLogin ? (
+        <LoginModal
+          providers={providers}
+          initialId={showLogin === true ? undefined : showLogin}
+          onClose={() => setShowLogin(null)}
+          onCustom={() => { setShowLogin(null); setShowAdd(true); }}
+          onSaved={() => { setShowLogin(null); refresh(); }}
+        />
+      ) : null}
       {showAdd ? <AddProviderModal onClose={() => setShowAdd(false)} onSaved={() => { setShowAdd(false); refresh(); }} /> : null}
-      {keyFor ? <KeyModal providerId={keyFor} onClose={() => setKeyFor(null)} onSaved={() => { setKeyFor(null); refresh(); }} /> : null}
     </>
+  );
+}
+
+type LoginEvent = {
+  type?: string;
+  message?: string;
+  url?: string;
+  instructions?: string;
+  userCode?: string;
+  verificationUri?: string;
+  prompt?: { type: string; message: string; placeholder?: string; options?: Array<{ id: string; label: string; description?: string }> };
+};
+
+function LoginModal(props: {
+  providers: ProviderView[];
+  initialId?: string;
+  onClose: () => void;
+  onCustom: () => void;
+  onSaved: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<ProviderView | undefined>(
+    props.initialId ? props.providers.find((provider) => provider.id === props.initialId) : undefined,
+  );
+  const [session, setSession] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [events, setEvents] = useState<LoginEvent[]>([]);
+  const [draft, setDraft] = useState("");
+  const prompt = [...events].reverse().find((event) => event.type === "prompt")?.prompt;
+  const authUrl = [...events].reverse().find((event) => event.type === "auth_url");
+  const device = [...events].reverse().find((event) => event.type === "device_code");
+  const info = [...events].filter((event) => event.type === "info" || event.type === "progress").at(-1);
+
+  useEffect(() => {
+    if (!session) return;
+    return openEvents(`/api/provider-logins/${session}/events`, (event) => {
+      const next = event as LoginEvent;
+      setEvents((current) => [...current, next]);
+      if (next.type === "done") props.onSaved();
+      if (next.type === "error") {
+        setError(next.message ?? translate("screens.operationFailed"));
+        setBusy(false);
+      }
+    });
+  }, [session, props]);
+
+  const start = async (provider: ProviderView, type: "api_key" | "oauth") => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setEvents([]);
+    setDraft("");
+    try {
+      const started = await api.startProviderLogin(provider.id, type);
+      setSession(started.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : translate("screens.operationFailed"));
+      setBusy(false);
+    }
+  };
+
+  const pick = (provider: ProviderView) => {
+    setSelected(provider);
+    const methods = provider.authMethods ?? [];
+    if (methods.length === 1) void start(provider, methods[0]!.type);
+  };
+
+  const close = () => {
+    if (busy && session) return;
+    if (session) void api.cancelProviderLogin(session).catch(() => undefined);
+    props.onClose();
+  };
+
+  const visible = props.providers.filter((provider) => provider.id.includes(query.trim().toLowerCase()));
+
+  return (
+    <Modal title={translate("screens.loginTitle")} onClose={close}>
+      <ErrorText error={error} />
+      {!selected ? (
+        <>
+          <Field label={translate("screens.searchProviders")}>
+            <input value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
+          </Field>
+          <div className="list">
+            {visible.map((provider) => (
+              <button key={provider.id} type="button" className="list-row" onClick={() => pick(provider)}>
+                <span className="mono">{provider.id}</span>
+                <Badge color={provider.auth.ready === true ? "var(--success)" : "var(--muted)"}>
+                  {provider.auth.ready === true ? translate("screens.ready") : translate("screens.configure")}
+                </Badge>
+              </button>
+            ))}
+          </div>
+          <div className="toolbar">
+            <button type="button" className="btn" onClick={props.onCustom}>{translate("screens.customProvider")}</button>
+            <button type="button" className="btn" onClick={close}>{translate("screens.cancel")}</button>
+          </div>
+        </>
+      ) : !session && (selected.authMethods?.length ?? 0) > 1 ? (
+        <>
+          <p className="mono">{selected.id}</p>
+          <p>{translate("screens.chooseMethod")}</p>
+          <div className="toolbar">
+            {selected.authMethods!.map((method) => (
+              <button key={method.type} type="button" className="btn btn-primary" disabled={busy} onClick={() => void start(selected, method.type)}>
+                {method.name}
+              </button>
+            ))}
+            <button type="button" className="btn" disabled={busy} onClick={() => setSelected(undefined)}>{translate("screens.cancel")}</button>
+          </div>
+        </>
+      ) : (
+        <fieldset className="form-fields" disabled={busy && !prompt}>
+          <p className="mono">{selected.id}</p>
+          {info?.message ? <p className="muted">{info.message}</p> : null}
+          {authUrl?.url ? (
+            <p>
+              <a href={authUrl.url} target="_blank" rel="noreferrer">{translate("screens.openAuthUrl")}</a>
+              {authUrl.instructions ? <span className="muted"> — {authUrl.instructions}</span> : null}
+            </p>
+          ) : null}
+          {device?.userCode ? (
+            <p>
+              {translate("screens.deviceCode", { code: device.userCode })}
+              {device.verificationUri ? <> — <a href={device.verificationUri} target="_blank" rel="noreferrer">{device.verificationUri}</a></> : null}
+            </p>
+          ) : null}
+          {prompt ? (
+            prompt.type === "select" ? (
+              <div className="toolbar">
+                {prompt.options?.map((option) => (
+                  <button key={option.id} type="button" className="btn" disabled={!session} onClick={() => {
+                    if (!session) return;
+                    void api.replyProviderLogin(session, option.id).catch((e: Error) => setError(e.message));
+                  }}>{option.label}</button>
+                ))}
+              </div>
+            ) : (
+              <Field label={prompt.message}>
+                <input
+                  type={prompt.type === "secret" ? "password" : "text"}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={prompt.placeholder}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                />
+              </Field>
+            )
+          ) : busy ? <p role="status" className="muted">{translate("screens.pending")}</p> : null}
+          <div className="toolbar">
+            {prompt && prompt.type !== "select" ? (
+              <button type="button" className="btn btn-primary" disabled={!session || !draft.trim()} onClick={() => {
+                if (!session) return;
+                void api.replyProviderLogin(session, draft.trim()).then(() => setDraft("")).catch((e: Error) => setError(e.message));
+              }}>{translate("screens.continueLogin")}</button>
+            ) : null}
+            <button type="button" className="btn" disabled={busy && !error} onClick={close}>{translate("screens.cancel")}</button>
+          </div>
+        </fieldset>
+      )}
+    </Modal>
   );
 }
 
@@ -138,7 +309,7 @@ function AddProviderModal(props: { onClose: () => void; onSaved: () => void }) {
   );
 }
 
-function KeyModal(props: { providerId: string; onClose: () => void; onSaved: () => void }) {
+export function KeyModal(props: { providerId: string; onClose: () => void; onSaved: () => void }) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);

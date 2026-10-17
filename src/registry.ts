@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { builtinProviders, getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
 import { readJson, atomicWriteJson } from "./json-files.js";
 import type { Paths } from "./paths.js";
 import { MCP_NAME, PROVIDER_ID, type ProviderUpsert } from "./schemas.js";
@@ -13,11 +14,17 @@ export interface ModelRef {
   reasoning?: boolean;
 }
 
+export interface AuthMethod {
+  type: "api_key" | "oauth";
+  name: string;
+}
+
 export interface ProviderView {
   id: string;
   source: "builtin" | "custom";
   models: ModelRef[];
   auth: { configured: boolean; type: string | null; ready: boolean | null };
+  authMethods: AuthMethod[];
 }
 
 export interface SkillRef {
@@ -58,18 +65,44 @@ interface ModelsJsonFile {
   providers?: Record<string, Record<string, unknown>>;
 }
 
+function mapStoreModels(models: Array<Record<string, unknown>> | undefined): ModelRef[] {
+  return (models ?? []).map((m) => ({
+    id: String(m.id),
+    name: typeof m.name === "string" ? m.name : undefined,
+    reasoning: typeof m.reasoning === "boolean" ? m.reasoning : undefined,
+  }));
+}
+
 export function readCatalog(paths: Paths): Map<string, ModelRef[]> {
-  const catalog = readJson<CatalogFile>(join(paths.piAgentDir, "models-store.json"), {});
+  const store = readJson<CatalogFile>(join(paths.piAgentDir, "models-store.json"), {});
   const customs = readJson<ModelsJsonFile>(paths.piModelsJson, {}).providers ?? {};
   const out = new Map<string, ModelRef[]>();
-  for (const [id, entry] of Object.entries(catalog)) {
-    out.set(id, (entry.models ?? []).map((m) => ({ id: String(m.id), name: m.name as string | undefined, reasoning: m.reasoning as boolean | undefined })));
+  for (const id of getBuiltinProviders()) {
+    out.set(id, getBuiltinModels(id).map((m) => ({ id: m.id, name: m.name, reasoning: m.reasoning })));
+  }
+  for (const [id, entry] of Object.entries(store)) {
+    if (entry.models?.length) out.set(id, mapStoreModels(entry.models));
   }
   for (const [id, entry] of Object.entries(customs)) {
     const models = Array.isArray(entry.models) ? (entry.models as Array<{ id?: string }>) : [];
-    out.set(id, models.map((m) => ({ id: String(m.id) }))); // un custom écrase le built-in éponyme
+    out.set(id, models.map((m) => ({ id: String(m.id) })));
   }
   return out;
+}
+
+let authMethodsCache: Map<string, AuthMethod[]> | undefined;
+
+export function authMethodsFor(id: string): AuthMethod[] {
+  if (!authMethodsCache) {
+    authMethodsCache = new Map();
+    for (const provider of builtinProviders()) {
+      const methods: AuthMethod[] = [];
+      if (provider.auth.oauth) methods.push({ type: "oauth", name: provider.auth.oauth.loginLabel ?? provider.auth.oauth.name });
+      if (provider.auth.apiKey) methods.push({ type: "api_key", name: provider.auth.apiKey.name });
+      authMethodsCache.set(provider.id, methods);
+    }
+  }
+  return authMethodsCache.get(id) ?? [];
 }
 
 // ---------- Auth status ----------
@@ -106,18 +139,22 @@ export async function listProviders(paths: Paths): Promise<ProviderView[]> {
   const catalog = readCatalog(paths);
   const auth = readAuth(paths);
   const customs = readJson<ModelsJsonFile>(paths.piModelsJson, {}).providers ?? {};
+  const ids = new Set([...catalog.keys(), ...Object.keys(auth), ...Object.keys(customs)]);
 
-  const view = async (id: string, source: ProviderView["source"]): Promise<ProviderView> => ({
-    id,
-    source,
-    models: catalog.get(id) ?? [],
-    auth: { configured: Boolean(auth[id]), type: auth[id]?.type ?? null, ready: await checkAuthReady(id) },
-  });
-
-  const views = await Promise.all([
-    ...[...catalog.keys()].map((id) => view(id, customs[id] ? "custom" : "builtin")),
-    ...Object.keys(customs).filter((id) => !catalog.has(id)).map((id) => view(id, "custom")),
-  ]);
+  const views = await Promise.all([...ids].map(async (id) => {
+    const configured = Boolean(auth[id]);
+    return {
+      id,
+      source: customs[id] ? "custom" as const : "builtin" as const,
+      models: catalog.get(id) ?? [],
+      auth: {
+        configured,
+        type: auth[id]?.type ?? null,
+        ready: configured ? await checkAuthReady(id) : false,
+      },
+      authMethods: authMethodsFor(id),
+    };
+  }));
   return views.sort((a, b) => a.id.localeCompare(b.id));
 }
 

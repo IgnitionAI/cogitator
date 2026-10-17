@@ -36,6 +36,11 @@ export const api = {
   createProvider: (b: ProviderWrite) => req<{ ok: true }>("POST", "/api/providers", b),
   updateProvider: (id: string, b: ProviderWrite) => req<{ ok: true }>("PUT", `/api/providers/${id}`, b),
   deleteProvider: (id: string) => req<{ ok: true }>("DELETE", `/api/providers/${id}`),
+  startProviderLogin: (id: string, type: "api_key" | "oauth") =>
+    req<{ id: string }>("POST", `/api/providers/${id}/login`, { type }),
+  replyProviderLogin: (id: string, value: string) =>
+    req<{ ok: true }>("POST", `/api/provider-logins/${id}/reply`, { value }),
+  cancelProviderLogin: (id: string) => req<{ ok: true }>("DELETE", `/api/provider-logins/${id}`),
 
   skills: () => req<{ skills: SkillRef[] }>("GET", "/api/skills"),
   importSkills: (source: string, overwrite?: boolean) =>

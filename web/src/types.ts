@@ -9,6 +9,7 @@ export interface ProviderView {
   source: "builtin" | "custom";
   models: Array<{ id: string; name?: string; reasoning?: boolean }>;
   auth: { configured: boolean; type: string | null; ready: boolean | null };
+  authMethods?: Array<{ type: "api_key" | "oauth"; name: string }>;
 }
 
 export interface SkillRef {

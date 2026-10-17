@@ -36,6 +36,14 @@ export const providerUpsertSchema = z.object({
 });
 export type ProviderUpsert = z.infer<typeof providerUpsertSchema>;
 
+export const providerLoginSchema = z.object({
+  type: z.enum(["api_key", "oauth"]),
+});
+
+export const providerLoginReplySchema = z.object({
+  value: z.string().min(1),
+});
+
 // ---------- Agents ----------
 
 export const subagentInputSchema = z.object({

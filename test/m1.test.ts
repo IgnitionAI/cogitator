@@ -29,7 +29,7 @@ writeFileSync(join(piDir, "models-store.json"), JSON.stringify({
   "deepseek": { models: [{ id: "deepseek-flash", name: "Flash", reasoning: true }, { id: "deepseek-v4-pro" }] },
   "openai": { models: [{ id: "gpt-5.4" }, { id: "gpt-4.1" }] },
 }));
-writeFileSync(join(piDir, "auth.json"), JSON.stringify({ deepseek: { type: "api_key" }, openai: { type: "oauth" } }));
+writeFileSync(join(piDir, "auth.json"), JSON.stringify({ deepseek: { type: "api_key" }, openai: { type: "oauth" }, cursor: { type: "api_key" } }));
 writeFileSync(join(piDir, "settings.json"), JSON.stringify({ packages: ["npm:@dietrichgebert/ponytail"] }));
 
 // Auth checker stub (pas de subprocess pi dans les tests)
@@ -67,6 +67,27 @@ test("GET /api/providers : catalogue + auth, pi-mcp-adapter non détecté", asyn
   assert.ok(Array.isArray(ds.models));
   const health = await (await fetch(`${base}/api/health`)).json();
   assert.equal(health.mcp_adapter_detected, false);
+});
+
+test("GET /api/providers lists builtins absent from models-store and auth-only keys", async () => {
+  const res = await fetch(`${base}/api/providers`);
+  assert.equal(res.status, 200);
+  const { providers } = await res.json() as { providers: Array<{ id: string; source: string; models: Array<{ id: string }>; auth: { configured: boolean; ready: boolean | null }; authMethods?: Array<{ type: string }> }> };
+  const anthropic = providers.find((p) => p.id === "anthropic");
+  assert.ok(anthropic, "builtin anthropic must appear even when missing from models-store");
+  assert.equal(anthropic.source, "builtin");
+  assert.equal(anthropic.auth.configured, false);
+  assert.equal(anthropic.auth.ready, false);
+  assert.ok(anthropic.models.length > 0);
+  assert.ok(anthropic.authMethods?.some((m) => m.type === "api_key" || m.type === "oauth"));
+
+  const openai = providers.find((p) => p.id === "openai");
+  assert.deepEqual(openai?.models.map((m) => m.id), ["gpt-5.4", "gpt-4.1"]);
+
+  const cursor = providers.find((p) => p.id === "cursor");
+  assert.ok(cursor, "auth.json keys without a catalog entry must appear");
+  assert.equal(cursor.auth.configured, true);
+  assert.equal(cursor.models.length, 0);
 });
 
 test("POST /api/providers crée un custom + backup (checklist item 6)", async () => {
@@ -191,6 +212,77 @@ test("slugify gère accents et casse", () => {
   assert.equal(slugify("RAG Expert"), "rag-expert");
   assert.equal(slugify("Évaluation 42"), "evaluation-42");
 });
+
+test("provider login API-key flow writes auth.json through Models.login", async () => {
+  const started = await fetch(`${base}/api/providers/deepseek/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "api_key" }),
+  });
+  assert.equal(started.status, 202);
+  const { id } = await started.json() as { id: string };
+  assert.match(id, /^[a-z0-9-]+$/i);
+
+  const events = await collectLoginEvents(id, (event) => event.type === "prompt");
+  assert.equal(events.at(-1)?.type, "prompt");
+  assert.equal((events.at(-1) as { prompt: { type: string } }).prompt.type, "secret");
+
+  const reply = await fetch(`${base}/api/provider-logins/${id}/reply`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ value: "sk-test-login" }),
+  });
+  assert.equal(reply.status, 200);
+  await collectLoginEvents(id, (event) => event.type === "done");
+
+  const auth = JSON.parse(readFile(join(piDir, "auth.json"))) as Record<string, { type?: string; key?: string }>;
+  assert.equal(auth.deepseek.type, "api_key");
+  assert.equal(auth.deepseek.key, "sk-test-login");
+  assert.equal(auth.openai.type, "oauth");
+});
+
+test("provider login rejects unknown providers and types", async () => {
+  const missing = await fetch(`${base}/api/providers/not-a-provider/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "api_key" }),
+  });
+  assert.equal(missing.status, 404);
+  const bad = await fetch(`${base}/api/providers/deepseek/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ type: "magic" }),
+  });
+  assert.equal(bad.status, 400);
+});
+
+async function collectLoginEvents(id: string, until: (event: { type?: string }) => boolean): Promise<Array<Record<string, unknown>>> {
+  const res = await fetch(`${base}/api/provider-logins/${id}/events`);
+  assert.equal(res.status, 200);
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  const events: Array<Record<string, unknown>> = [];
+  const deadline = Date.now() + 8_000;
+  while (Date.now() < deadline) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const chunks = buf.split("\n\n");
+    buf = chunks.pop() ?? "";
+    for (const chunk of chunks) {
+      const line = chunk.split("\n").find((entry) => entry.startsWith("data: "));
+      if (!line) continue;
+      const event = JSON.parse(line.slice(6)) as Record<string, unknown>;
+      events.push(event);
+      if (until(event)) {
+        await reader.cancel().catch(() => undefined);
+        return events;
+      }
+    }
+  }
+  throw new Error(`login events timed out: ${JSON.stringify(events)}`);
+}
 
 function readFile(p: string): string {
   return readFileSync(p, "utf8");

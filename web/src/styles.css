@@ -219,6 +219,10 @@ button.card { font: inherit; color: inherit; text-align: left; width: 100%; }
 }
 .list-row:last-child { border-bottom: none; }
 .list-row:hover { background: var(--raised); }
+button.list-row {
+  width: 100%; background: transparent; color: inherit; font: inherit;
+  border-left: 0; border-right: 0; border-top: 0; text-align: left; cursor: pointer;
+}
 .list-main {
   flex: 1; min-width: 0;
   background: none; border: none; color: inherit;

@@ -51,7 +51,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("cogitator", {
-    description: "Ouvrir le panneau de contrôle Cogitator (démarre le serveur si besoin)",
+    description: "Start the local Cogitator web panel if needed, then open it in the browser",
     handler: async (_args, ctx) => {
       if (!(await isUp())) {
         const here = dirname(fileURLToPath(import.meta.url)); // dist/extensions

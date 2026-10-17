@@ -19,27 +19,48 @@ The entire application interface is available in **English and French**. Use the
 
 User content, agent responses, editable agent presets, code, files, and technical identifiers are preserved as authored. Cogitator’s controls and diagnostic explanations are translated; external diagnostic details remain available in their original form. The documentation is in English.
 
-## Installation
+## Install the pi extension
+
+Cogitator ships as a [pi package](https://pi.dev/packages). `pi install` **does not start the app**. It only registers an extension: a `/cogitator` slash command, loaded the next time you open pi. The extension itself stays idle until you run that command (it must not spawn a server just because pi started).
+
+You need [pi](https://pi.dev) and **Node.js ≥ 22.19.0**.
 
 ```sh
 pi install npm:@ignitionai/cogitator
 ```
 
-Then, in pi:
+Confirm with `pi list`. Then, **inside a pi session**, type:
 
 ```text
-/cogitator          # starts the detached server and opens http://127.0.0.1:5320
+/cogitator
 ```
 
-Or run it standalone: `npx @ignitionai/cogitator` (Node.js ≥ 22.19.0).
+What that does:
 
-## VPS access preparation (experimental)
+1. Looks for a Cogitator server already answering on `http://127.0.0.1:5320`.
+2. If none is up, starts `cogitator` in the **background** (detached). Closing pi does not stop it — scheduled tasks keep running.
+3. Opens the control panel in your default browser.
+4. Prints the URL in pi. Default: `http://127.0.0.1:5320`.
 
-The default application remains a **trusted, loopback-only local service**, not a secured remote deployment. Do not expose it through a public proxy.
+State lives in `~/.cogitator` (SQLite catalog). Conversation transcripts stay in pi’s own JSONL files. Later: `pi update --extensions` to refresh, `pi remove npm:@ignitionai/cogitator` to uninstall the package (this does not delete `~/.cogitator`).
 
-The local [native single-owner login and MFA implementation](https://github.com/IgnitionAI/cogitator/blob/dev/docs/native-auth.md) has passed independent code re-reviews and bounded local verification, including Node 22/26 and real local HTTPS/browser journeys. It is independent of a particular VPS or identity provider, but authentication is **not agent execution isolation**. See the [evidence and remaining gates](https://github.com/IgnitionAI/cogitator/blob/dev/docs/native-auth-verification.md). This working-tree increment is not a new published release. Public remote operation, autonomous recovery and the remaining Durable work are not approved by it.
+If pi reports **Cogitator unavailable**: something else is bound to port 5320, or an older/incompatible Cogitator is still running. Stop that process and run `/cogitator` again. Auth-required instances also refuse a plain loopback probe until owner login is in place.
 
-The earlier [identity-service inventory](https://github.com/IgnitionAI/cogitator/blob/dev/docs/vps-access-setup.md) is historical, suspended repository tooling; its administrator handoff is no longer requested. No remote deployment or recovery gate is certified by these documents.
+### Run the server yourself
+
+Same process, foreground, no pi session:
+
+```sh
+npx @ignitionai/cogitator
+```
+
+Logs the URL, then waits. Ctrl+C stops it. After a global npm install you can also run `cogitator`. Optional flags: `cogitator --auth-required`, and `cogitator auth init|recover|setup-key` for single-owner login. Override bind with `COGITATOR_PORT` / `COGITATOR_URL` if 5320 is taken.
+
+### Local loopback only
+
+The default app is a **trusted service on 127.0.0.1**, not a secured remote product. Do not put it behind a public proxy.
+
+[Native single-owner login and MFA](https://github.com/IgnitionAI/cogitator/blob/dev/docs/native-auth.md) has passed independent code re-reviews and bounded local verification (Node 22/26, real local HTTPS/browser journeys). Login is **not** isolation of agent execution. Public remote operation, autonomous recovery, and the remaining Durable work are not approved. See the [evidence and remaining gates](https://github.com/IgnitionAI/cogitator/blob/dev/docs/native-auth-verification.md).
 
 ## Features
 

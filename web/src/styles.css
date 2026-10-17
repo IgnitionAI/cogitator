@@ -805,7 +805,7 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
     display: block; padding: 8px 12px; color: var(--muted); font-size: 12px;
   }
   body, .language-picker { font-size: 14px; }
-  .btn, .icon-btn, .nav-item, .ws-tab, .list-main, .file-row, .tree-row, .browse-row, .feed-row, .tool-head, .skill-head, .thinking-head, .chip, .board-title, .check-row { min-height: 44px; }
+  .btn, .icon-btn, .nav-item, .ws-tab, .list-main, button.list-row, .file-row, .tree-row, .browse-row, .feed-row, .tool-head, .skill-head, .thinking-head, .chip, .board-title, .check-row { min-height: 44px; }
   .icon-btn { width: 44px; }
   .icon-btn::before { inset: 0; }
   .btn, .nav-item, .ws-tab, .list-title, .list-meta, .badge, .mono, .field-label, .field-hint, .page-head .sub, .main .sub, .empty, .error-text, .card .meta, .msg, .msg-tool, .msg-status, .thinking-head, .thinking-body, .tool-head, .tool-name, .tool-meta, .tool-label, .tool-detail pre, .skill-head, .skill-name, .skill-body, .file-stats, .tree-size, .tree-viewer-head, .tree-content, .board-col-head, .board-title, .board-gh, .board-label, .board-meta, .feed-day, .feed-time, .comment-head, .comment-text, .chip, .check-row, .checks, .warn-banner, .toast, .team-stat, .team-ticket, table, th, .md-code, .md-pre, .md-table, .md-table th, .diff-op-head, .diff-hunk pre { font-size: 14px; }

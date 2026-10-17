@@ -73,6 +73,24 @@ function mapStoreModels(models: Array<Record<string, unknown>> | undefined): Mod
   }));
 }
 
+function overlayModels(base: ModelRef[], extra: ModelRef[]): ModelRef[] {
+  const byId = new Map(base.map((model) => [model.id, model]));
+  for (const model of extra) byId.set(model.id, model);
+  const seen = new Set<string>();
+  const out: ModelRef[] = [];
+  for (const model of extra) {
+    if (seen.has(model.id)) continue;
+    seen.add(model.id);
+    out.push(byId.get(model.id)!);
+  }
+  for (const model of base) {
+    if (seen.has(model.id)) continue;
+    seen.add(model.id);
+    out.push(model);
+  }
+  return out;
+}
+
 export function readCatalog(paths: Paths): Map<string, ModelRef[]> {
   const store = readJson<CatalogFile>(join(paths.piAgentDir, "models-store.json"), {});
   const customs = readJson<ModelsJsonFile>(paths.piModelsJson, {}).providers ?? {};
@@ -81,11 +99,16 @@ export function readCatalog(paths: Paths): Map<string, ModelRef[]> {
     out.set(id, getBuiltinModels(id).map((m) => ({ id: m.id, name: m.name, reasoning: m.reasoning })));
   }
   for (const [id, entry] of Object.entries(store)) {
-    if (entry.models?.length) out.set(id, mapStoreModels(entry.models));
+    if (!entry.models?.length) continue;
+    const overlay = mapStoreModels(entry.models);
+    out.set(id, out.has(id) ? overlayModels(out.get(id)!, overlay) : overlay);
   }
   for (const [id, entry] of Object.entries(customs)) {
     const models = Array.isArray(entry.models) ? (entry.models as Array<{ id?: string }>) : [];
     out.set(id, models.map((m) => ({ id: String(m.id) })));
+  }
+  for (const id of Object.keys(readAuth(paths))) {
+    if (!out.has(id)) out.set(id, []);
   }
   return out;
 }

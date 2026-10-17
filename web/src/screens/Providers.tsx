@@ -52,7 +52,9 @@ export default function Providers() {
                 <td><Badge color={p.auth.ready === true ? "var(--success)" : p.auth.ready === false ? "var(--todo)" : "var(--muted)"}>{p.auth.ready === true ? translate("screens.ready") : p.auth.ready === false ? translate("screens.configure") : translate("screens.unknown")}</Badge></td>
                 <td>{formatNumber(p.models.length)}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
-                  <button className="btn btn-sm" onClick={() => setShowLogin(p.id)}>{translate("screens.signIn")}</button>{" "}
+                  {(p.authMethods?.length ?? 0) > 0 ? (
+                    <button className="btn btn-sm" onClick={() => setShowLogin(p.id)}>{translate("screens.signIn")}</button>
+                  ) : null}{" "}
                   {p.source === "custom" ? (
                     <button
                       className="btn btn-sm btn-danger"
@@ -128,7 +130,7 @@ function LoginModal(props: {
         setBusy(false);
       }
     });
-  }, [session, props]);
+  }, [session, props.onSaved]);
 
   const start = async (provider: ProviderView, type: "api_key" | "oauth") => {
     if (busy) return;
@@ -152,12 +154,13 @@ function LoginModal(props: {
   };
 
   const close = () => {
-    if (busy && session) return;
     if (session) void api.cancelProviderLogin(session).catch(() => undefined);
     props.onClose();
   };
 
-  const visible = props.providers.filter((provider) => provider.id.includes(query.trim().toLowerCase()));
+  const visible = props.providers.filter((provider) =>
+    (provider.authMethods?.length ?? 0) > 0 && provider.id.includes(query.trim().toLowerCase()),
+  );
 
   return (
     <Modal title={translate("screens.loginTitle")} onClose={close}>
@@ -241,7 +244,7 @@ function LoginModal(props: {
                 void api.replyProviderLogin(session, draft.trim()).then(() => setDraft("")).catch((e: Error) => setError(e.message));
               }}>{translate("screens.continueLogin")}</button>
             ) : null}
-            <button type="button" className="btn" disabled={busy && !error} onClick={close}>{translate("screens.cancel")}</button>
+            <button type="button" className="btn" onClick={close}>{translate("screens.cancel")}</button>
           </div>
         </fieldset>
       )}

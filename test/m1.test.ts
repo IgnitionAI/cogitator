@@ -82,7 +82,9 @@ test("GET /api/providers lists builtins absent from models-store and auth-only k
   assert.ok(anthropic.authMethods?.some((m) => m.type === "api_key" || m.type === "oauth"));
 
   const openai = providers.find((p) => p.id === "openai");
-  assert.deepEqual(openai?.models.map((m) => m.id), ["gpt-5.4", "gpt-4.1"]);
+  const openaiIds = openai?.models.map((m) => m.id) ?? [];
+  assert.ok(openaiIds.includes("gpt-5.4") && openaiIds.includes("gpt-4.1"));
+  assert.ok(openaiIds.length > 2, "store overlay must keep unused builtin models");
 
   const cursor = providers.find((p) => p.id === "cursor");
   assert.ok(cursor, "auth.json keys without a catalog entry must appear");

@@ -142,6 +142,28 @@ test("folder picker explains an empty root and retains a named add action", asyn
   assert.ok(find(tree, (e) => e.type === "button" && e.props.children === "Ajouter /"));
 });
 
+test("Providers sign-in modal lists catalog entries before the custom form", async () => {
+  const render = harness("Providers", {
+    providers: async () => ({
+      providers: [{
+        id: "anthropic",
+        source: "builtin",
+        models: [{ id: "claude-opus-4-7" }],
+        auth: { configured: false, type: null, ready: false },
+        authMethods: [{ type: "oauth", name: "Claude Pro/Max" }],
+      }],
+    }),
+  });
+  render();
+  await settle();
+  const actions = find(render(), (e) => e.type === "PageHead")?.props.actions as Element;
+  (find(actions, (e) => e.type === "button")!.props.onClick as () => void)();
+  const modal = render();
+  assert.equal(find(modal, (e) => e.type === "Modal")?.props.title, "Connexion fournisseur");
+  assert.ok(find(modal, (e) => e.type === "span" && e.props.children === "anthropic"));
+  assert.ok(find(modal, (e) => e.type === "button" && e.props.children === "Fournisseur personnalisé (Ollama…)"));
+});
+
 test("API key failures remain visible inside the dialog and preserve the entered key", async () => {
   const render = harness("Providers", {
     updateProvider: async () => { throw new Error("Clé refusée"); },

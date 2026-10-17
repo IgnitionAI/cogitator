@@ -360,8 +360,44 @@ export const screensMessages = {
     "en": "pi configuration: models and authentication. Changes are backed up before writing."
   },
   "screens.addProvider": {
-    "fr": "Ajouter un fournisseur",
-    "en": "Add provider"
+    "fr": "Se connecter",
+    "en": "Sign in"
+  },
+  "screens.signIn": {
+    "fr": "Se connecter",
+    "en": "Sign in"
+  },
+  "screens.loginTitle": {
+    "fr": "Connexion fournisseur",
+    "en": "Provider sign-in"
+  },
+  "screens.searchProviders": {
+    "fr": "Rechercher un fournisseur",
+    "en": "Search providers"
+  },
+  "screens.chooseMethod": {
+    "fr": "Choisir une méthode",
+    "en": "Choose a method"
+  },
+  "screens.customProvider": {
+    "fr": "Fournisseur personnalisé (Ollama…)",
+    "en": "Custom provider (Ollama…)"
+  },
+  "screens.openAuthUrl": {
+    "fr": "Ouvrir la page d’autorisation",
+    "en": "Open authorization page"
+  },
+  "screens.deviceCode": {
+    "fr": "Code appareil : {code}",
+    "en": "Device code: {code}"
+  },
+  "screens.loginDone": {
+    "fr": "Connecté.",
+    "en": "Signed in."
+  },
+  "screens.continueLogin": {
+    "fr": "Continuer",
+    "en": "Continue"
   },
   "screens.noProviders": {
     "fr": "Aucun fournisseur",
@@ -444,8 +480,8 @@ export const screensMessages = {
     "en": "New key (stored in auth.json)"
   },
   "screens.oauthHint": {
-    "fr": "Pour l'OAuth (codex, claude…), utilise le flux pi natif (/login dans un terminal).",
-    "en": "For OAuth (codex, claude…), use the native pi flow (/login in a terminal)."
+    "fr": "Pour OAuth, utilise Se connecter : le flux suit /login (navigateur ou code appareil).",
+    "en": "For OAuth, use Sign in: the flow follows /login (browser or device code)."
   },
   "screens.saving": {
     "fr": "Enregistrement…",

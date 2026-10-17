@@ -27,10 +27,14 @@ Protected local stdio MCP uses a private owner-only Unix HTTP socket with the sa
 
 | Method | Route | Description |
 |---|---|---|
-| GET | `/api/providers` | Providers from the pi catalog + authentication status + models by provider |
-| POST | `/api/providers` | Add a provider (writes `models.json` + `auth.json`) |
+| GET | `/api/providers` | Built-in pi catalog ∪ `models-store.json` ∪ `models.json` ∪ `auth.json` keys, with auth status and login methods |
+| POST | `/api/providers` | Add a custom provider (writes `models.json` + `auth.json`) |
 | PUT | `/api/providers/:id` | Update (merge, preserving unknown fields) |
 | DELETE | `/api/providers/:id` | Delete + remove the key from `auth.json` |
+| POST | `/api/providers/:id/login` | Start a `/login`-style session (`{ type: "api_key" \| "oauth" }`) → `{ id }` |
+| GET | `/api/provider-logins/:id/events` | SSE: `prompt`, `auth_url`, `device_code`, `info`, `progress`, `done`, `error` |
+| POST | `/api/provider-logins/:id/reply` | Answer the current prompt (`{ value }`) |
+| DELETE | `/api/provider-logins/:id` | Cancel the login session |
 | GET | `/api/skills` | Discovered skills (union of pi locations): name, description, path |
 | GET | `/api/mcp` | User-level MCP servers (`~/.pi/agent/mcp.json`) |
 | PUT | `/api/mcp` | Replace the file (validated before writing) |

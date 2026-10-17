@@ -41,7 +41,6 @@ export function Modal(props: { title: string; onClose: () => void; children: Rea
       >
         <div className="modal-head">
           <h2 id={titleId}>{props.title}</h2>
-          <LanguagePicker />
           <button type="button" className="icon-btn" aria-label={t("common.close")} onClick={props.onClose}>
             <Icon name="close" />
           </button>

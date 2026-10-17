@@ -17,9 +17,10 @@ import type { Db } from "./db.js";
 import { packageVersion, piVersion } from "./pi.js";
 import type { Paths } from "./paths.js";
 import {
-  API_PROTOCOLS, deleteProvider, listProviders, listSkills, mcpAdapterDetected,
+  API_PROTOCOLS, authMethodsFor, deleteProvider, listProviders, listSkills, mcpAdapterDetected,
   readMcp, upsertProvider, validateMcpConfig, writeMcp,
 } from "./registry.js";
+import { ProviderLogins } from "./provider-login.js";
 import {
   applyAgent, createAgent, deleteAgent, getAgent, listAgents, unapplyAgent,
   updateAgent, validateAgent, getDefaultAgentId, setDefaultAgent,
@@ -52,7 +53,7 @@ import {
 import { importSkills } from "./skills-import.js";
 import {
   agentInputSchema, conversationCreateSchema, groupCreateSchema, messageSchema, modelSwitchSchema,
-  providerUpsertSchema, scheduleCreateSchema, scheduleUpdateSchema, skillImportSchema,
+  providerLoginReplySchema, providerLoginSchema, providerUpsertSchema, scheduleCreateSchema, scheduleUpdateSchema, skillImportSchema,
   workspaceCreateSchema, workspaceUpdateSchema, boardCardSchema, boardCommentSchema,
   approvalDecisionSchema, budgetUpdateSchema,
   type BoardCardInput, type ConversationCreate, type GroupCreate,
@@ -263,6 +264,7 @@ interface Deps {
   spawner: Spawner;
   sseSubs: Map<string, Set<SseSend>>;
   groupSubs: Map<string, Set<SseSend>>;
+  logins: ProviderLogins;
   /** Point de composition explicite unique des runtimes (I3 amendé, Plan 0002 §6). */
   compose: (conv: ConversationRow) => ConversationRuntime;
   durable: DurableRuntimeManager;
@@ -307,6 +309,31 @@ function registryRoutes(deps: Deps): Route[] {
     }],
     ["DELETE", "/api/providers/:id", (ctx) => {
       deleteProvider(paths, ctx.params.id!);
+      sendJson(ctx.res, 200, { ok: true });
+    }],
+    ["POST", "/api/providers/:id/login", (ctx) => {
+      const body = parseBody(ctx.res, providerLoginSchema, ctx.body);
+      if (!body) return;
+      const id = ctx.params.id!;
+      if (authMethodsFor(id).length === 0) return sendJson(ctx.res, 404, { error: `Unknown provider: ${id}` });
+      sendJson(ctx.res, 202, deps.logins.start(id, body.type));
+    }],
+    ["GET", "/api/provider-logins/:id/events", (ctx) => {
+      const id = ctx.params.id!;
+      if (!deps.logins.has(id)) return sendJson(ctx.res, 404, { error: "login session not found" });
+      const send = openSse(ctx.res);
+      const replay = deps.logins.subscribe(id, send) ?? [];
+      for (const event of replay) send(event);
+      ctx.res.once("close", () => deps.logins.unsubscribe(id, send));
+    }],
+    ["POST", "/api/provider-logins/:id/reply", (ctx) => {
+      const body = parseBody(ctx.res, providerLoginReplySchema, ctx.body);
+      if (!body) return;
+      if (!deps.logins.reply(ctx.params.id!, body.value)) return sendJson(ctx.res, 409, { error: "no pending prompt" });
+      sendJson(ctx.res, 200, { ok: true });
+    }],
+    ["DELETE", "/api/provider-logins/:id", (ctx) => {
+      if (!deps.logins.cancel(ctx.params.id!)) return sendJson(ctx.res, 404, { error: "login session not found" });
       sendJson(ctx.res, 200, { ok: true });
     }],
     ["GET", "/api/skills", (ctx) => {
@@ -1227,6 +1254,7 @@ export function createApp(opts: AppOptions): Server {
     events,
     sseSubs,
     groupSubs,
+    logins: new ProviderLogins(paths),
     spawner,
     compose,
     durable,

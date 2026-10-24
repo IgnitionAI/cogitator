@@ -19,11 +19,26 @@ The entire application interface is available in **English and French**. Use the
 
 User content, agent responses, editable agent presets, code, files, and technical identifiers are preserved as authored. Cogitator’s controls and diagnostic explanations are translated; external diagnostic details remain available in their original form. The documentation is in English.
 
+## Prerequisites
+
+- **Node.js ≥ 22.19.0**
+- [pi](https://pi.dev), installed with one of the two official methods from pi.dev:
+
+```sh
+curl -fsSL https://pi.dev/install.sh | sh
+```
+
+or
+
+```sh
+npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+```
+
 ## Install the pi extension
 
 Cogitator ships as a [pi package](https://pi.dev/packages). `pi install` **does not start the app**. It only registers an extension: a `/cogitator` slash command, loaded the next time you open pi. The extension itself stays idle until you run that command (it must not spawn a server just because pi started).
 
-You need [pi](https://pi.dev) and **Node.js ≥ 22.19.0**.
+Once the [prerequisites](#prerequisites) are in place:
 
 ```sh
 pi install npm:@ignitionai/cogitator

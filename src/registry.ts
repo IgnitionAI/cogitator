@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { builtinProviders, getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
 import { readJson, atomicWriteJson } from "./json-files.js";
+import { piAiProviders } from "./host-pi.js";
 import type { Paths } from "./paths.js";
 import { MCP_NAME, PROVIDER_ID, type ProviderUpsert } from "./schemas.js";
 
@@ -95,8 +95,8 @@ export function readCatalog(paths: Paths): Map<string, ModelRef[]> {
   const store = readJson<CatalogFile>(join(paths.piAgentDir, "models-store.json"), {});
   const customs = readJson<ModelsJsonFile>(paths.piModelsJson, {}).providers ?? {};
   const out = new Map<string, ModelRef[]>();
-  for (const id of getBuiltinProviders()) {
-    out.set(id, getBuiltinModels(id).map((m) => ({ id: m.id, name: m.name, reasoning: m.reasoning })));
+  for (const id of piAiProviders.getBuiltinProviders()) {
+    out.set(id, piAiProviders.getBuiltinModels(id).map((m) => ({ id: m.id, name: m.name, reasoning: m.reasoning })));
   }
   for (const [id, entry] of Object.entries(store)) {
     if (!entry.models?.length) continue;
@@ -118,7 +118,7 @@ let authMethodsCache: Map<string, AuthMethod[]> | undefined;
 export function authMethodsFor(id: string): AuthMethod[] {
   if (!authMethodsCache) {
     authMethodsCache = new Map();
-    for (const provider of builtinProviders()) {
+    for (const provider of piAiProviders.builtinProviders()) {
       const methods: AuthMethod[] = [];
       if (provider.auth.oauth) methods.push({ type: "oauth", name: provider.auth.oauth.loginLabel ?? provider.auth.oauth.name });
       if (provider.auth.apiKey) methods.push({ type: "api_key", name: provider.auth.apiKey.name });

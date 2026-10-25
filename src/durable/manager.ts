@@ -15,7 +15,7 @@
 
 import { EventEmitter } from "node:events";
 import type { Models } from "@earendil-works/pi-ai";
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { piAiProviders } from "../host-pi.js";
 import { createRegistry, type Extension, type Registry } from "@earendil-works/pi-durable";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -113,7 +113,7 @@ export class DurableRuntimeManager {
       cwd: workspaceDir,
       model: { provider: spawn.provider ?? conv.provider, modelId: spawn.model ?? conv.model },
       presetDigest: digest(conv.spawn_args || "{}"),
-      models: (this.opts.modelsFactory ?? (() => builtinModels()))(),
+      models: (this.opts.modelsFactory ?? (() => piAiProviders.builtinModels()))(),
       registry: (this.opts.registryFactory ?? (() => createRegistry()))(),
       agentExtensions: this.opts.agentExtensions ?? [],
       toolchain: {

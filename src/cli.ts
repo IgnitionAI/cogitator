@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import { EventEmitter } from "node:events";
 import { createServer, type Server } from "node:http";
-import { join } from "node:path";
-import { getPackageDir, RpcClient } from "@earendil-works/pi-coding-agent";
+import { piCliPath, piCodingAgent } from "./host-pi.js";
 import { authenticationRequired, HOST, PORT } from "./config.js";
 import { CronService } from "./cron.js";
 import { setConversationStatus } from "./conversations.js";
@@ -50,7 +49,7 @@ async function start(explicit: boolean): Promise<void> {
     seedDefaultAgents(db, paths);
     const catalog = db;
     const pool = new PiPool({
-      factory: (opts) => new RpcClient({ cliPath: join(getPackageDir(), "dist/cli.js"), cwd: opts.cwd, args: opts.args, env: opts.env }),
+      factory: (opts) => new piCodingAgent.RpcClient({ cliPath: piCliPath, cwd: opts.cwd, args: opts.args, env: opts.env }),
       callbacks: { onStatus: (convId, status) => setConversationStatus(catalog, convId, status) },
     });
     const events = new EventEmitter();

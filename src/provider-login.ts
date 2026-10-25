@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import { piAiProviders } from "./host-pi.js";
 import type { AuthEvent, AuthPrompt, AuthType, Credential, CredentialStore } from "@earendil-works/pi-ai";
 import { atomicWriteJson, readJson } from "./json-files.js";
 import type { Paths } from "./paths.js";
@@ -82,7 +82,7 @@ export class ProviderLogins {
       session.events.push(event);
       for (const listener of session.listeners) listener(event);
     };
-    const models = builtinModels({ credentials: fileCredentialStore(this.paths.piAuthJson) });
+    const models = piAiProviders.builtinModels({ credentials: fileCredentialStore(this.paths.piAuthJson) });
     void models.login(providerId, type, {
       signal: abort.signal,
       notify: (event) => emit(event),

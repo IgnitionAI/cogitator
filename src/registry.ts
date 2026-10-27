@@ -1,10 +1,11 @@
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { execFile } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readJson, atomicWriteJson } from "./json-files.js";
 import { piAiProviders } from "./host-pi.js";
 import type { Paths } from "./paths.js";
-import { MCP_NAME, PROVIDER_ID, type ProviderUpsert } from "./schemas.js";
+import { MCP_NAME, PROVIDER_ID, THINKING_LEVELS, type ProviderUpsert } from "./schemas.js";
 
 // ---------- Types ----------
 
@@ -12,6 +13,8 @@ export interface ModelRef {
   id: string;
   name?: string;
   reasoning?: boolean;
+  /** Seuls niveaux de raisonnement supportés (catalogue pi) ; absent = inconnu. */
+  levels?: ThinkingLevel[];
 }
 
 export interface AuthMethod {
@@ -65,17 +68,40 @@ interface ModelsJsonFile {
   providers?: Record<string, Record<string, unknown>>;
 }
 
+/** Niveaux supportés par un modèle du catalogue — miroir exact de `getSupportedThinkingLevels` de pi
+ *  (agent-session) pour que le sélecteur web offre exactement ce que la validation d'application accepte. */
+function supportedThinkingLevels(model: { reasoning?: boolean; thinkingLevelMap?: Record<string, string | null | undefined> }): ThinkingLevel[] {
+  if (!model.reasoning) return ["off"];
+  return (THINKING_LEVELS as readonly ThinkingLevel[]).filter((level) => {
+    const mapped = model.thinkingLevelMap?.[level];
+    return mapped === null ? false : level === "xhigh" || level === "max" ? mapped !== undefined : true;
+  });
+}
+
 function mapStoreModels(models: Array<Record<string, unknown>> | undefined): ModelRef[] {
-  return (models ?? []).map((m) => ({
-    id: String(m.id),
-    name: typeof m.name === "string" ? m.name : undefined,
-    reasoning: typeof m.reasoning === "boolean" ? m.reasoning : undefined,
-  }));
+  return (models ?? []).map((m) => {
+    const reasoning = typeof m.reasoning === "boolean" ? m.reasoning : undefined;
+    const thinkingLevelMap = m.thinkingLevelMap && typeof m.thinkingLevelMap === "object"
+      ? m.thinkingLevelMap as Record<string, string | null | undefined>
+      : undefined;
+    return {
+      id: String(m.id),
+      name: typeof m.name === "string" ? m.name : undefined,
+      reasoning,
+      levels: reasoning === undefined && !thinkingLevelMap ? undefined : supportedThinkingLevels({ reasoning, thinkingLevelMap }),
+    };
+  });
 }
 
 function overlayModels(base: ModelRef[], extra: ModelRef[]): ModelRef[] {
   const byId = new Map(base.map((model) => [model.id, model]));
-  for (const model of extra) byId.set(model.id, model);
+  // Fusion : l'overlay gagne sur ses champs définis, mais hérite des champs du
+  // catalogue (ex. levels) qu'il ne mentionne pas — sinon un overlay nu effacerait
+  // les niveaux supportés connus du modèle.
+  for (const model of extra) {
+    const defined = Object.fromEntries(Object.entries(model).filter(([, value]) => value !== undefined)) as Partial<ModelRef>;
+    byId.set(model.id, { ...byId.get(model.id), ...defined, id: model.id });
+  }
   const seen = new Set<string>();
   const out: ModelRef[] = [];
   for (const model of extra) {
@@ -96,7 +122,7 @@ export function readCatalog(paths: Paths): Map<string, ModelRef[]> {
   const customs = readJson<ModelsJsonFile>(paths.piModelsJson, {}).providers ?? {};
   const out = new Map<string, ModelRef[]>();
   for (const id of piAiProviders.getBuiltinProviders()) {
-    out.set(id, piAiProviders.getBuiltinModels(id).map((m) => ({ id: m.id, name: m.name, reasoning: m.reasoning })));
+    out.set(id, piAiProviders.getBuiltinModels(id).map((m) => ({ id: m.id, name: m.name, reasoning: m.reasoning, levels: supportedThinkingLevels(m) })));
   }
   for (const [id, entry] of Object.entries(store)) {
     if (!entry.models?.length) continue;

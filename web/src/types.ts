@@ -7,9 +7,18 @@ export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 export interface ProviderView {
   id: string;
   source: "builtin" | "custom";
-  models: Array<{ id: string; name?: string; reasoning?: boolean }>;
+  models: Array<{ id: string; name?: string; reasoning?: boolean; levels?: ThinkingLevel[] }>;
   auth: { configured: boolean; type: string | null; ready: boolean | null };
   authMethods?: Array<{ type: "api_key" | "oauth"; name: string }>;
+}
+
+/**
+ * Niveaux de raisonnement pilotables pour un provider/modèle (contrat GET /api/providers).
+ * `levels` fourni (même vide) = seuls niveaux supportés ; absent = inconnu → les 7 niveaux.
+ */
+export function thinkingLevelsFor(providers: readonly ProviderView[], provider: string, model: string): readonly ThinkingLevel[] {
+  const entry = providers.find((p) => p.id === provider)?.models.find((m) => m.id === model);
+  return entry?.levels ?? THINKING_LEVELS;
 }
 
 export interface SkillRef {

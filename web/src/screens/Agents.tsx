@@ -2,7 +2,7 @@ import { ModelFields, type ModelDraft } from "../ModelConfiguration";
 import { t as translate, localizeText, formatNumber, thinkingLabel, getLocale } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import { THINKING_LEVELS } from "../types";
+import { thinkingLevelsFor } from "../types";
 import type { AgentPreset, McpServerEntry, ProviderView, SkillRef, SubagentInput, Workspace } from "../types";
 import { Badge, Empty, ErrorText, Field, Modal, PageHead, useToast } from "../ui";
 import { Icon } from "../icons";
@@ -216,6 +216,7 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
 
   const provider = providers.find((p) => p.id === form.provider);
   const models = provider?.models ?? [];
+  const levels = thinkingLevelsFor(providers, form.provider, form.model || models[0]?.id || "");
 
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => setForm((f) => ({ ...f, [key]: value }));
   const patchMcp = (i: number, patch: Partial<McpServerEntry>) =>
@@ -282,12 +283,16 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
           <input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder={translate("screens.agentExample")} />
         </Field>
         <Field label={translate("screens.provider")}>
-          <select value={form.provider} onChange={(e) => setForm((f) => ({ ...f, provider: e.target.value, model: "" }))}>
+          <select value={form.provider} onChange={(e) => {
+            const nextProvider = e.target.value;
+            const nextModel = providers.find((p) => p.id === nextProvider)?.models[0]?.id ?? "";
+            setForm((f) => ({ ...f, provider: nextProvider, model: "", thinking: f.thinking && !thinkingLevelsFor(providers, nextProvider, nextModel).some((level) => level === f.thinking) ? "" : f.thinking }));
+          }}>
             {providers.map((p) => <option key={p.id} value={p.id}>{p.id} {p.auth.ready === true ? translate("screens.readyParen") : p.auth.ready === false ? translate("screens.authParen") : translate("screens.unknownParen")}</option>)}
           </select>
         </Field>
         <Field label={translate("screens.model")}>
-          <select value={form.model} onChange={(e) => set("model", e.target.value)}>
+          <select value={form.model} onChange={(e) => setForm((f) => ({ ...f, model: e.target.value, thinking: f.thinking && !thinkingLevelsFor(providers, f.provider, e.target.value).some((level) => level === f.thinking) ? "" : f.thinking }))}>
             <option value="">{translate("screens.providerDefault")}</option>
             {models.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
           </select>
@@ -295,7 +300,7 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
         <Field label={translate("screens.thinking")}>
           <select value={form.thinking} onChange={(e) => set("thinking", e.target.value)}>
             <option value="">{translate("screens.defaultParen")}</option>
-            {THINKING_LEVELS.map((t) => <option key={t} value={t}>{thinkingLabel(t)}</option>)}
+            {levels.map((t) => <option key={t} value={t}>{thinkingLabel(t)}</option>)}
           </select>
         </Field>
         <Field label={translate("screens.tools")} hint={translate("screens.commaHint")}>
@@ -362,13 +367,13 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
                 <option value="">{translate("screens.providerPlaceholder")}</option>
                 {providers.map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}
               </select>
-              <input aria-label={translate("screens.subModel", { number: formatNumber(i + 1) })} placeholder={translate("screens.modelPlaceholder")} value={s.model} onChange={(e) => patchSub(i, { model: e.target.value })} />
+              <input aria-label={translate("screens.subModel", { number: formatNumber(i + 1) })} placeholder={translate("screens.modelPlaceholder")} value={s.model} onChange={(e) => patchSub(i, { model: e.target.value, thinking: s.thinking && !thinkingLevelsFor(providers, s.provider, e.target.value).some((level) => level === s.thinking) ? null : s.thinking })} />
             </div>
             <div className="toolbar" style={{ marginTop: 6 }}>
               <input aria-label={translate("screens.subDescription", { number: formatNumber(i + 1) })} placeholder={translate("screens.descriptionPlaceholder")} value={s.description ?? ""} onChange={(e) => patchSub(i, { description: e.target.value })} />
               <select aria-label={translate("screens.subThinking", { number: formatNumber(i + 1) })} value={s.thinking ?? ""} onChange={(e) => patchSub(i, { thinking: e.target.value || null })}>
                 <option value="">{translate("screens.thinkingPlaceholder")}</option>
-                {THINKING_LEVELS.map((t) => <option key={t} value={t}>{thinkingLabel(t)}</option>)}
+                {thinkingLevelsFor(providers, s.provider, s.model).map((t) => <option key={t} value={t}>{thinkingLabel(t)}</option>)}
               </select>
               <button className="btn btn-sm btn-danger" onClick={() => set("subagents", form.subagents.filter((_, j) => j !== i))}>{translate("screens.remove")}</button>
             </div>

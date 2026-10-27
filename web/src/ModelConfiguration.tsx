@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { t, thinkingLabel } from "./i18n";
-import { THINKING_LEVELS } from "./types";
+import { THINKING_LEVELS, thinkingLevelsFor } from "./types";
 import type { Conversation, ProviderView, ThinkingLevel } from "./types";
 import { ErrorText, Field } from "./ui";
 
@@ -12,15 +12,22 @@ export function ModelFields({ value, providers, onChange, preserve = false }: {
   value: ModelDraft; providers: ProviderView[]; onChange: (value: ModelDraft) => void; preserve?: boolean;
 }) {
   const models = providers.find((provider) => provider.id === value.provider)?.models ?? [];
+  const levels = thinkingLevelsFor(providers, value.provider, value.model);
+  const clampThinking = (thinking: string | null, provider: string, model: string) =>
+    thinking && !thinkingLevelsFor(providers, provider, model).some((level) => level === thinking) ? null : thinking;
   return <div className="configuration-fields">
     <Field label={t("screens.provider")}>
-      <select value={value.provider} onChange={(event) => onChange({ ...value, provider: event.target.value, model: providers.find((provider) => provider.id === event.target.value)?.models[0]?.id ?? "" })}>
+      <select value={value.provider} onChange={(event) => {
+        const provider = event.target.value;
+        const model = providers.find((entry) => entry.id === provider)?.models[0]?.id ?? "";
+        onChange({ ...value, provider, model, thinking: clampThinking(value.thinking, provider, model) });
+      }}>
         {!providers.some((provider) => provider.id === value.provider) ? <option value={value.provider}>{value.provider || t("screens.providerPlaceholder")}</option> : null}
         {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.id}</option>)}
       </select>
     </Field>
     <Field label={t("screens.model")}>
-      <select value={value.model} onChange={(event) => onChange({ ...value, model: event.target.value })}>
+      <select value={value.model} onChange={(event) => onChange({ ...value, model: event.target.value, thinking: clampThinking(value.thinking, value.provider, event.target.value) })}>
         {!models.some((model) => model.id === value.model) ? <option value={value.model}>{value.model || t("screens.modelPlaceholder")}</option> : null}
         {models.map((model) => <option key={model.id} value={model.id}>{model.id}</option>)}
       </select>
@@ -28,7 +35,7 @@ export function ModelFields({ value, providers, onChange, preserve = false }: {
     <Field label={t("screens.thinking")}>
       <select value={value.thinking ?? ""} onChange={(event) => onChange({ ...value, thinking: event.target.value || null })}>
         <option value="">{preserve ? t("configuration.preserve") : t("screens.defaultParen")}</option>
-        {THINKING_LEVELS.map((level) => <option key={level} value={level}>{thinkingLabel(level)}</option>)}
+        {levels.map((level) => <option key={level} value={level}>{thinkingLabel(level)}</option>)}
       </select>
     </Field>
   </div>;

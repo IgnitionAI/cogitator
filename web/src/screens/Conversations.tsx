@@ -3,7 +3,7 @@ import { LiveConfiguration } from "../ModelConfiguration";
 import { t, formatNumber, statusLabel, thinkingLabel, localizeText } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, openEvents, type EventConnectionState } from "../api";
-import { THINKING_LEVELS } from "../types";
+import { thinkingLevelsFor } from "../types";
 import type {
   AgentPreset, Conversation, FileChange, HistoryEntry, ImageContentInput, ProviderView, SkillRef, SseEvent, Workspace,
  } from "../types";
@@ -749,6 +749,10 @@ function NewConversationModal(props: {
 
   const provider = providers.find((p) => p.id === providerId);
   const models = provider?.models ?? [];
+  const effectiveModel = model || models[0]?.id || "";
+  const levels = thinkingLevelsFor(providers, providerId, effectiveModel);
+  const clampThinking = (current: string, nextProvider: string, nextModel: string) =>
+    current && !thinkingLevelsFor(providers, nextProvider, nextModel).some((level) => level === current) ? "" : current;
 
   const canCreate = !loading && !error && (mode === "agent" ? Boolean(agentId) : Boolean(providerId && (model || models[0]?.id)));
   const create = async () => {
@@ -798,12 +802,21 @@ function NewConversationModal(props: {
       ) : (
         <div className="form-row">
           <Field label={t("chat.provider")}>
-            <select value={providerId} onChange={(e) => { setProviderId(e.target.value); setModel(""); }}>
+            <select value={providerId} onChange={(e) => {
+              const nextProvider = e.target.value;
+              const nextModel = providers.find((p) => p.id === nextProvider)?.models[0]?.id ?? "";
+              setProviderId(nextProvider);
+              setModel("");
+              setThinking((current) => clampThinking(current, nextProvider, nextModel));
+            }}>
               {providers.map((p) => <option key={p.id} value={p.id}>{p.id} {p.auth.ready ? "✓" : "⚠"}</option>)}
             </select>
           </Field>
           <Field label={t("chat.model")}>
-            <select value={model} onChange={(e) => setModel(e.target.value)}>
+            <select value={model} onChange={(e) => {
+              setModel(e.target.value);
+              setThinking((current) => clampThinking(current, providerId, e.target.value));
+            }}>
               <option value="">{t("chat.default")}</option>
               {models.map((m) => <option key={m.id} value={m.id}>{m.id}</option>)}
             </select>
@@ -812,7 +825,7 @@ function NewConversationModal(props: {
             <Field label={t("chat.thinkingOptional")}>
               <select value={thinking} onChange={(e) => setThinking(e.target.value)}>
                 <option value="">{t("chat.default")}</option>
-                {THINKING_LEVELS.map((t) => <option key={t} value={t}>{thinkingLabel(t)}</option>)}
+                {levels.map((t) => <option key={t} value={t}>{thinkingLabel(t)}</option>)}
               </select>
             </Field>
           ) : null}

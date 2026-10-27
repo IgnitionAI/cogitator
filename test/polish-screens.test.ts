@@ -1,5 +1,5 @@
 import * as i18n from "../web/src/i18n.js";
-import { THINKING_LEVELS } from "../web/src/types.js";
+import { THINKING_LEVELS, thinkingLevelsFor } from "../web/src/types.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -36,7 +36,7 @@ function harness(screen: string, api: object, fetch?: unknown, component = "defa
         }).outputText, { exports: shared, require: requireModule });
         return shared;
       }
-      if (name === "./types" || name === "../types") return { THINKING_LEVELS };
+      if (name === "./types" || name === "../types") return { THINKING_LEVELS, thinkingLevelsFor };
       if (name === "./i18n" || name === "../i18n") return i18n;
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (name === "react") return {

@@ -45,7 +45,7 @@ function harness(file: string, component: string, api: Record<string, (...args: 
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (name.endsWith("/api")) return { api };
       if (name.endsWith("/ui")) return { useToast: () => () => {}, Field: "Field", Modal: "Modal" };
-      if (name.endsWith("/types")) return { THINKING_LEVELS: [] };
+      if (name.endsWith("/types")) return { THINKING_LEVELS: [], thinkingLevelsFor: () => [] };
       return {};
     },
   });

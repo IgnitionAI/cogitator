@@ -1,6 +1,6 @@
 {
   "name": "@ignitionai/cogitator",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "A web control panel for pi: composable agents, workspaces, interactive conversations, and scheduled tasks. A pi package.",
   "type": "module",
   "keywords": [
@@ -54,7 +54,6 @@
   },
   "dependencies": {
     "@earendil-works/chord": "1.1.0",
-    "@earendil-works/pi-durable": "1.1.0",
     "@earendil-works/pi-durable": "1.1.0",
     "@fontsource/inter": "^5.3.0",
     "@modelcontextprotocol/sdk": "^1.32.1",

@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { getPaths } from "./paths.js";
 
 /**
  * PDEATHSIG (PR_SET_PDEATHSIG) est délivré à la mort du *thread* parent, pas du
@@ -11,9 +11,10 @@ import { fileURLToPath } from "node:url";
  */
 
 const WRAP_JS = fileURLToPath(new URL("./pi-rpc-wrap.js", import.meta.url));
+const NO_SETPRIV = "COGITATOR_PI_NO_SETPRIV";
 
 let cachedSetpriv: string | null | undefined;
-let cachedShimDir: string | undefined;
+const shimDirs = new Map<string, string>();
 
 /** util-linux `setpriv`, détecté à l'exécution (absent hors Linux / hors PATH). */
 export function linuxSetprivPath(): string | undefined {
@@ -41,22 +42,29 @@ function shQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+function setprivAllowed(): boolean {
+  return process.env[NO_SETPRIV] !== "1";
+}
+
 /**
  * Répertoire mis en tête de PATH pour que `spawn("node", …)` d'RpcClient
- * exécute un shim `exec setpriv --pdeathsig KILL <node réel> …`.
- * `exec` remplace le shim : l'enfant direct de l'hôte est pi, PDEATHSIG vise l'hôte.
+ * exécute un shim. Le shim restaure PATH avant exec setpriv, pour que les
+ * outils de pi (bash / nohup node) n'héritent pas du pdeathsig.
  */
-function setprivShimDir(): string | undefined {
+function setprivShimDir(home: string, origPath: string): string | undefined {
+  if (!setprivAllowed()) return undefined;
   const setpriv = linuxSetprivPath();
   if (!setpriv) return undefined;
-  if (cachedShimDir) return cachedShimDir;
-  const dir = join(tmpdir(), `cogitator-pdeathsig-${process.pid}`);
-  mkdirSync(dir, { recursive: true });
-  const script = `#!/bin/sh\nexec ${shQuote(setpriv)} --pdeathsig KILL ${shQuote(process.execPath)} "$@"\n`;
+  const existing = shimDirs.get(home);
+  if (existing) return existing;
+  mkdirSync(home, { recursive: true });
+  const dir = mkdtempSync(join(home, "pdeathsig-"));
+  chmodSync(dir, 0o700);
+  const script = `#!/bin/sh\nPATH=${shQuote(origPath)} exec ${shQuote(setpriv)} --pdeathsig KILL ${shQuote(process.execPath)} "$@"\n`;
   const dest = join(dir, "node");
   writeFileSync(dest, script, { encoding: "utf8" });
   chmodSync(dest, 0o755);
-  cachedShimDir = dir;
+  shimDirs.set(home, dir);
   return dir;
 }
 
@@ -65,17 +73,34 @@ export function piRpcWrapPath(): string {
   return WRAP_JS;
 }
 
+/** Supprime les shims setpriv (arrêt de l'hôte). */
+export function disposeSetprivShims(): void {
+  for (const dir of shimDirs.values()) {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* déjà parti */ }
+  }
+  shimDirs.clear();
+}
+
+export interface GuardedRpcSpawn {
+  cliPath: string;
+  cwd: string;
+  args: string[];
+  env: Record<string, string>;
+  shimDir?: string;
+}
+
 /** Options RpcClient : setpriv via PATH si possible, sinon wrapper watchdog. */
 export function guardedRpcSpawn(
   piCliPath: string,
   opts: { cwd: string; args: string[]; env?: Record<string, string> },
-): { cliPath: string; cwd: string; args: string[]; env: Record<string, string> } {
+): GuardedRpcSpawn {
   const env: Record<string, string> = { ...opts.env };
-  const shim = setprivShimDir();
+  const home = env.COGITATOR_HOME ?? getPaths().home;
+  const origPath = env.PATH ?? process.env.PATH ?? "";
+  const shim = setprivShimDir(home, origPath);
   if (shim) {
-    const rest = env.PATH ?? process.env.PATH ?? "";
-    env.PATH = rest ? `${shim}:${rest}` : shim;
-    return { cliPath: piCliPath, cwd: opts.cwd, args: opts.args, env };
+    env.PATH = origPath ? `${shim}:${origPath}` : shim;
+    return { cliPath: piCliPath, cwd: opts.cwd, args: opts.args, env, shimDir: shim };
   }
   env.COGITATOR_PI_CLI = piCliPath;
   return { cliPath: piRpcWrapPath(), cwd: opts.cwd, args: opts.args, env };

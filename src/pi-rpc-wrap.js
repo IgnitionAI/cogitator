@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /**
  * Repli sans setpriv : le process RpcClient est ce wrapper.
- * Il spawn le vrai cli pi et quitte si l'hôte (pid:starttime) meurt ou est réutilisé.
+ * Il spawn le vrai cli pi, transmet SIGTERM/SIGINT/SIGHUP, et quitte si l'hôte meurt.
  */
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const WATCH_MS = 1500;
+const FORWARD = ["SIGTERM", "SIGINT", "SIGHUP"];
 
 function parseProcStat(stat) {
   const close = stat.lastIndexOf(")");
@@ -49,8 +50,22 @@ if (!realCli) {
 
 const marker = parseMarker(process.env.COGITATOR_OWNED_PI ?? "");
 const child = spawn(process.execPath, [realCli, ...process.argv.slice(2)], { stdio: "inherit" });
+
+function forward(signal) {
+  try { child.kill(signal); } catch { /* déjà mort */ }
+}
+
+for (const signal of FORWARD) {
+  process.on(signal, () => forward(signal));
+}
+
 child.on("exit", (code, signal) => {
-  process.exit(code ?? (signal ? 1 : 0));
+  for (const name of FORWARD) process.removeAllListeners(name);
+  if (signal) {
+    process.kill(process.pid, signal);
+    return;
+  }
+  process.exit(code ?? 0);
 });
 child.on("error", (err) => {
   process.stderr.write(String(err));

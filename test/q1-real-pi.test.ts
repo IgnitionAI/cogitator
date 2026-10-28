@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fork } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,7 +10,7 @@ import { openDb } from "../src/db.js";
 import { PiPool } from "../src/pool.js";
 import { enqueue, LaneDispatcher, listItems } from "../src/team-queue.js";
 import { OWNED_PI_ENV, ownedPiMarker, processIsGone, reapOrphanOwnedPi } from "../src/reap-orphans.js";
-import { guardedRpcSpawn } from "../src/pi-child.js";
+import { disposeSetprivShims, guardedRpcSpawn } from "../src/pi-child.js";
 
 function resolvePi(): { bin: string; cli: string; pkg: string } | undefined {
   const bin = process.env.COGITATOR_PI_BIN;
@@ -50,6 +50,7 @@ test("e2e pi réel : un message passe par queue_item jusqu'au process rpc", { ti
   const { db } = openDb(join(dir, "c.db"));
   db.prepare("INSERT INTO conversation (id, provider, model) VALUES ('c1', 'openai', 'gpt-5.4')").run();
   let rpcPid: number | undefined;
+  let shimDir: string | undefined;
   const RpcClient = await loadRpcClient(pi!.pkg);
   const pool = new PiPool({
     factory: (opts) => {
@@ -58,6 +59,7 @@ test("e2e pi réel : un message passe par queue_item jusqu'au process rpc", { ti
         args: ["--model", "openai/gpt-5.4", "--offline", "--no-extensions", "--no-skills", "--no-tools", "--no-prompt-templates"],
         env: { ...opts.env, HOME: home, [OWNED_PI_ENV]: ownedPiMarker() ?? "", COGITATOR_HOME: home },
       });
+      shimDir = spawn.shimDir;
       const client = new RpcClient(spawn);
       const start = client.start.bind(client);
       client.start = async () => {
@@ -80,7 +82,13 @@ test("e2e pi réel : un message passe par queue_item jusqu'au process rpc", { ti
   assert.ok(items[0]!.status === "done" || items[0]!.status === "failed", `statut inattendu: ${items[0]!.status} ${items[0]!.error}`);
   console.log("real-pi-e2e", JSON.stringify({ status: items[0]!.status, error: items[0]!.error, rpcPid }));
   assert.ok(rpcPid && rpcPid > 0, "un process pi --mode rpc a bien été spawné");
+  if (shimDir) {
+    const environ = readFileSync(`/proc/${rpcPid}/environ`, "utf8");
+    const pathEnv = environ.split("\0").find((entry) => entry.startsWith("PATH=")) ?? "";
+    assert.equal(pathEnv.includes(shimDir), false, "PATH du rpc ne doit pas contenir le shim setpriv");
+  }
   await pool.dispose();
+  disposeSetprivShims();
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });

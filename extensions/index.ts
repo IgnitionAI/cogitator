@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { readFileSync } from "node:fs";
 import { getPaths } from "../src/paths.js";
 import { spawn } from "node:child_process";
@@ -34,7 +35,42 @@ function openBrowser(url: string): void {
   spawn(cmd, args, { detached: true, stdio: "ignore" }).unref();
 }
 
+async function postTeamSend(payload: Record<string, unknown>): Promise<string> {
+  const res = await fetch(`${BASE_URL}/api/team/send`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json() as { error?: string };
+  if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : `HTTP ${res.status}`);
+  return JSON.stringify(data);
+}
+
 export default function (pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "team_send",
+    label: "Team send",
+    description: "Envoie un message durable à une autre conversation Cogitator (file lane/queue_item, limite de sauts).",
+    parameters: Type.Object({
+      conversation_id: Type.String({ description: "Conversation destinataire" }),
+      body: Type.String(),
+      idempotency_key: Type.Optional(Type.String()),
+      hop: Type.Optional(Type.Number()),
+      chain_id: Type.Optional(Type.String()),
+    }),
+    execute: async (_toolCallId, params) => {
+      const text = await postTeamSend({
+        conversation_id: params.conversation_id,
+        body: params.body,
+        from_conversation_id: process.env.COGITATOR_CONVERSATION_ID,
+        idempotency_key: params.idempotency_key,
+        hop: params.hop,
+        chain_id: params.chain_id,
+      });
+      return { content: [{ type: "text", text }], details: {} };
+    },
+  });
+
   // ADR-002 : les serveurs MCP du preset voyagent via env (COGITATOR_MCP) et sont
   // enregistrés ici ; le support MCP builtin de pi les connecte au démarrage de session.
   pi.on("session_start", () => {

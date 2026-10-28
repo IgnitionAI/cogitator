@@ -48,9 +48,13 @@ class FakeClient {
   }
   async start() {}
   async stop() {}
-  onEvent() { return () => {}; }
+  private listeners = new Set<(e: unknown) => void>();
+  onEvent(l: (e: unknown) => void) { this.listeners.add(l); return () => this.listeners.delete(l); }
   async getState() { return { ...await this.configuration.getState(), sessionFile: this.sessionFile, isStreaming: false }; }
-  async prompt() { return {}; }
+  async prompt() {
+    for (const l of this.listeners) l({ type: "agent_settled" });
+    return { disposition: "started" };
+  }
   async abort() {}
   async setModel(provider: string, id: string) { return this.configuration.setModel(provider, id); }
 }

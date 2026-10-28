@@ -40,6 +40,11 @@ import {
 } from "./groups.js";
 import { PiPool } from "./pool.js";
 import { makeSpawner, type Spawner } from "./spawner.js";
+import {
+  hopContext, kickQueuedLanes, LaneDispatcher, QueueError, recoverInterrupted, submitToLane,
+  type QueueErrorCode,
+} from "./team-queue.js";
+import { reapOrphanOwnedPi } from "./reap-orphans.js";
 import { composeRuntime, runtimeKindOf, type ConversationRuntime } from "./runtime.js";
 import { DurableRuntimeManager } from "./durable/manager.js";
 import { assertDurableAdmission, durableToolchainRegistry } from "./durable/compatibility.js";
@@ -55,7 +60,7 @@ import {
   agentInputSchema, conversationCreateSchema, groupCreateSchema, messageSchema, modelSwitchSchema,
   providerLoginReplySchema, providerLoginSchema, providerUpsertSchema, scheduleCreateSchema, scheduleUpdateSchema, skillImportSchema,
   workspaceCreateSchema, workspaceUpdateSchema, boardCardSchema, boardCommentSchema,
-  approvalDecisionSchema, budgetUpdateSchema,
+  approvalDecisionSchema, budgetUpdateSchema, teamSendSchema,
   type BoardCardInput, type ConversationCreate, type GroupCreate,
 } from "./schemas.js";
 import { spawnConfigFromPreset, type SpawnConfig } from "./spawn.js";
@@ -268,6 +273,8 @@ interface Deps {
   /** Point de composition explicite unique des runtimes (I3 amendé, Plan 0002 §6). */
   compose: (conv: ConversationRow) => ConversationRuntime;
   durable: DurableRuntimeManager;
+  /** File durable lot 2 : messages UI et team_send, au-dessus du pool. */
+  team: LaneDispatcher;
 }
 
 /** Résout le :id d'une route en entité, ou répond 404 et renvoie null. */
@@ -277,6 +284,37 @@ function requireWorkspace(deps: Deps, ctx: Ctx): WorkspaceRow | null {
 
 function requireConversation(deps: Deps, ctx: Ctx): ConversationRow | null {
   return getConversation(deps.db, ctx.params.id!) ?? notFound(ctx.res, "conversation");
+}
+
+function queueHttpStatus(code: QueueErrorCode): number {
+  switch (code) {
+    case "hop_limit":
+    case "conflict":
+      return 409;
+    case "not_found":
+      return 404;
+    default: {
+      const _exhaustive: never = code;
+      return _exhaustive;
+    }
+  }
+}
+
+async function deliverClassic(
+  deps: Deps,
+  conv: ConversationRow,
+  text: string,
+  images?: unknown[],
+  extra?: { fromAgentId?: string | null; chainId?: string | null; hop?: number; idempotencyKey?: string | null },
+): Promise<{ id: string; laneId: string; created: boolean }> {
+  return submitToLane(deps.db, deps.team, {
+    conversationId: conv.id,
+    body: text || "(image)",
+    fromAgentId: extra?.fromAgentId ?? conv.agent_id,
+    chainId: extra?.chainId,
+    hop: extra?.hop,
+    idempotencyKey: extra?.idempotencyKey,
+  }, images);
 }
 
 function requireAgent(deps: Deps, ctx: Ctx): AgentPreset | null {
@@ -674,9 +712,8 @@ async function startCardWork(
   });
   setConversationTitle(deps.db, conv.id, `#${card.number} ${card.title}`);
   const titled = getConversation(deps.db, conv.id)!;
-  await deps.spawner.ensure(titled);
   check();
-  await deps.pool.prompt(titled.id, ticketPrompt(card, extra));
+  await deliverClassic(deps, titled, ticketPrompt(card, extra));
   check();
 
   const moved = await moveCardGh(ws.dir, card.number, "in_progress");
@@ -728,13 +765,26 @@ function conversationRoutes(deps: Deps): Route[] {
       const prompt = b.prompt?.trim();
       if (prompt) {
         const runtime = deps.compose(conv);
-        await runtime.ensure(conv);
         ctx.check();
-        const ack = await runtime.prompt(conv, prompt, runtimeKind === "durable" ? randomUUID() : undefined);
-        ctx.check();
-        setConversationTitle(db, conv.id, prompt);
-        conv = getConversation(db, conv.id)!;
-        if (ack.accepted) return sendJson(ctx.res, 201, { conversation: conv, accepted: ack.accepted });
+        if (runtime.kind === "durable") {
+          await runtime.ensure(conv);
+          ctx.check();
+          const ack = await runtime.prompt(conv, prompt, randomUUID());
+          ctx.check();
+          setConversationTitle(db, conv.id, prompt);
+          conv = getConversation(db, conv.id)!;
+          if (ack.accepted) return sendJson(ctx.res, 201, { conversation: conv, accepted: ack.accepted });
+        } else {
+          try {
+            await deliverClassic(deps, conv, prompt);
+          } catch (err) {
+            if (err instanceof QueueError) return sendJson(ctx.res, queueHttpStatus(err.code), { error: err.message, code: err.code });
+            throw err;
+          }
+          ctx.check();
+          setConversationTitle(db, conv.id, prompt);
+          conv = getConversation(db, conv.id)!;
+        }
       }
       sendJson(ctx.res, 201, { conversation: conv });
     }],
@@ -804,13 +854,25 @@ function conversationRoutes(deps: Deps): Route[] {
       if (runtime.kind === "durable" && !b.requestId) {
         return sendJson(ctx.res, 400, { error: "requestId requis pour une conversation durable" });
       }
-      await runtime.ensure(conv);
       ctx.check();
-      const ack = await runtime.prompt(conv, text, b.requestId, b.images);
-      ctx.check();
-      if (text) setConversationTitle(db, conv.id, text);
-      // Durable : accusé renvoyé après acceptation durable, avec l'identité acceptée.
-      sendJson(ctx.res, 200, ack.accepted ? { ok: true, accepted: ack.accepted } : { ok: true });
+      if (runtime.kind === "durable") {
+        await runtime.ensure(conv);
+        ctx.check();
+        const ack = await runtime.prompt(conv, text, b.requestId, b.images);
+        ctx.check();
+        if (text) setConversationTitle(db, conv.id, text);
+        sendJson(ctx.res, 200, ack.accepted ? { ok: true, accepted: ack.accepted } : { ok: true });
+        return;
+      }
+      try {
+        const queued = await deliverClassic(deps, conv, text, b.images);
+        ctx.check();
+        if (text) setConversationTitle(db, conv.id, text);
+        sendJson(ctx.res, 200, { ok: true, queue_item_id: queued.id, created: queued.created });
+      } catch (err) {
+        if (err instanceof QueueError) return sendJson(ctx.res, queueHttpStatus(err.code), { error: err.message, code: err.code });
+        throw err;
+      }
     }],
     // ---------- Missions durables : statut, approbations, budget (#16) ----------
     ["GET", "/api/conversations/:id/mission", async (ctx) => {
@@ -1001,9 +1063,13 @@ function groupRoutes(deps: Deps): Route[] {
         .prepare("SELECT * FROM conversation WHERE group_id = ? AND agent_id = ?")
         .get(group.id, target.agent_id) as ConversationRow | undefined;
       if (!conv) return sendJson(ctx.res, 500, { error: "session membre introuvable" });
-      await deps.spawner.ensure(conv);
       ctx.check();
-      await pool.prompt(conv.id, text, b.images);
+      try {
+        await deliverClassic(deps, conv, text, b.images);
+      } catch (err) {
+        if (err instanceof QueueError) return sendJson(ctx.res, queueHttpStatus(err.code), { error: err.message, code: err.code });
+        throw err;
+      }
       ctx.check();
       sendJson(ctx.res, 200, { ok: true });
     }],
@@ -1165,6 +1231,32 @@ function scheduleRoutes(deps: Deps): Route[] {
   ];
 }
 
+function teamRoutes(deps: Deps): Route[] {
+  const { db } = deps;
+  return [
+    ["POST", "/api/team/send", async (ctx) => {
+      const b = parseBody(ctx.res, teamSendSchema, ctx.body);
+      if (!b) return;
+      const conv = getConversation(db, b.conversation_id);
+      if (!conv) { notFound(ctx.res, "conversation"); return; }
+      if (runtimeKindOf(conv) === "durable") return sendJson(ctx.res, 409, { error: "file durable : conversation durable refusée", code: "conflict" });
+      const inherited = hopContext(deps.team, b.from_conversation_id);
+      try {
+        const queued = await deliverClassic(deps, conv, b.body, undefined, {
+          fromAgentId: b.from_agent_id ?? conv.agent_id,
+          chainId: b.chain_id ?? inherited.chainId,
+          hop: b.hop ?? inherited.hop,
+          idempotencyKey: b.idempotency_key,
+        });
+        sendJson(ctx.res, 200, { ok: true, queue_item_id: queued.id, lane_id: queued.laneId, created: queued.created });
+      } catch (err) {
+        if (err instanceof QueueError) return sendJson(ctx.res, queueHttpStatus(err.code), { error: err.message, code: err.code });
+        throw err;
+      }
+    }],
+  ];
+}
+
 const DEFAULT_RUNS_LIMIT = 50;
 
 function healthRoute(deps: Deps): Route {
@@ -1203,7 +1295,20 @@ export function createApp(opts: AppOptions): Server {
   events.setMaxListeners(MAX_SSE_LISTENERS);
 
   recoverConfigurations(db);
+  recoverInterrupted(db);
+  reapOrphanOwnedPi(paths.home);
   const spawner = makeSpawner({ db, pool, paths });
+  const team = new LaneDispatcher({
+    db,
+    pool,
+    ensure: async (conversationId) => {
+      const conv = getConversation(db, conversationId);
+      if (!conv) throw new QueueError("conversation introuvable", "not_found");
+      if (runtimeKindOf(conv) === "durable") throw new QueueError("file durable : conversation durable refusée", "conflict");
+      return spawner.ensure(conv);
+    },
+  });
+  kickQueuedLanes(db, team);
   // Runtime Durable : un seul gestionnaire dans le processus contrôleur (bail OS
   // par conversation). Les tests injectent un modèle contrôlé via opts.durable.
   const durable = opts.durable ?? new DurableRuntimeManager({ paths, toolchain: durableToolchainRegistry() });
@@ -1224,8 +1329,7 @@ export function createApp(opts: AppOptions): Server {
     if (!conv) return;
     handoffTargets.add(target.conversation_id);
     try {
-      await spawner.ensure(conv);
-      await pool.prompt(conv.id, text);
+      await submitToLane(db, team, { conversationId: conv.id, body: text, fromAgentId: conv.agent_id });
     } catch {
       handoffTargets.delete(target.conversation_id);
     }
@@ -1258,6 +1362,7 @@ export function createApp(opts: AppOptions): Server {
     spawner,
     compose,
     durable,
+    team,
   };
 
   const routes: Route[] = [
@@ -1269,6 +1374,7 @@ export function createApp(opts: AppOptions): Server {
     ...groupRoutes(deps),
     ...conversationRoutes(deps),
     ...scheduleRoutes(deps),
+    ...teamRoutes(deps),
     // Events global (SSE) — les runs cron et les statuts de conversation
     ["GET", "/api/events", (ctx) => {
       const send = openSse(ctx.res);

@@ -7,6 +7,7 @@ import { getConversation, setConversationSession, type ConversationRow } from ".
 import type { Db } from "./db.js";
 import { UI_INSTRUCTIONS, UI_PRESENTATION_POLICY } from "./generative-ui.js";
 import { MCP_ENV_VAR, encodeMcpEnv } from "./mcp-env.js";
+import { OWNED_PI_ENV } from "./reap-orphans.js";
 import type { Paths } from "./paths.js";
 import { PiPool } from "./pool.js";
 import { buildArgs, type SpawnConfig } from "./spawn.js";
@@ -47,13 +48,20 @@ export function makeSpawner(opts: SpawnerOptions): Spawner {
         }
         const spawn = JSON.parse(conv.spawn_args || "{}") as SpawnConfig;
         const mcpEnv = encodeMcpEnv(spawn.mcpServers ?? []);
+        const env: Record<string, string> = {
+          [OWNED_PI_ENV]: "1",
+          COGITATOR_HOME: paths.home,
+          COGITATOR_CONVERSATION_ID: conv.id,
+        };
+        if (process.env.COGITATOR_URL) env.COGITATOR_URL = process.env.COGITATOR_URL;
+        if (mcpEnv) env[MCP_ENV_VAR] = mcpEnv;
         const result = await pool.ensure(conv.id, {
           cwd: conv.workspace_dir ?? homedir(),
           // Host presentation capability: also available to legacy sessions, without rewriting their snapshot.
           args: buildArgs({ ...spawn, uiInstructions: `${spawn.uiInstructions ?? UI_INSTRUCTIONS}\n\n${UI_PRESENTATION_POLICY}\n\n${ENVIRONMENT_NOTICE}` }, tmpDir, conv.id),
           resumeSessionFile: conv.session_file,
           initialize: client => reconcileConfiguration(db, pool, conv.id, client),
-          env: mcpEnv ? { [MCP_ENV_VAR]: mcpEnv } : undefined,
+          env,
         });
         try {
           checkRequestAuthorization();

@@ -59,7 +59,7 @@ class FakeClient {
     for (const l of this.listeners) l({ type: "agent_start" });
     for (const l of this.listeners) l({ type: "message_update" });
     for (const l of this.listeners) l({ type: "agent_settled" });
-    return {};
+    return { disposition: "started" };
   }
   async abort() {}
   async setModel(provider: string, id: string) { return this.configuration.setModel(provider, id); }

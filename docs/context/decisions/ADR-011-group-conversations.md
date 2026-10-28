@@ -40,7 +40,7 @@ Shipped against the decision:
 1. Aggregate is Cogitator-owned: 2–6 distinct presets (`GROUP_MIN` / `GROUP_MAX`), one `host_agent_id`. `POST /api/groups` creates the row then one idle `conversation` per member (`group_id` set), spawned through the existing pool (`I3`).
 2. Member sessions are private conversations; `listConversations` hides them from 1–1 resume-last.
 3. The visible thread is `group_message` in the catalog SQLite, not a shared pi jsonl. `GET/POST /api/groups/:id/messages` read/append the bus. Member tool/assistant activity is copied onto the bus (`persistGroupActivity`). One SSE stream: `GET /api/groups/:id/events`.
-4. Routing (`routeGroupMessage`): first `@name` / `@slug` that matches a member targets that member’s process; otherwise only the host runs. Injection is `pool.prompt` on that conversation. Host replies that `@` another member trigger a one-shot handoff (no A↔B cascade). Cron stays 1–1 (`src/cron.ts` has no group path). Member cwd is `group.default_workspace_id`, else the host preset’s `default_workspace_id`.
+4. Routing (`routeGroupMessage` / `matchGroupMention`): only the **first** `@` mention in the text is examined; if that token is not a member name or slug, the host runs (`@foo @alice` therefore goes to the host even if `alice` is a member). No `@` also means host. Injection is `pool.prompt` on that conversation. A reply from **any** member that `@`mentions another member triggers a one-shot handoff (`handleHandoff`; no A↔B cascade). Cron stays 1–1 (`src/cron.ts` has no group path). Member cwd is `group.default_workspace_id`, else the host preset’s `default_workspace_id`.
 
 Not in the tree (do not treat as done):
 

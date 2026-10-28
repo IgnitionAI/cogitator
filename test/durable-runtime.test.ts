@@ -34,15 +34,18 @@ class RecordingClient implements PiClientLike {
   constructor(private opts: { cwd: string; args: string[] }) {}
   async start() {}
   async stop() {}
-  onEvent() {
-    return () => {};
+  private listeners = new Set<(e: unknown) => void>();
+  onEvent(l: (e: unknown) => void) {
+    this.listeners.add(l);
+    return () => this.listeners.delete(l);
   }
   async getState() {
     return { ...await this.configuration.getState(), sessionFile: "/tmp/fake.jsonl", isStreaming: false };
   }
   async prompt(message: string) {
     RecordingClient.prompted.push({ convId: this.opts.args.join(" "), text: message });
-    return {};
+    for (const l of this.listeners) l({ type: "agent_settled" });
+    return { disposition: "started" };
   }
   async abort() {}
   async setModel(provider: string, id: string) { return this.configuration.setModel(provider, id); }

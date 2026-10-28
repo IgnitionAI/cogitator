@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import { readFileSync } from "node:fs";
 import { getPaths } from "../src/paths.js";
 import { spawn } from "node:child_process";
@@ -6,6 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BASE_URL } from "../src/config.js";
 import { decodeMcpEnv, MCP_ENV_VAR } from "../src/mcp-env.js";
+import { ownerRequest } from "../src/owner-transport.js";
 
 // I4 : l'entry de l'extension ne démarre RIEN au load — uniquement la commande et
 // l'enregistrement MCP (qui ne fait que déclarer des serveurs, le builtin connecte).
@@ -34,7 +36,32 @@ function openBrowser(url: string): void {
   spawn(cmd, args, { detached: true, stdio: "ignore" }).unref();
 }
 
+async function postTeamSend(payload: Record<string, unknown>): Promise<string> {
+  const data = await ownerRequest<Record<string, unknown>>("POST", "/api/team/send", payload);
+  return JSON.stringify(data);
+}
+
 export default function (pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "team_send",
+    label: "Team send",
+    description: "Envoie un message durable à une autre conversation Cogitator (file lane/queue_item, limite de sauts).",
+    parameters: Type.Object({
+      conversation_id: Type.String({ description: "Conversation destinataire" }),
+      body: Type.String(),
+      idempotency_key: Type.Optional(Type.String()),
+    }),
+    execute: async (_toolCallId, params) => {
+      const text = await postTeamSend({
+        conversation_id: params.conversation_id,
+        body: params.body,
+        from_conversation_id: process.env.COGITATOR_CONVERSATION_ID,
+        idempotency_key: params.idempotency_key,
+      });
+      return { content: [{ type: "text", text }], details: {} };
+    },
+  });
+
   // ADR-002 : les serveurs MCP du preset voyagent via env (COGITATOR_MCP) et sont
   // enregistrés ici ; le support MCP builtin de pi les connecte au démarrage de session.
   pi.on("session_start", () => {

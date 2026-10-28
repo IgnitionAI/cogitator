@@ -35,9 +35,13 @@ class FakeClient {
   constructor(public opts: { cwd: string; args: string[] }) {}
   async start() {}
   async stop() {}
-  onEvent() { return () => {}; }
+  private listeners = new Set<(e: unknown) => void>();
+  onEvent(l: (e: unknown) => void) { this.listeners.add(l); return () => this.listeners.delete(l); }
   async getState() { return { ...await this.configuration.getState(), sessionFile: this.sessionFile, isStreaming: false }; }
-  async prompt() { return {}; }
+  async prompt() {
+    for (const l of this.listeners) l({ type: "agent_settled" });
+    return { disposition: "started" };
+  }
   async abort() {}
   async setModel(provider: string, id: string) { return this.configuration.setModel(provider, id); }
 }
@@ -74,7 +78,7 @@ const post = (url: string, body: unknown) =>
 before(async () => {
   const opened = openDb(join(home, "cogitator.db"));
   db = opened.db;
-  assert.equal(opened.version, 8);
+  assert.equal(opened.version, 9);
   botA = createAgent(db, { name: "Bot A", provider: "openai", model: "gpt-5.4", system_prompt: "", skills: [], mcp_servers: [] }).id;
   botB = createAgent(db, { name: "Bot B", provider: "openai", model: "gpt-5.4", system_prompt: "", skills: [], mcp_servers: [] }).id;
   botC = createAgent(db, { name: "Bot C", provider: "openai", model: "gpt-5.4", system_prompt: "", skills: [], mcp_servers: [] }).id;
@@ -115,7 +119,7 @@ test("v4 db migrates to v5 with agent_group and conversation.group_id", () => {
   raw.pragma("user_version = 4");
   raw.close();
   const migrated = openDb(legacy);
-  assert.equal(migrated.version, 8);
+  assert.equal(migrated.version, 9);
   const tables = migrated.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='agent_group'").all();
   assert.equal(tables.length, 1);
   const cols = migrated.db.prepare("PRAGMA table_info(conversation)").all() as Array<{ name: string }>;

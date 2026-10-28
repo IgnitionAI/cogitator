@@ -44,7 +44,7 @@ test("GET /api/health répond le contrat", async () => {
   assert.equal(typeof body.version, "string");
   assert.ok("pi_version" in body);
   assert.equal(body.sessions_active, 0);
-  assert.equal(body.db.version, 8);
+  assert.equal(body.db.version, 9);
   assert.equal(body.db.path, join(home, "cogitator.db"));
 });
 

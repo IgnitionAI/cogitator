@@ -3,7 +3,7 @@
  */
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
-import { OWNED_PI_ENV } from "../../src/reap-orphans.js";
+import { OWNED_PI_ENV, ownedPiMarker } from "../../src/reap-orphans.js";
 
 const home = process.argv[2]!;
 const cliPath = process.argv[3]!;
@@ -15,7 +15,7 @@ const client = new RpcClient({
   cliPath,
   cwd: home,
   args: ["--model", "openai/gpt-5.4", "--offline", "--no-extensions", "--no-skills", "--no-tools"],
-  env: { HOME: home, [OWNED_PI_ENV]: "1", COGITATOR_HOME: home },
+  env: { HOME: home, [OWNED_PI_ENV]: ownedPiMarker() ?? "", COGITATOR_HOME: home },
 });
 await client.start();
 process.send?.({ pid: process.pid, rpcPid: client.process?.pid });

@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url";
 import { openDb } from "../src/db.js";
 import { PiPool } from "../src/pool.js";
 import { enqueue, LaneDispatcher, listItems } from "../src/team-queue.js";
-import { OWNED_PI_ENV, reapOrphanOwnedPi } from "../src/reap-orphans.js";
+import { OWNED_PI_ENV, ownedPiMarker, reapOrphanOwnedPi } from "../src/reap-orphans.js";
 
 const PI_BIN = "/workspace/ci-local/pi-prefix/bin/pi";
 const PI_CLI = "/workspace/ci-local/pi-prefix/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js";
@@ -49,7 +49,7 @@ test("e2e pi réel : un message passe par queue_item jusqu'au process rpc", { ti
         cliPath: PI_CLI,
         cwd: opts.cwd,
         args: ["--model", "openai/gpt-5.4", "--offline", "--no-extensions", "--no-skills", "--no-tools", "--no-prompt-templates"],
-        env: { ...opts.env, HOME: home, [OWNED_PI_ENV]: "1", COGITATOR_HOME: home },
+        env: { ...opts.env, HOME: home, [OWNED_PI_ENV]: ownedPiMarker() ?? "", COGITATOR_HOME: home },
       });
       const start = client.start.bind(client);
       client.start = async () => {

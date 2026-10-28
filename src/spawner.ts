@@ -7,7 +7,7 @@ import { getConversation, setConversationSession, type ConversationRow } from ".
 import type { Db } from "./db.js";
 import { UI_INSTRUCTIONS, UI_PRESENTATION_POLICY } from "./generative-ui.js";
 import { MCP_ENV_VAR, encodeMcpEnv } from "./mcp-env.js";
-import { OWNED_PI_ENV } from "./reap-orphans.js";
+import { OWNED_PI_ENV, ownedPiMarker } from "./reap-orphans.js";
 import type { Paths } from "./paths.js";
 import { PiPool } from "./pool.js";
 import { buildArgs, type SpawnConfig } from "./spawn.js";
@@ -49,10 +49,11 @@ export function makeSpawner(opts: SpawnerOptions): Spawner {
         const spawn = JSON.parse(conv.spawn_args || "{}") as SpawnConfig;
         const mcpEnv = encodeMcpEnv(spawn.mcpServers ?? []);
         const env: Record<string, string> = {
-          [OWNED_PI_ENV]: "1",
           COGITATOR_HOME: paths.home,
           COGITATOR_CONVERSATION_ID: conv.id,
         };
+        const marker = ownedPiMarker();
+        if (marker) env[OWNED_PI_ENV] = marker;
         if (process.env.COGITATOR_URL) env.COGITATOR_URL = process.env.COGITATOR_URL;
         if (mcpEnv) env[MCP_ENV_VAR] = mcpEnv;
         const result = await pool.ensure(conv.id, {

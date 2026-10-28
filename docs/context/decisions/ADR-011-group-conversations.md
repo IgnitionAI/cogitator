@@ -1,6 +1,6 @@
 # ADR-011 — Group conversations as N processes, one Cogitator thread
 
-- Status: accepted (product decision; not implemented)
+- Status: accepted (shipped in tree; see Implementation)
 - Date: 2026-10-14
 - Related: Plan 0004, ADR-001, ADR-010, ADR-004
 
@@ -30,6 +30,26 @@ A single host + herdr subagents already exists (Chef de Projet). That is “chef
 − Group of 6 uses 6 pool slots; idle recycling still applies
 − Bus log in SQLite is a deliberate I5 exception (I8)
 − Two FKs (bot vs group workspace) can still disagree; group spawn follows the group
+
+## Implementation (verified in `src/`)
+
+Groups landed with schema **v5** (`agent_group`, `conversation.group_id`) and the bus with schema **v6** (`group_message`) in `src/db.ts`. Catalog code is `src/groups.ts`; HTTP is `groupRoutes` in `src/server.ts`. Tests: `test/s4-groups.test.ts`, `test/s4-group-messages.test.ts`. UI: `web/src/screens/Bots.tsx` (group list + shared thread).
+
+Shipped against the decision:
+
+1. Aggregate is Cogitator-owned: 2–6 distinct presets (`GROUP_MIN` / `GROUP_MAX`), one `host_agent_id`. `POST /api/groups` creates the row then one idle `conversation` per member (`group_id` set), spawned through the existing pool (`I3`).
+2. Member sessions are private conversations; `listConversations` hides them from 1–1 resume-last.
+3. The visible thread is `group_message` in the catalog SQLite, not a shared pi jsonl. `GET/POST /api/groups/:id/messages` read/append the bus. Member tool/assistant activity is copied onto the bus (`persistGroupActivity`). One SSE stream: `GET /api/groups/:id/events`.
+4. Routing (`routeGroupMessage`): first `@name` / `@slug` that matches a member targets that member’s process; otherwise only the host runs. Injection is `pool.prompt` on that conversation. Host replies that `@` another member trigger a one-shot handoff (no A↔B cascade). Cron stays 1–1 (`src/cron.ts` has no group path). Member cwd is `group.default_workspace_id`, else the host preset’s `default_workspace_id`.
+
+Not in the tree (do not treat as done):
+
+- Several `@` mentions in the **same** user turn (code comment: one target per line; parallel mentions are a later ticket).
+- `PATCH /api/groups/:id` and `POST /api/groups/:id/stop` (no routes).
+- Group MCP tools (`src/mcp-server.ts` has none).
+- Cron → group.
+
+`DELETE /api/groups/:id` evicts member pool slots then deletes the group; `conversation.group_id` is `ON DELETE CASCADE`, so member rows go with the group.
 
 ## Rejected
 

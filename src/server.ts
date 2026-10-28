@@ -44,7 +44,7 @@ import {
   hopContext, kickQueuedLanes, LaneDispatcher, QueueError, recoverInterrupted, submitToLane,
   type QueueErrorCode,
 } from "./team-queue.js";
-import { reapOrphanOwnedPi } from "./reap-orphans.js";
+import { reapOrphanOwnedPi, startPeriodicReap } from "./reap-orphans.js";
 import { composeRuntime, runtimeKindOf, type ConversationRuntime } from "./runtime.js";
 import { DurableRuntimeManager } from "./durable/manager.js";
 import { assertDurableAdmission, durableToolchainRegistry } from "./durable/compatibility.js";
@@ -310,7 +310,7 @@ async function deliverClassic(
   return submitToLane(deps.db, deps.team, {
     conversationId: conv.id,
     body: text || "(image)",
-    fromAgentId: extra?.fromAgentId ?? conv.agent_id,
+    fromAgentId: extra?.fromAgentId ?? null,
     chainId: extra?.chainId,
     hop: extra?.hop,
     idempotencyKey: extra?.idempotencyKey,
@@ -1240,12 +1240,19 @@ function teamRoutes(deps: Deps): Route[] {
       const conv = getConversation(db, b.conversation_id);
       if (!conv) { notFound(ctx.res, "conversation"); return; }
       if (runtimeKindOf(conv) === "durable") return sendJson(ctx.res, 409, { error: "file durable : conversation durable refusée", code: "conflict" });
-      const inherited = hopContext(deps.team, b.from_conversation_id);
+      if (!b.from_conversation_id) return sendJson(ctx.res, 400, { error: "émetteur requis (COGITATOR_CONVERSATION_ID)" });
+      const sender = getConversation(db, b.from_conversation_id);
+      if (!sender) return sendJson(ctx.res, 400, { error: "conversation émetteur inconnue" });
+      if (!sender.group_id || sender.group_id !== conv.group_id) return sendJson(ctx.res, 403, { error: "team_send : groupe commun requis" });
+      const fromAgentId = sender.agent_id;
+      if (fromAgentId && !getAgent(db, fromAgentId)) return sendJson(ctx.res, 400, { error: "agent émetteur inconnu" });
+      if (b.from_agent_id && !getAgent(db, b.from_agent_id)) return sendJson(ctx.res, 400, { error: "agent émetteur inconnu" });
+      const inherited = hopContext(deps.team, sender.id);
       try {
         const queued = await deliverClassic(deps, conv, b.body, undefined, {
-          fromAgentId: b.from_agent_id ?? conv.agent_id,
-          chainId: b.chain_id ?? inherited.chainId,
-          hop: b.hop ?? inherited.hop,
+          fromAgentId,
+          chainId: inherited.chainId ?? b.chain_id ?? null,
+          hop: Math.max(inherited.hop, b.hop ?? 0),
           idempotencyKey: b.idempotency_key,
         });
         sendJson(ctx.res, 200, { ok: true, queue_item_id: queued.id, lane_id: queued.laneId, created: queued.created });
@@ -1297,6 +1304,7 @@ export function createApp(opts: AppOptions): Server {
   recoverConfigurations(db);
   recoverInterrupted(db);
   reapOrphanOwnedPi(paths.home);
+  const stopReap = startPeriodicReap(paths.home);
   const spawner = makeSpawner({ db, pool, paths });
   const team = new LaneDispatcher({
     db,
@@ -1327,9 +1335,10 @@ export function createApp(opts: AppOptions): Server {
       .prepare("SELECT * FROM conversation WHERE id = ?")
       .get(target.conversation_id) as ConversationRow | undefined;
     if (!conv) return;
+    const source = getConversation(db, sourceConvId);
     handoffTargets.add(target.conversation_id);
     try {
-      await submitToLane(db, team, { conversationId: conv.id, body: text, fromAgentId: conv.agent_id });
+      await submitToLane(db, team, { conversationId: conv.id, body: text, fromAgentId: source?.agent_id ?? null });
     } catch {
       handoffTargets.delete(target.conversation_id);
     }
@@ -1386,6 +1395,7 @@ export function createApp(opts: AppOptions): Server {
   const app = opts.server ?? createServer();
   if (opts.auth) { app.requestTimeout = 30_000; app.headersTimeout = 10_000; app.maxHeadersCount = 100; }
   app.once("close", () => {
+    stopReap.stop();
     unsubscribePool();
     void durable.dispose();
   });

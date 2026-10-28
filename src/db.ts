@@ -161,7 +161,8 @@ CREATE TABLE IF NOT EXISTS queue_item (
   hop INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'queued'
     CHECK (status IN ('queued','delivering','done','failed','interrupted','cancelled')),
-  idempotency_key TEXT UNIQUE,
+  idempotency_key TEXT,
+  UNIQUE (lane_id, idempotency_key),
   error TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   started_at TEXT,

@@ -242,4 +242,5 @@ export const teamSendSchema = z.object({
   hop: z.number().int().nonnegative().optional(),
   idempotency_key: z.string().min(1).optional(),
 });
+/** hop/chain_id restent acceptés en HTTP pour prouver qu'ils ne baissent pas le hop serveur ; l'identité vient de from_conversation_id (COGITATOR_CONVERSATION_ID), jamais de from_agent_id. */
 export type TeamSendInput = z.infer<typeof teamSendSchema>;

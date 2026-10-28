@@ -14,6 +14,7 @@ import { authCommand } from "./auth-cli.js";
 import { loadAuth, lockHome, protectedRequired, type AuthState } from "./auth-state.js";
 import { listenOwnerSocket } from "./owner-transport.js";
 import { makeSpawner } from "./spawner.js";
+import { guardedRpcSpawn } from "./pi-child.js";
 import { mkdirSync } from "node:fs";
 
 const SWEEP_INTERVAL_MS = 60_000;
@@ -49,7 +50,7 @@ async function start(explicit: boolean): Promise<void> {
     seedDefaultAgents(db, paths);
     const catalog = db;
     const pool = new PiPool({
-      factory: (opts) => new piCodingAgent.RpcClient({ cliPath: piCliPath, cwd: opts.cwd, args: opts.args, env: opts.env }),
+      factory: (opts) => new piCodingAgent.RpcClient(guardedRpcSpawn(piCliPath, opts)),
       callbacks: { onStatus: (convId, status) => setConversationStatus(catalog, convId, status) },
     });
     const events = new EventEmitter();

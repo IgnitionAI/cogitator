@@ -8,7 +8,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { openDb } from "../src/db.js";
 import { PiPool } from "../src/pool.js";
-import { enqueue, LaneDispatcher, listItems, QueueError, setLanePaused, cancelItem, DEFAULT_HOP_LIMIT } from "../src/team-queue.js";
+import { enqueue, LaneDispatcher, listItems, QueueError, setLanePaused, cancelItem, DEFAULT_HOP_LIMIT, submitToLane } from "../src/team-queue.js";
 
 const DRIVER = join(import.meta.dirname, "fixtures", "team-queue-driver.ts");
 
@@ -43,18 +43,71 @@ function freshDb() {
   return { db, version, dir };
 }
 
-test("v9 : base neuve et migration v8 → v9 conservent les données", () => {
+test("v9 : base neuve et migration depuis un vrai schéma v8 (sans DROP v9)", () => {
   const { db, version, dir } = freshDb();
   assert.equal(version, 9);
   db.close();
-  const raw = new Database(join(dir, "c.db"));
-  raw.exec("DROP TABLE queue_item; DROP TABLE lane;");
+  const v8path = join(dir, "v8.db");
+  const raw = new Database(v8path);
+  raw.exec(`
+CREATE TABLE agent_preset (
+  id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+  provider TEXT NOT NULL, model TEXT NOT NULL, thinking TEXT, system_prompt TEXT NOT NULL DEFAULT '',
+  skills TEXT NOT NULL DEFAULT '[]', tools_allowlist TEXT, mcp_servers TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  is_default INTEGER NOT NULL DEFAULT 0, default_workspace_id TEXT
+);
+CREATE TABLE subagent_setup (
+  id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agent_preset(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', provider TEXT NOT NULL, model TEXT NOT NULL,
+  thinking TEXT, system_prompt TEXT NOT NULL DEFAULT '', skills TEXT NOT NULL DEFAULT '[]', mcp_servers TEXT NOT NULL DEFAULT '[]',
+  UNIQUE (agent_id, name)
+);
+CREATE TABLE workspace (
+  id TEXT PRIMARY KEY, dir TEXT NOT NULL UNIQUE, name TEXT NOT NULL, default_agent_id TEXT REFERENCES agent_preset(id) ON DELETE SET NULL
+);
+CREATE TABLE conversation (
+  id TEXT PRIMARY KEY, workspace_id TEXT REFERENCES workspace(id) ON DELETE SET NULL,
+  agent_id TEXT REFERENCES agent_preset(id) ON DELETE SET NULL, provider TEXT NOT NULL, model TEXT NOT NULL,
+  thinking TEXT, session_file TEXT UNIQUE, spawn_args TEXT NOT NULL DEFAULT '{}', title TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'idle', created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')), group_id TEXT,
+  runtime_kind TEXT NOT NULL DEFAULT 'classic', pending_configuration TEXT
+);
+CREATE TABLE cron_task (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, cron_expr TEXT NOT NULL, prompt TEXT NOT NULL,
+  agent_id TEXT REFERENCES agent_preset(id) ON DELETE SET NULL, workspace_id TEXT NOT NULL REFERENCES workspace(id) ON DELETE CASCADE,
+  output_policy TEXT NOT NULL DEFAULT 'append_session', busy_policy TEXT NOT NULL DEFAULT 'skip',
+  catchup INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1, last_run_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE cron_run (
+  id TEXT PRIMARY KEY, task_id TEXT NOT NULL REFERENCES cron_task(id) ON DELETE CASCADE,
+  started_at TEXT NOT NULL DEFAULT (datetime('now')), finished_at TEXT, status TEXT NOT NULL DEFAULT 'running',
+  session_file TEXT, error TEXT
+);
+CREATE TABLE agent_group (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, host_agent_id TEXT NOT NULL REFERENCES agent_preset(id) ON DELETE CASCADE,
+  default_workspace_id TEXT REFERENCES workspace(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE group_message (
+  id TEXT PRIMARY KEY, group_id TEXT NOT NULL REFERENCES agent_group(id) ON DELETE CASCADE,
+  conversation_id TEXT REFERENCES conversation(id) ON DELETE SET NULL,
+  agent_id TEXT REFERENCES agent_preset(id) ON DELETE SET NULL, role TEXT NOT NULL, text TEXT NOT NULL DEFAULT '',
+  detail TEXT, is_error INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+INSERT INTO conversation (id, provider, model) VALUES ('kept-a', 'fake', 'fake'), ('kept-b', 'fake', 'fake');
+`);
   raw.pragma("user_version = 8");
   raw.close();
-  const again = openDb(join(dir, "c.db"));
+  const again = openDb(v8path);
   assert.equal(again.version, 9);
   assert.equal((again.db.prepare("SELECT COUNT(*) n FROM conversation").get() as { n: number }).n, 2);
   assert.ok(again.db.prepare("SELECT name FROM sqlite_master WHERE name='queue_item'").get());
+  assert.ok(again.db.prepare("SELECT name FROM sqlite_master WHERE name='lane'").get());
+  const idx = again.db.prepare("SELECT sql FROM sqlite_master WHERE name='queue_item'").get() as { sql: string };
+  assert.match(idx.sql, /UNIQUE \(lane_id, idempotency_key\)/);
   again.db.close();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -137,5 +190,25 @@ test("(d) même idempotency_key envoyée deux fois → un seul élément", () =>
   assert.equal(two.created, false);
   assert.equal(two.id, one.id);
   assert.equal(listItems(db, one.laneId).length, 1);
+  const other = enqueue(db, { conversationId: "b", body: "y", idempotencyKey: "k1" });
+  assert.equal(other.created, true, "la clé est unique par lane, pas globale");
+  assert.notEqual(other.id, one.id);
   db.close(); rmSync(dir, { recursive: true, force: true });
+});
+
+test("ensure/spawn en erreur propage et marque failed (pas un succès silencieux)", async () => {
+  const { db, dir } = freshDb();
+  const { pool } = fakePool();
+  const d = new LaneDispatcher({
+    db,
+    pool,
+    ensure: async () => { throw new Error("spawn boom"); },
+  });
+  await assert.rejects(() => submitToLane(db, d, { conversationId: "a", body: "x" }), /spawn boom/);
+  const lane = db.prepare("SELECT id FROM lane WHERE conversation_id = 'a'").get() as { id: string };
+  const items = listItems(db, lane.id);
+  assert.equal(items.length, 1);
+  assert.equal(items[0]!.status, "failed");
+  assert.match(items[0]!.error ?? "", /spawn boom/);
+  await pool.dispose(); db.close(); rmSync(dir, { recursive: true, force: true });
 });

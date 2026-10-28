@@ -163,13 +163,14 @@ addTool("team_send", "Envoie un message durable à une conversation (file lane/q
   {
     conversation_id: z.string().describe("Conversation destinataire"),
     body: z.string(),
-    from_conversation_id: z.string().optional().describe("Conversation de l'émetteur (hop + 1 si un élément est en cours de livraison)"),
-    from_agent_id: z.string().optional(),
-    chain_id: z.string().optional(),
-    hop: z.number().int().nonnegative().optional(),
     idempotency_key: z.string().optional(),
   },
-  (a) => call("POST", "/api/team/send", a));
+  (a) => call("POST", "/api/team/send", {
+    conversation_id: a.conversation_id,
+    body: a.body,
+    idempotency_key: a.idempotency_key,
+    from_conversation_id: process.env.COGITATOR_CONVERSATION_ID,
+  }));
 
 // ---------- Registry ----------
 

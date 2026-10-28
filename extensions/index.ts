@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BASE_URL } from "../src/config.js";
 import { decodeMcpEnv, MCP_ENV_VAR } from "../src/mcp-env.js";
+import { ownerRequest } from "../src/owner-transport.js";
 
 // I4 : l'entry de l'extension ne démarre RIEN au load — uniquement la commande et
 // l'enregistrement MCP (qui ne fait que déclarer des serveurs, le builtin connecte).
@@ -36,13 +37,7 @@ function openBrowser(url: string): void {
 }
 
 async function postTeamSend(payload: Record<string, unknown>): Promise<string> {
-  const res = await fetch(`${BASE_URL}/api/team/send`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json() as { error?: string };
-  if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : `HTTP ${res.status}`);
+  const data = await ownerRequest<Record<string, unknown>>("POST", "/api/team/send", payload);
   return JSON.stringify(data);
 }
 
@@ -55,8 +50,6 @@ export default function (pi: ExtensionAPI) {
       conversation_id: Type.String({ description: "Conversation destinataire" }),
       body: Type.String(),
       idempotency_key: Type.Optional(Type.String()),
-      hop: Type.Optional(Type.Number()),
-      chain_id: Type.Optional(Type.String()),
     }),
     execute: async (_toolCallId, params) => {
       const text = await postTeamSend({
@@ -64,8 +57,6 @@ export default function (pi: ExtensionAPI) {
         body: params.body,
         from_conversation_id: process.env.COGITATOR_CONVERSATION_ID,
         idempotency_key: params.idempotency_key,
-        hop: params.hop,
-        chain_id: params.chain_id,
       });
       return { content: [{ type: "text", text }], details: {} };
     },

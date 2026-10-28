@@ -60,7 +60,7 @@ export function enqueue(db: Db, input: EnqueueInput): { id: string; laneId: stri
   return db.transaction(() => {
     const laneId = ensureLane(db, input.conversationId, input.kind);
     if (input.idempotencyKey) {
-      const dup = db.prepare("SELECT id, lane_id FROM queue_item WHERE idempotency_key = ?").get(input.idempotencyKey) as { id: string; lane_id: string } | undefined;
+      const dup = db.prepare("SELECT id, lane_id FROM queue_item WHERE lane_id = ? AND idempotency_key = ?").get(laneId, input.idempotencyKey) as { id: string; lane_id: string } | undefined;
       if (dup) return { id: dup.id, laneId: dup.lane_id, created: false };
     }
     const { next } = db.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM queue_item WHERE lane_id = ?").get(laneId) as { next: number };
@@ -177,6 +177,7 @@ export class LaneDispatcher {
       try {
         await this.opts.ensure(convId);
         const settled = pool.waitForSettled(convId, this.opts.settleTimeoutMs);
+        settled.catch(() => undefined);
         const result = await pool.prompt(convId, item.body, this.images.get(item.id));
         this.markPrompted(item.id);
         await settled;
@@ -187,6 +188,7 @@ export class LaneDispatcher {
         db.prepare("UPDATE queue_item SET status = 'failed', finished_at = datetime('now'), error = ? WHERE id = ?").run(String(error), item.id);
       } finally {
         this.markPrompted(item.id);
+        this.prompted.delete(item.id);
         this.current.delete(convId);
       }
     }
@@ -209,8 +211,11 @@ export async function submitToLane(
   const paused = laneIsPaused(db, result.laneId);
   const busy = laneIsDelivering(db, result.laneId);
   const kicked = dispatcher.kick(result.laneId);
-  if (result.created && !paused && !busy) await dispatcher.waitUntilPrompted(result.id);
-  else void kicked.catch(() => undefined);
+  if (result.created && !paused && !busy) {
+    await dispatcher.waitUntilPrompted(result.id);
+    const row = db.prepare("SELECT status, error FROM queue_item WHERE id = ?").get(result.id) as { status: QueueStatus; error: string | null } | undefined;
+    if (row?.status === "failed") throw new Error(row.error ?? "livraison échouée");
+  } else void kicked.catch(() => undefined);
   return result;
 }
 

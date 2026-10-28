@@ -9,12 +9,20 @@ import { pathToFileURL } from "node:url";
 import { openDb } from "../src/db.js";
 import { PiPool } from "../src/pool.js";
 import { enqueue, LaneDispatcher, listItems } from "../src/team-queue.js";
-import { OWNED_PI_ENV, ownedPiMarker, reapOrphanOwnedPi } from "../src/reap-orphans.js";
+import { OWNED_PI_ENV, ownedPiMarker, processIsGone, reapOrphanOwnedPi } from "../src/reap-orphans.js";
+import { guardedRpcSpawn } from "../src/pi-child.js";
 
-const PI_BIN = "/workspace/ci-local/pi-prefix/bin/pi";
-const PI_CLI = "/workspace/ci-local/pi-prefix/lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js";
-const PI_PKG = join(dirname(PI_CLI), "..");
-const havePi = existsSync(PI_BIN) && existsSync(PI_CLI);
+function resolvePi(): { bin: string; cli: string; pkg: string } | undefined {
+  const bin = process.env.COGITATOR_PI_BIN;
+  const cliEnv = process.env.COGITATOR_PI_CLI;
+  if (!bin && !cliEnv) return undefined;
+  const cli = cliEnv ?? join(dirname(bin!), "..", "lib/node_modules/@earendil-works/pi-coding-agent/dist/cli.js");
+  if (!existsSync(cli)) return undefined;
+  return { bin: bin ?? cli, cli, pkg: join(dirname(cli), "..") };
+}
+
+const pi = resolvePi();
+const skipPi = pi ? false : "COGITATOR_PI_BIN / COGITATOR_PI_CLI absent (pas de binaire pi de test)";
 
 function piHome(root: string): string {
   const piAgent = join(root, ".pi", "agent");
@@ -25,32 +33,32 @@ function piHome(root: string): string {
   return root;
 }
 
-async function loadRpcClient(): Promise<new (opts: object) => {
+async function loadRpcClient(pkg: string): Promise<new (opts: object) => {
   start(): Promise<void>;
   prompt(text: string): Promise<unknown>;
   process?: { pid?: number };
 }> {
-  const mod = await import(pathToFileURL(join(PI_PKG, "dist/index.js")).href) as {
+  const mod = await import(pathToFileURL(join(pkg, "dist/index.js")).href) as {
     RpcClient: new (opts: object) => { start(): Promise<void>; prompt(text: string): Promise<unknown>; process?: { pid?: number } };
   };
   return mod.RpcClient;
 }
 
-test("e2e pi réel : un message passe par queue_item jusqu'au process rpc", { timeout: 90_000, skip: !havePi }, async () => {
+test("e2e pi réel : un message passe par queue_item jusqu'au process rpc", { timeout: 90_000, skip: skipPi }, async () => {
   const dir = mkdtempSync(join(tmpdir(), "cog-real-pi-"));
   const home = piHome(dir);
   const { db } = openDb(join(dir, "c.db"));
   db.prepare("INSERT INTO conversation (id, provider, model) VALUES ('c1', 'openai', 'gpt-5.4')").run();
   let rpcPid: number | undefined;
-  const RpcClient = await loadRpcClient();
+  const RpcClient = await loadRpcClient(pi!.pkg);
   const pool = new PiPool({
     factory: (opts) => {
-      const client = new RpcClient({
-        cliPath: PI_CLI,
+      const spawn = guardedRpcSpawn(pi!.cli, {
         cwd: opts.cwd,
         args: ["--model", "openai/gpt-5.4", "--offline", "--no-extensions", "--no-skills", "--no-tools", "--no-prompt-templates"],
         env: { ...opts.env, HOME: home, [OWNED_PI_ENV]: ownedPiMarker() ?? "", COGITATOR_HOME: home },
       });
+      const client = new RpcClient(spawn);
       const start = client.start.bind(client);
       client.start = async () => {
         await start();
@@ -77,13 +85,13 @@ test("e2e pi réel : un message passe par queue_item jusqu'au process rpc", { ti
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("kill -9 de l'hôte : le process pi enfant meurt (stdin coupé), pas d'orphelin durable", { timeout: 90_000, skip: !havePi }, async () => {
+test("kill -9 de l'hôte : le process pi enfant meurt sous 3 s sans reap", { timeout: 90_000, skip: skipPi }, async () => {
   const dir = mkdtempSync(join(tmpdir(), "cog-orphan-pi-"));
   const home = piHome(dir);
   const driver = join(import.meta.dirname, "fixtures", "real-pi-orphan-driver.ts");
-  const child = fork(driver, [home, PI_CLI, PI_PKG], {
+  const child = fork(driver, [home, pi!.cli, pi!.pkg], {
     execArgv: ["--import", "tsx"],
-    env: { ...process.env, HOME: home, PATH: `${dirname(PI_BIN)}:${process.env.PATH ?? ""}` },
+    env: { ...process.env, HOME: home, PATH: pi!.bin ? `${dirname(pi!.bin)}:${process.env.PATH ?? ""}` : process.env.PATH },
     silent: true,
   });
   const msg = await new Promise<{ pid: number; rpcPid: number }>((resolve, reject) => {
@@ -95,20 +103,35 @@ test("kill -9 de l'hôte : le process pi enfant meurt (stdin coupé), pas d'orph
   assert.ok(msg.rpcPid > 0);
   child.kill("SIGKILL");
   await new Promise((r) => child.once("close", r));
-  await new Promise((r) => setTimeout(r, 400));
-  let leftover = true;
-  try { process.kill(msg.rpcPid, 0); } catch { leftover = false; }
-  if (leftover) {
-    const { pids } = reapOrphanOwnedPi(home);
-    if (!pids.includes(msg.rpcPid)) {
-      try { process.kill(msg.rpcPid, "SIGKILL"); } catch { /* déjà mort */ }
-    }
-    await new Promise((r) => setTimeout(r, 150));
-    let still = true;
-    try { process.kill(msg.rpcPid, 0); } catch { still = false; }
-    assert.equal(still, false, "si un orphelin survit, le reap (ou SIGKILL) doit l'éliminer");
-  }
+  const deadline = Date.now() + 3_000;
+  while (!processIsGone(msg.rpcPid) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+  const leftover = !processIsGone(msg.rpcPid);
   rmSync(dir, { recursive: true, force: true });
-  // RpcClient spawn sans detached : SIGKILL de l'hôte ferme le stdin du rpc → le process pi meurt.
-  assert.equal(leftover, false, "le process pi meurt avec l'hôte (stdin coupé), pas d'orphelin durable");
+  assert.equal(leftover, false, "le process pi meurt avec l'hôte (setpriv/watchdog), sans reap, sous 3 s");
+});
+
+test("reapOrphanOwnedPi filet de sécurité si un rpc marqué survit", { timeout: 90_000, skip: skipPi }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cog-reap-net-"));
+  const home = piHome(dir);
+  const driver = join(import.meta.dirname, "fixtures", "real-pi-orphan-driver.ts");
+  const child = fork(driver, [home, pi!.cli, pi!.pkg], {
+    execArgv: ["--import", "tsx"],
+    env: { ...process.env, HOME: home, COGITATOR_FORCE_WATCHDOG: "1", PATH: pi!.bin ? `${dirname(pi!.bin)}:${process.env.PATH ?? ""}` : process.env.PATH },
+    silent: true,
+  });
+  const msg = await new Promise<{ pid: number; rpcPid: number }>((resolve, reject) => {
+    let stderr = "";
+    child.stderr?.on("data", (c) => { stderr += String(c); });
+    const t = setTimeout(() => { child.kill("SIGKILL"); reject(new Error(`timeout seed reap-net: ${stderr}`)); }, 40_000);
+    child.on("message", (m) => { clearTimeout(t); resolve(m as { pid: number; rpcPid: number }); });
+  });
+  child.kill("SIGKILL");
+  await new Promise((r) => child.once("close", r));
+  const { pids } = reapOrphanOwnedPi(home);
+  if (!processIsGone(msg.rpcPid) && !pids.includes(msg.rpcPid)) {
+    try { process.kill(msg.rpcPid, "SIGKILL"); } catch { /* déjà mort */ }
+  }
+  await new Promise((r) => setTimeout(r, 150));
+  assert.equal(processIsGone(msg.rpcPid), true);
+  rmSync(dir, { recursive: true, force: true });
 });

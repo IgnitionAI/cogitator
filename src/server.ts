@@ -865,10 +865,10 @@ function conversationRoutes(deps: Deps): Route[] {
         return;
       }
       try {
-        const queued = await deliverClassic(deps, conv, text, b.images);
+        await deliverClassic(deps, conv, text, b.images);
         ctx.check();
         if (text) setConversationTitle(db, conv.id, text);
-        sendJson(ctx.res, 200, { ok: true, queue_item_id: queued.id, created: queued.created });
+        sendJson(ctx.res, 200, { ok: true });
       } catch (err) {
         if (err instanceof QueueError) return sendJson(ctx.res, queueHttpStatus(err.code), { error: err.message, code: err.code });
         throw err;

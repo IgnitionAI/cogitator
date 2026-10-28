@@ -86,9 +86,8 @@ test("message UI classic est persisté dans queue_item puis livré", async () =>
   const { conversation } = await created.json() as { conversation: { id: string } };
   const sent = await post(`/api/conversations/${conversation.id}/messages`, { text: "bonjour file" });
   assert.equal(sent.status, 200);
-  const ack = await sent.json() as { ok: boolean; queue_item_id: string; created: boolean };
+  const ack = await sent.json() as { ok: boolean };
   assert.equal(ack.ok, true);
-  assert.equal(ack.created, true);
   const lane = db.prepare("SELECT id FROM lane WHERE conversation_id = ?").get(conversation.id) as { id: string };
   assert.deepEqual(listItems(db, lane.id).map((i) => [i.body, i.status]), [["bonjour file", "done"]]);
   assert.equal(clients.at(-1)!.prompts.includes("bonjour file"), true);

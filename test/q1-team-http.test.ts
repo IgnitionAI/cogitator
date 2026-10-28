@@ -40,7 +40,8 @@ class FakeClient {
   }
   async stop() {}
   onEvent(l: (e: unknown) => void) { this.listeners.add(l); return () => this.listeners.delete(l); }
-  async getState() { return { ...await this.configuration.getState(), sessionFile: "/fake/q1.jsonl", isStreaming: false }; }
+  sessionFile = `/fake/q1-${Math.random().toString(16).slice(2)}.jsonl`;
+  async getState() { return { ...await this.configuration.getState(), sessionFile: this.sessionFile, isStreaming: false }; }
   async prompt(text: string) {
     this.prompts.push(text);
     const held = FakeClient.hold.get(text);

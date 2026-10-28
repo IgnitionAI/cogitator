@@ -162,12 +162,12 @@ CREATE TABLE IF NOT EXISTS queue_item (
   status TEXT NOT NULL DEFAULT 'queued'
     CHECK (status IN ('queued','delivering','done','failed','interrupted','cancelled')),
   idempotency_key TEXT,
-  UNIQUE (lane_id, idempotency_key),
   error TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   started_at TEXT,
   finished_at TEXT,
-  UNIQUE (lane_id, seq)
+  UNIQUE (lane_id, seq),
+  UNIQUE (lane_id, idempotency_key)
 );
 CREATE INDEX IF NOT EXISTS idx_queue_item_lane_status ON queue_item(lane_id, status, seq);
 `;

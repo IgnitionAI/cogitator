@@ -21,7 +21,8 @@ class FakeClient {
   async start() {}
   async stop() {}
   onEvent(l: (e: unknown) => void) { this.listeners.add(l); return () => this.listeners.delete(l); }
-  async getState() { return { ...await this.configuration.getState(), sessionFile: "/fake/auth.jsonl", isStreaming: false }; }
+  sessionFile = `/fake/auth-${Math.random().toString(16).slice(2)}.jsonl`;
+  async getState() { return { ...await this.configuration.getState(), sessionFile: this.sessionFile, isStreaming: false }; }
   async getAvailableModels() { return this.configuration.getAvailableModels(); }
   async getAvailableThinkingLevels() { return this.configuration.getAvailableThinkingLevels(); }
   async setThinkingLevel(level: Parameters<FakeConfiguration["setThinkingLevel"]>[0]) { return this.configuration.setThinkingLevel(level); }

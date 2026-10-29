@@ -101,4 +101,4 @@ Browser (React) → REST + SSE → Node server → pool of `pi --mode rpc` proce
 
 ## License
 
-MIT — © IgnitionAI
+MIT — © Salim Laimeche

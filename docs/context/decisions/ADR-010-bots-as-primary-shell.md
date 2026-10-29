@@ -1,6 +1,6 @@
 # ADR-010 — Bots as the primary Cogitator shell
 
-- Status: accepted (product decision; not implemented)
+- Status: accepted (shipped in tree; see Implementation)
 - Date: 2026-10-14
 - Related: Plan 0004, ADR-001, ADR-003, ADR-008, ADR-011
 
@@ -25,6 +25,17 @@ Open sessions stay frozen (ADR-001). Preset/workspace edits affect the next spaw
 + Context compounds via the existing JSONL session
 − Two default FKs can disagree; bot spawn follows the bot’s FK
 − Resume-last is a behavior change vs always-new conversation
+
+## Implementation (verified in `src/` / `web/src/`)
+
+The product decision above is no longer “specified only”. The shipped slice matches the four points in **Decision**:
+
+1. There is still no `Bot` table. Presets live in `agent_preset` (`src/agents.ts`, `src/db.ts`).
+2. Primary nav starts with **Bots**; default screen is `bots`. Conversations / Agents remain separate items (`web/src/App.tsx`). Clicking a bot resumes its latest 1–1 conversation (`GET /api/conversations?agent_id=` via `listConversations`, which excludes `group_id IS NOT NULL` rows) or `POST`s a new one (`web/src/screens/Bots.tsx`). First load auto-opens the default agent (Majordome) when present.
+3. `agent_preset.default_workspace_id` exists since schema **v4** (`MIGRATE_V3_TO_V4` in `src/db.ts`). Spawn without `workspace_id` uses it (`resolveSpawnTarget` in `src/server.ts`). `workspace.default_agent_id` is unchanged. Tests: `test/s0-s2.test.ts`.
+4. No computer / Watching pane, Pi overlay, voice, or marketplace in this slice. Groups are **ADR-011**.
+
+Out of this ADR (still true): VPS/host field is Plan 0002, not this shell. MCP tools still do not create groups (Majordome CRUD in `src/mcp-server.ts` covers agents/crons/workspaces/conversations only).
 
 ## Rejected
 

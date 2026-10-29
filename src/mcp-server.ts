@@ -159,6 +159,19 @@ addTool("cogitator_create_conversation", "Crée une conversation avec un agent (
   },
   (a) => call("POST", "/api/conversations", a));
 
+addTool("team_send", "Envoie un message durable à une conversation (file lane/queue_item, limite de sauts, idempotence).",
+  {
+    conversation_id: z.string().describe("Conversation destinataire"),
+    body: z.string(),
+    idempotency_key: z.string().optional(),
+  },
+  (a) => call("POST", "/api/team/send", {
+    conversation_id: a.conversation_id,
+    body: a.body,
+    idempotency_key: a.idempotency_key,
+    from_conversation_id: process.env.COGITATOR_CONVERSATION_ID,
+  }));
+
 // ---------- Registry ----------
 
 addTool("cogitator_list_providers", "Liste les providers pi (catalogue + statut auth + modèles).", {}, () => call("GET", "/api/providers"));

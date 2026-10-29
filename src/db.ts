@@ -140,6 +140,38 @@ CREATE INDEX IF NOT EXISTS idx_group_message_group ON group_message(group_id, cr
 // v6 → v7 : runtime_kind figé à la création (classic | durable, Plan 0002 §6 ; D2/D3)
 const MIGRATE_V6_TO_V7 = `ALTER TABLE conversation ADD COLUMN runtime_kind TEXT NOT NULL DEFAULT 'classic';`;
 
+// v8 → v9 : files durables (pi-openbot lot 2, prototype Q1) — une lane par (conversation, kind),
+// livraison une par une, statut `interrupted` après crash, idempotency_key, limite de sauts.
+const MIGRATE_V8_TO_V9 = `
+CREATE TABLE IF NOT EXISTS lane (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL DEFAULT 'chat',
+  paused INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (conversation_id, kind)
+);
+CREATE TABLE IF NOT EXISTS queue_item (
+  id TEXT PRIMARY KEY,
+  lane_id TEXT NOT NULL REFERENCES lane(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  from_agent_id TEXT REFERENCES agent_preset(id) ON DELETE SET NULL,
+  chain_id TEXT,
+  hop INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued','delivering','done','failed','interrupted','cancelled')),
+  idempotency_key TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  started_at TEXT,
+  finished_at TEXT,
+  UNIQUE (lane_id, seq),
+  UNIQUE (lane_id, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_queue_item_lane_status ON queue_item(lane_id, status, seq);
+`;
+
 export type Db = Database.Database;
 
 export function openDb(dbPath: string): { db: Db; version: number } {
@@ -155,8 +187,9 @@ export function openDb(dbPath: string): { db: Db; version: number } {
     db.exec(MIGRATE_V5_TO_V6);
     db.exec(MIGRATE_V6_TO_V7);
     db.exec("ALTER TABLE conversation ADD COLUMN pending_configuration TEXT");
-    db.pragma("user_version = 8");
-    return { db, version: 8 };
+    db.exec(MIGRATE_V8_TO_V9);
+    db.pragma("user_version = 9");
+    return { db, version: 9 };
   }
   if (version < 2) {
     // FK OFF pendant la migration (pratique SQLite standard ; les parents peuvent être créés plus tard)
@@ -189,5 +222,9 @@ export function openDb(dbPath: string): { db: Db; version: number } {
     db.exec("ALTER TABLE conversation ADD COLUMN pending_configuration TEXT");
     db.pragma("user_version = 8");
   }
-  return { db, version: 8 };
+  if (version < 9) {
+    db.exec(MIGRATE_V8_TO_V9);
+    db.pragma("user_version = 9");
+  }
+  return { db, version: 9 };
 }

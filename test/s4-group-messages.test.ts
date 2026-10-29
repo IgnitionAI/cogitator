@@ -50,7 +50,8 @@ class FakeClient {
     return { ...await this.configuration.getState(), sessionFile: this.sessionFile, isStreaming: false };
   }
   async prompt() {
-    return {};
+    this.emit({ type: "agent_settled" });
+    return { disposition: "started" };
   }
   async abort() {}
   async setModel(provider: string, id: string) { return this.configuration.setModel(provider, id); }
@@ -106,7 +107,7 @@ const clientFor = (convId: string): FakeClient => {
 before(async () => {
   const opened = openDb(join(home, "cogitator.db"));
   db = opened.db;
-  assert.equal(opened.version, 8);
+  assert.equal(opened.version, 9);
   botA = createAgent(db, { name: "Bot A", provider: "openai", model: "gpt-5.4", system_prompt: "", skills: [], mcp_servers: [] }).id;
   botB = createAgent(db, { name: "Bot B", provider: "openai", model: "gpt-5.4", system_prompt: "", skills: [], mcp_servers: [] }).id;
   const pool = new PiPool({
@@ -164,7 +165,7 @@ test("v5 db migrates to v6 with the group_message bus table", () => {
   raw.pragma("user_version = 5");
   raw.close();
   const migrated = openDb(legacy);
-  assert.equal(migrated.version, 8);
+  assert.equal(migrated.version, 9);
   const tables = migrated.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='group_message'").all();
   assert.equal(tables.length, 1);
   migrated.db.close();

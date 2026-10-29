@@ -14,6 +14,7 @@ import { authCommand } from "./auth-cli.js";
 import { loadAuth, lockHome, protectedRequired, type AuthState } from "./auth-state.js";
 import { listenOwnerSocket } from "./owner-transport.js";
 import { makeSpawner } from "./spawner.js";
+import { disposeSetprivShims, guardedRpcSpawn } from "./pi-child.js";
 import { mkdirSync } from "node:fs";
 
 const SWEEP_INTERVAL_MS = 60_000;
@@ -49,7 +50,7 @@ async function start(explicit: boolean): Promise<void> {
     seedDefaultAgents(db, paths);
     const catalog = db;
     const pool = new PiPool({
-      factory: (opts) => new piCodingAgent.RpcClient({ cliPath: piCliPath, cwd: opts.cwd, args: opts.args, env: opts.env }),
+      factory: (opts) => new piCodingAgent.RpcClient(guardedRpcSpawn(piCliPath, opts)),
       callbacks: { onStatus: (convId, status) => setConversationStatus(catalog, convId, status) },
     });
     const events = new EventEmitter();
@@ -66,14 +67,14 @@ async function start(explicit: boolean): Promise<void> {
       clearInterval(sweeper); cron.stop();
       privateServer?.closeAllConnections(); server.closeAllConnections();
       await Promise.all([close(server), ...(privateServer ? [close(privateServer)] : [])]);
-      await pool.dispose(); auth?.db.close(); catalog.close(); unlock();
+      await pool.dispose(); disposeSetprivShims(); auth?.db.close(); catalog.close(); unlock();
     };
     for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => { void shutdown().catch(() => { process.exitCode = 1; }); });
   } catch (err) {
     privateServer?.closeAllConnections(); server.closeAllConnections();
     if (privateServer?.listening) await close(privateServer);
     if (server.listening) await close(server);
-    auth?.db.close(); db?.close(); unlock();
+    auth?.db.close(); db?.close(); unlock(); disposeSetprivShims();
     throw err;
   }
 }

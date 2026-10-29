@@ -250,7 +250,7 @@ test("migration v1 → v2 : session_file devient nullable + spawn_args", () => {
   legacy.close();
 
   const { db: migrated, version } = openDb(v1db);
-  assert.equal(version, 8);
+  assert.equal(version, 9);
   const row = migrated.prepare("SELECT * FROM conversation WHERE id = 'legacy-1'").get() as { session_file: string; spawn_args: string };
   assert.equal(row.session_file, "/s.jsonl");
   assert.equal(row.spawn_args, "{}");

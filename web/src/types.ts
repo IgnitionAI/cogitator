@@ -219,6 +219,15 @@ export interface FileChange {
   lastConversationId?: string;
 }
 
+/** Subagent herdr live rattaché à une conversation (ADR-012, lecture seule). */
+export interface SubagentView {
+  pane_id: string;
+  label: string | null;
+  agent: string | null;
+  status: "idle" | "working" | "blocked" | "done" | "unknown";
+  session: string | null;
+}
+
 export interface FileEvent {
   path: string;
   kind: "edit" | "write";
@@ -365,6 +374,8 @@ export interface AgentWrite {
 
 export interface WorkspaceWrite {
   dir?: string;
+  /** Import GitHub : clone sous la racine projets (voir paths.projectsDir) puis crée le workspace. */
+  git_url?: string;
   name?: string;
   default_agent_id?: string | null;
 }

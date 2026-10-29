@@ -203,6 +203,11 @@ export default function Workspaces({ onOpenWorkspace }: { onOpenWorkspace?: (w: 
 
 function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) {
   const [actionError, setActionError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"local" | "github">("local");
+  const github = mode === "github";
+  // Une erreur d'un mode ne doit pas s'afficher dans l'autre.
+  const switchMode = (next: "local" | "github") => { setActionError(null); setMode(next); };
+  const [gitUrl, setGitUrl] = useState("");
   const [browse, setBrowse] = useState<BrowseResult | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -222,11 +227,13 @@ function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) 
   useEffect(() => { load(); }, []);
 
   const add = async () => {
-    if (!selected || busy || loading || browseError) return;
+    if ((!github && (!selected || loading || browseError)) || (github && !gitUrl.trim()) || busy) return;
     setActionError(null);
     setBusy(true);
     try {
-      await api.createWorkspace({ dir: selected, name: name.trim() || undefined });
+      await api.createWorkspace(github
+        ? { git_url: gitUrl.trim(), name: name.trim() || undefined }
+        : { dir: selected!, name: name.trim() || undefined });
       props.onAdded();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : translate("screens.operationFailed"));
@@ -239,6 +246,23 @@ function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) 
     <Modal title={translate("screens.addWorkspace")} onClose={() => { if (!busy) props.onClose(); }}>
       <fieldset className="form-fields" disabled={busy}>
       <ErrorText error={actionError} />
+      <div className="toolbar" role="group" aria-label={translate("screens.sourceGroupLabel")}>
+        <button type="button" className={mode === "local" ? "btn btn-sm btn-primary" : "btn btn-sm"} aria-pressed={mode === "local"} onClick={() => switchMode("local")}>
+          <Icon name="folder" size={14} /> {translate("screens.sourceLocal")}{mode === "local" ? <> <Icon name="check" size={14} /></> : null}
+        </button>
+        <button type="button" className={mode === "github" ? "btn btn-sm btn-primary" : "btn btn-sm"} aria-pressed={mode === "github"} onClick={() => switchMode("github")}>
+          <Icon name="download" size={14} /> {translate("screens.sourceGithub")}{mode === "github" ? <> <Icon name="check" size={14} /></> : null}
+        </button>
+      </div>
+      {github ? (
+        <>
+          <Field label={translate("screens.gitUrl")}>
+            <input value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} />
+          </Field>
+          <p className="muted">{translate("screens.gitHint")}</p>
+        </>
+      ) : (
+        <>
       <div className="mono" style={{ marginBottom: 8 }}>
         {browse ? (
           <>
@@ -271,13 +295,23 @@ function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) 
         ))}
       </div>
       <p className="muted">{translate("screens.browseHint")}</p>
+        </>
+      )}
       <Field label={translate("screens.optionalName")}>
         <input value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
       <div className="toolbar">
-        <button className="btn" disabled={!selected || loading} onClick={() => selected && load(selected)}>{translate("screens.openFolder")}</button>
-        <button className="btn btn-primary" disabled={!selected || busy || loading || !!browseError} onClick={() => void add()}>
-          {busy ? translate("screens.adding") : translate("screens.addNamed", { name: selected ? (selected.split("/").pop() || "/") : "" })}
+        {github ? null : (
+          <button className="btn" disabled={!selected || loading} onClick={() => selected && load(selected)}>{translate("screens.openFolder")}</button>
+        )}
+        <button
+          className="btn btn-primary"
+          disabled={github ? !gitUrl.trim() || busy : !selected || busy || loading || !!browseError}
+          onClick={() => void add()}
+        >
+          {busy ? translate(github ? "screens.cloning" : "screens.adding")
+            : github ? translate("screens.addWorkspace")
+            : translate("screens.addNamed", { name: selected ? (selected.split("/").pop() || "/") : "" })}
         </button>
         <button type="button" className="btn" disabled={busy} onClick={props.onClose}>{translate("screens.cancel")}</button>
       </div>

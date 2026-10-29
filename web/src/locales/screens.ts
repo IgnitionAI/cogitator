@@ -827,6 +827,30 @@ export const screensMessages = {
     "fr": "Ajout…",
     "en": "Adding…"
   },
+  "screens.sourceLocal": {
+    "fr": "Dossier local",
+    "en": "Local folder"
+  },
+  "screens.sourceGroupLabel": {
+    "fr": "Source du projet",
+    "en": "Project source"
+  },
+  "screens.sourceGithub": {
+    "fr": "Dépôt GitHub",
+    "en": "GitHub repository"
+  },
+  "screens.gitUrl": {
+    "fr": "Dépôt (owner/repo, URL https ou ssh, ou chemin git local)",
+    "en": "Repository (owner/repo, https or ssh URL, or local git path)"
+  },
+  "screens.gitHint": {
+    "fr": "Le dépôt est cloné sur le serveur (dossier projets de Cogitator) puis ajouté comme espace de travail. Pour un dépôt privé, le clonage utilise les identifiants git déjà configurés sur la machine ; Cogitator ne stocke aucun jeton d’accès.",
+    "en": "The repository is cloned on the server (Cogitator projects folder) and added as a workspace. For a private repository, cloning uses the git credentials already configured on this machine; Cogitator stores no access token."
+  },
+  "screens.cloning": {
+    "fr": "Clonage…",
+    "en": "Cloning…"
+  },
   "screens.modelUpdated": {
     "fr": "{name} : modèle mis à jour",
     "en": "{name}: model updated"

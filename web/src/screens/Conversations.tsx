@@ -1,11 +1,11 @@
 import { QueueRecovery, appendRecoveredMessage, type QueueFailure } from "../QueueRecovery";
 import { LiveConfiguration } from "../ModelConfiguration";
-import { t, formatNumber, statusLabel, thinkingLabel, localizeText } from "../i18n";
+import { t, formatNumber, statusLabel, thinkingLabel, localizeText, type TranslationKey } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, openEvents, type EventConnectionState } from "../api";
 import { thinkingLevelsFor } from "../types";
 import type {
-  AgentPreset, Conversation, FileChange, HistoryEntry, ImageContentInput, ProviderView, SkillRef, SseEvent, Workspace,
+  AgentPreset, Conversation, FileChange, HistoryEntry, ImageContentInput, ProviderView, SkillRef, SseEvent, SubagentView, Workspace,
  } from "../types";
 import { Badge, Empty, ErrorText, Field, IconBtn, Modal, PageHead, Skeleton, Spinner, statusColor, useToast } from "../ui";
 import { FileDiffModal, FileRow } from "../FileViews";
@@ -23,6 +23,14 @@ let nextChatItemKey = 0;
 export function bumpChatItemKey(): number {
   return ++nextChatItemKey;
 }
+
+const SUBAGENT_STATUS_KEYS: Record<SubagentView["status"], TranslationKey> = {
+  idle: "chat.subagentIdle",
+  working: "chat.subagentWorking",
+  blocked: "chat.subagentBlocked",
+  done: "chat.subagentDone",
+  unknown: "chat.subagentUnknown",
+};
 export type ChatItem = (
   | QueueFailure
   | { kind: "user"; text: string; attachmentCount?: number }
@@ -325,6 +333,9 @@ export function ChatView(props: {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [openThinking, setOpenThinking] = useState<Set<number>>(new Set());
   const [filesPanel, setFilesPanel] = useState(false);
+  const [subsPanel, setSubsPanel] = useState(false);
+  const [subs, setSubs] = useState<SubagentView[]>([]);
+  const [subsLive, setSubsLive] = useState(true);
   const [files, setFiles] = useState<FileChange[]>([]);
   const [diffFor, setDiffFor] = useState<{ path: string } | null>(null);
 
@@ -447,6 +458,19 @@ export function ChatView(props: {
     };
   }, [conversation.id, loadHistory, refreshMission, updateConfiguration]);
 
+  // Subagents herdr live (ADR-012) : poll léger tant que le panneau est ouvert.
+  const refreshSubagents = useCallback(() => {
+    api.conversationSubagents(conversation.id)
+      .then((r) => { setSubs(r.subagents); setSubsLive(r.live); })
+      .catch(() => undefined);
+  }, [conversation.id]);
+  useEffect(() => {
+    if (!subsPanel) return;
+    refreshSubagents();
+    const timer = setInterval(refreshSubagents, 3_000);
+    return () => clearInterval(timer);
+  }, [subsPanel, refreshSubagents]);
+
   useEffect(() => {
     if (nearBottom.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [timeline.length, timeline[timeline.length - 1]?.text.length]);
@@ -531,6 +555,15 @@ export function ChatView(props: {
           title={t("chat.changedFilesTitle")}
         >
           <Icon name="files" /> {t("chat.files")}{files.length > 0 ? ` (${formatNumber(files.length)})` : ""}
+        </button>
+        <button
+          type="button"
+          className={`btn btn-sm ${subsPanel ? "btn-primary" : ""}`}
+          onClick={() => setSubsPanel((v) => !v)}
+          aria-pressed={subsPanel}
+          title={t("chat.subagentsTitle")}
+        >
+          <Icon name="users" /> {t("chat.subagents")}{subs.length > 0 ? ` (${formatNumber(subs.length)})` : ""}
         </button>
         {busy || running || sessionStatus === "running" ? (
           <button type="button" className="btn btn-sm btn-danger" onClick={() => api.stopConversation(conversation.id).catch((e: Error) => toast(e.message, true))}>
@@ -697,6 +730,26 @@ export function ChatView(props: {
                 <FileRow key={f.path} f={f} onClick={() => setDiffFor({ path: f.path })} />
               ))}
             </div>
+          ) : null}
+        </aside>
+      ) : null}
+      {subsPanel ? (
+        <aside className="chat-side">
+          <div className="chat-side-head">
+            <span>{t("chat.subagents")}</span>
+            <span className="muted">{subsLive ? formatNumber(subs.length) : t("chat.subagentsOffline")}</span>
+          </div>
+          {!subsLive ? <p role="status">{t("chat.subagentsUnavailable")}</p> : null}
+          {subsLive && subs.length === 0 ? <Empty>{t("chat.noSubagents")}</Empty> : null}
+          {subsLive && subs.length > 0 ? (
+            <ul className="chat-side-list">
+              {subs.map((s) => (
+                <li key={s.pane_id} className="subagent-row">
+                  <span className="subagent-name">{s.label ?? s.agent ?? s.pane_id}</span>
+                  <span className={`chat-state is-${s.status}`} role="status">{t(SUBAGENT_STATUS_KEYS[s.status])}</span>
+                </li>
+              ))}
+            </ul>
           ) : null}
         </aside>
       ) : null}

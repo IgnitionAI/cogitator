@@ -55,7 +55,7 @@ Protected local stdio MCP uses a private owner-only Unix HTTP socket with the sa
 | Method | Route | Description |
 |---|---|---|
 | GET | `/api/workspaces` | List + conversation count |
-| POST | `/api/workspaces` | Create `{ dir, name?, default_agent_id? }` — the directory must exist |
+| POST | `/api/workspaces` | Create `{ dir | git_url, name?, default_agent_id? }` — exactly one source: `dir` (local directory, must exist) or `git_url` (clone into the projects root — `COGITATOR_PROJECTS_DIR` or `<COGITATOR_HOME>/projects` — at `<root>/<owner>/<repo>` for GitHub sources, `<root>/<slug>` otherwise; GitHub `https`/`git@`/`owner/repo` or local git path; URLs carrying embedded credentials are refused, use the machine's git credentials; a failed clone or refused enrollment removes the directory that import created, but a clone interrupted by a server crash can leave a partial directory that blocks reuse; refused up front in remote mode unless the canonical destination is under an enrolled root) |
 | PUT | `/api/workspaces/:id` | Rename, change the default agent |
 | DELETE | `/api/workspaces/:id` | Delete (pi sessions remain on disk) |
 | GET | `/api/fs/browse?path=` | Server-side file picker (rooted at home, entry by entry) |

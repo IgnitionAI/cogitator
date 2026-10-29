@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { api, openEvents } from "./api";
 import type { Health } from "./types";
 import Bots from "./screens/Bots";
@@ -13,6 +13,9 @@ import type { AgentPreset, Workspace } from "./types";
 import { Icon, type IconName } from "./icons";
 import { LanguagePicker, useToast } from "./ui";
 import { localizeText, statusLabel, t, useLocale, type TranslationKey } from "./i18n";
+
+// three.js is ~600kB: keep it out of the first paint, the static favicon holds the slot meanwhile.
+const BrandLogo3D = lazy(() => import("./BrandLogo3D"));
 
 const NAV = [
   { id: "bots", icon: "bot", label: "common.bots" },
@@ -121,7 +124,9 @@ export default function App() {
       <div className="nav-scrim" onClick={() => setNavOpen(false)} />
       <aside ref={sidebar} id="sidebar" className="sidebar" role={navOpen ? "dialog" : undefined} aria-modal={navOpen || undefined} aria-label={t("common.navigation")}>
         <div className="brand">
-          <img src="/favicon.png" alt="" className="brand-logo" width={26} height={26} />
+          <Suspense fallback={<img src="/favicon.png" alt="" className="brand-logo" width={26} height={26} />}>
+            <BrandLogo3D />
+          </Suspense>
           <span>Cogita<em>tor</em></span>
           <button type="button" className="icon-btn nav-close" aria-label={t("common.closeMenu")} onClick={() => setNavOpen(false)}><Icon name="close" /></button>
         </div>

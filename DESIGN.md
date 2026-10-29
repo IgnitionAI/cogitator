@@ -46,6 +46,7 @@ On mobile, body/control labels are at least 14px, inputs use 16px, and interacti
 
 ## Components
 
+- **Brand mark**: 3D cog (react-three-fiber, lazy chunk) next to the wordmark; idle spin, damped pointer parallax, violet halo. Static frame when off-screen or under `prefers-reduced-motion`. Never blocks first paint: the static favicon holds the slot until the chunk lands.
 - **Nav**: instant, no motion. `aria-current`. SVG icons, 16px, stroke 1.75.
 - **Buttons**: hairline or solid accent. Press `scale(0.97)` 150ms. Hover is color only.
 - **Lists**: default for collections. Cards only for workspace units that carry nested fields.

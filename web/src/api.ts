@@ -107,6 +107,8 @@ export const api = {
       "GET", `/api/conversations/${id}/history`,
     ),
   conversationFiles: (id: string) => req<{ files: FileChange[] }>("GET", `/api/conversations/${id}/files`),
+  conversationSubagents: (id: string) =>
+    req<{ live: boolean; subagents: import("./types").SubagentView[] }>("GET", `/api/conversations/${id}/subagents`),
   fileDetail: (id: string, path: string) =>
     req<{ path: string; operations: FileEvent[] }>("GET", `/api/conversations/${id}/file?path=${encodeURIComponent(path)}`),
   workspaceFeed: (id: string) =>

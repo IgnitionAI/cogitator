@@ -76,11 +76,16 @@ export type AgentInput = z.infer<typeof agentInputSchema>;
 
 // ---------- Workspaces ----------
 
-export const workspaceCreateSchema = z.object({
-  dir: z.string().min(1, "dir requis"),
-  name: z.string().optional(),
-  default_agent_id: z.string().nullable().optional(),
-});
+/** `dir` (dossier local) ou `git_url` (clone GitHub), jamais les deux. */
+export const workspaceCreateSchema = z
+  .object({
+    dir: z.string().min(1, "dir requis").optional(),
+    git_url: z.string().min(1, "URL git requise").optional(),
+    name: z.string().optional(),
+    default_agent_id: z.string().nullable().optional(),
+  })
+  .refine((v) => !(v.dir && v.git_url), { message: "fournir dir ou git_url (pas les deux)" })
+  .refine((v) => Boolean(v.dir) || Boolean(v.git_url), { message: "dir ou git_url requis" });
 export type WorkspaceCreate = z.infer<typeof workspaceCreateSchema>;
 
 export const workspaceUpdateSchema = z.object({

@@ -2,8 +2,8 @@ import { changeConfiguration, dismissConfiguration, ConfigurationError, recoverC
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { existsSync, statSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, extname, join, normalize, relative, sep } from "node:path";
+import { existsSync, rmSync, statSync, readFileSync, realpathSync } from "node:fs";
+import { basename, dirname, extname, join, normalize, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from "node:http";
 import type { ZodType } from "zod";
@@ -61,9 +61,11 @@ import {
 import { spawnConfigFromPreset, type SpawnConfig } from "./spawn.js";
 import { enrollmentPolicyFromEnv } from "./execution/confinement.js";
 import {
-  browseDir, createWorkspace, deleteWorkspace, getWorkspace, listWorkspaces, updateWorkspace,
+  browseDir, createWorkspace, deleteWorkspace, getWorkspace, getWorkspaceByDir, listWorkspaces, updateWorkspace,
   type WorkspaceRow,
 } from "./workspaces.js";
+import { cloneRepo, isInsideDir, localDirFor } from "./git-import.js";
+import { listSubagents, type SubagentRunner } from "./subagents.js";
 
 // ---------- Statique ----------
 
@@ -268,6 +270,11 @@ interface Deps {
   /** Point de composition explicite unique des runtimes (I3 amendé, Plan 0002 §6). */
   compose: (conv: ConversationRow) => ConversationRuntime;
   durable: DurableRuntimeManager;
+  /** Runner herdr injectable (ADR-012) ; défaut : shell-out réel `herdr api snapshot`. */
+  subagentRunner?: SubagentRunner;
+  /** Création de workspace injectée (tests : forcer l'exception post-clone et prouver le
+   *  nettoyage, M3) ; défaut : createWorkspace réel. */
+  createWorkspaceImpl?: typeof createWorkspace;
 }
 
 /** Résout le :id d'une route en entité, ou répond 404 et renvoie null. */
@@ -425,10 +432,89 @@ function workspaceRoutes(deps: Deps): Route[] {
     ["GET", "/api/workspaces", (ctx) => {
       sendJson(ctx.res, 200, { workspaces: listWorkspaces(db) });
     }],
-    ["POST", "/api/workspaces", (ctx) => {
+    ["POST", "/api/workspaces", async (ctx) => {
       const b = parseBody(ctx.res, workspaceCreateSchema, ctx.body);
       if (!b) return;
-      const { workspace, error } = createWorkspace(db, b, enrollmentPolicyFromEnv());
+      const policy = enrollmentPolicyFromEnv();
+      if (b.git_url) {
+        const root = deps.paths.projectsDir;
+        const target = localDirFor(b.git_url, root);
+        if ("error" in target) return sendJson(ctx.res, 400, { error: target.error });
+        // B1/L2 : en mode distant, refuser AVANT toute écriture si la destination
+        // canonique n'est sous aucune racine enrôlée. Les deux côtés sont canonicalisés :
+        // un <root> ou <root>/<owner> déjà présent en symlink ferait sinon écrire hors
+        // racine (le clone suit les liens, la garde lexicale non).
+        if (policy.remote) {
+          // Canonicalise le plus long préfixe existant puis résout le reste lexicalement
+          // (cf. resolveConfined) : appliqué à la destination ET aux racines, sinon deux
+          // représentations du même chemin (/tmp vs /private/tmp) ne matchent jamais.
+          const canonical = (p: string): string => {
+            let existing = resolve(p);
+            const tail: string[] = [];
+            while (!existsSync(existing)) {
+              const parent = dirname(existing);
+              if (parent === existing) break;
+              tail.unshift(basename(existing));
+              existing = parent;
+            }
+            try { return join(realpathSync(existing), ...tail); } catch { return resolve(p); }
+          };
+          const destCanon = canonical(target.dest);
+          if (!policy.enrolledRoots.some((enrolled) => isInsideDir(destCanon, canonical(enrolled)))) {
+            return sendJson(ctx.res, 400, { error: `racine de clone hors des racines enrôlées: ${root}` });
+          }
+        }
+        const result = await cloneRepo(target.source, target.dest);
+        if ("error" in result) return sendJson(ctx.res, 400, { error: result.error });
+        // D4 : tout échec après le clone (autorisation révoquée pendant les 25 s, ou refus
+        // d'enrôlement) doit laisser le disque propre — sans jamais supprimer un dossier
+        // qu'un workspace référence déjà (import concurrent gagnant) ni un dossier vide
+        // préexistant que Cogitator n'a pas créé (S3 : `created` le distingue). La
+        // comparaison se fait en forme canonicalisée, comme les lignes DB écrites par
+        // createWorkspace : une comparaison lexicale rendrait la garde inerte sur toute
+        // racine symlinkée (/tmp sur macOS — M1).
+        const discardClone = (): void => {
+          if (!result.cloned || !result.created) return;
+          let cloned: string;
+          try {
+            cloned = realpathSync(result.dir); // le dossier existe : on vient de le cloner
+          } catch {
+            return; // déjà parti
+          }
+          if (getWorkspaceByDir(db, cloned)) return;
+          // Nettoyage best-effort : un EBUSY/EPERM ne doit pas masquer l'erreur d'origine
+          // (S2) — ici on est dans le catch de la requête ou sur un refus 400.
+          try {
+            rmSync(cloned, { recursive: true, force: true });
+          } catch {
+            /* dossier résiduel possible, signalé par l'erreur d'origine */
+          }
+        };
+        let created: ReturnType<typeof createWorkspace>;
+        try {
+          ctx.check(); // autorisation à revérifier après l'await long (le clone)
+          created = (deps.createWorkspaceImpl ?? createWorkspace)(
+            db,
+            { dir: result.dir, name: b.name, default_agent_id: b.default_agent_id },
+            policy,
+          );
+        } catch (err) {
+          discardClone();
+          throw err;
+        }
+        if (created.error) {
+          discardClone();
+          return sendJson(ctx.res, 400, { error: created.error });
+        }
+        return sendJson(ctx.res, 201, { workspace: created.workspace });
+      }
+      // Le refine du schéma garantit dir ici ; la garde sert de resserrement de type.
+      if (!b.dir) return sendJson(ctx.res, 400, { error: "dir ou git_url requis" });
+      const { workspace, error } = createWorkspace(
+        db,
+        { dir: b.dir, name: b.name, default_agent_id: b.default_agent_id },
+        policy,
+      );
       if (error) return sendJson(ctx.res, 400, { error });
       sendJson(ctx.res, 201, { workspace });
     }],
@@ -786,6 +872,12 @@ function conversationRoutes(deps: Deps): Route[] {
       const conv = requireConversation(deps, ctx);
       if (!conv) return;
       sendJson(ctx.res, 200, { files: readFileChanges(conv.session_file ?? "") });
+    }],
+    // Subagents herdr live de cette conversation (ADR-012) : lecture seule, jamais de 5xx herdr.
+    ["GET", "/api/conversations/:id/subagents", async (ctx) => {
+      const conv = requireConversation(deps, ctx);
+      if (!conv) return;
+      sendJson(ctx.res, 200, await listSubagents(conv.session_file, deps.subagentRunner));
     }],
     ["GET", "/api/conversations/:id/file", (ctx) => {
       const conv = requireConversation(deps, ctx);
@@ -1195,6 +1287,10 @@ export interface AppOptions {
   server?: Server;
   /** Gestionnaire durable injecté (tests : modèle faux) ; défaut : production. */
   durable?: DurableRuntimeManager;
+  /** Runner herdr injecté (ADR-012) ; défaut : shell-out réel. */
+  subagentRunner?: SubagentRunner;
+  /** Création de workspace injectée (tests : forcer l'exception post-clone, M3) ; défaut : réel. */
+  createWorkspaceImpl?: typeof createWorkspace;
 }
 
 export function createApp(opts: AppOptions): Server {
@@ -1258,6 +1354,8 @@ export function createApp(opts: AppOptions): Server {
     spawner,
     compose,
     durable,
+    subagentRunner: opts.subagentRunner,
+    createWorkspaceImpl: opts.createWorkspaceImpl,
   };
 
   const routes: Route[] = [

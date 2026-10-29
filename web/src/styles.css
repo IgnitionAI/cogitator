@@ -97,6 +97,8 @@ body {
 }
 .sidebar .brand em { font-style: normal; color: var(--accent-text); }
 .brand-logo { border-radius: var(--radius); flex-shrink: 0; object-fit: cover; }
+.brand-3d { width: 36px; height: 36px; flex-shrink: 0; margin: 0 -4px; }
+.brand-3d canvas { display: block; }
 .sidebar .nav-close { display: none; margin-left: auto; }
 .nav-item {
   display: flex; align-items: center; gap: 9px;

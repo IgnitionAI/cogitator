@@ -15,7 +15,8 @@ import { authenticationRequired } from "../config.js";
 
 export type ConfinedResult = { path: string } | { error: string };
 
-function isInside(path: string, root: string): boolean {
+/** `path` sous `root` (formes déjà canonicalisées des deux côtés). */
+export function isInside(path: string, root: string): boolean {
   return path === root || path.startsWith(root + sep);
 }
 

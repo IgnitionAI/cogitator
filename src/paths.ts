@@ -4,6 +4,8 @@ export interface Paths {
   /** Dossier de données cogitator (~/.cogitator) */
   home: string;
   db: string;
+  /** Racine des clones des projets importés via git_url (COGITATOR_PROJECTS_DIR, sinon <home>/projects) */
+  projectsDir: string;
   /** Dossier agent pi (~/.pi/agent) : models-store.json, auth.json, mcp.json */
   piAgentDir: string;
   piModelsJson: string;
@@ -28,6 +30,7 @@ export function getPaths(env: NodeJS.ProcessEnv = process.env): Paths {
   return {
     home,
     db: join(home, "cogitator.db"),
+    projectsDir: env.COGITATOR_PROJECTS_DIR ?? join(home, "projects"),
     piAgentDir,
     piModelsJson: join(piAgentDir, "models.json"),
     piAuthJson: join(piAgentDir, "auth.json"),

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test, before, after } from "node:test";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 
@@ -192,4 +192,46 @@ test("PUT assigns then re-assigns a bot's default workspace (picker path)", asyn
 
   const r2 = await (await put({ ...baseBody, default_workspace_id: wsB.workspace.id })).json() as { agent: { default_workspace_id: string } };
   assert.equal(r2.agent.default_workspace_id, wsB.workspace.id);
+});
+
+test("POST /api/workspaces?git_url clones a repo and enrolls it", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const src = join(home, "git-source");
+  mkdirSync(src);
+  writeFileSync(join(src, "README.md"), "# cloned\n");
+  const git = (...args: string[]) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd: src });
+  git("init", "--quiet");
+  git("add", ".");
+  git("commit", "--quiet", "-m", "init");
+
+  const res = await fetch(`${base}/api/workspaces`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ git_url: src }),
+  });
+  assert.equal(res.status, 201);
+  const { workspace } = await res.json() as { workspace: { dir: string; name: string } };
+  assert.equal(workspace.name, "git-source");
+  assert.ok(workspace.dir.startsWith(realpathSync(join(home, "projects"))));
+  assert.equal(readFileSync(join(workspace.dir, "README.md"), "utf8"), "# cloned\n");
+
+  const again = await fetch(`${base}/api/workspaces`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ git_url: src }),
+  });
+  assert.equal(again.status, 400); // workspace déjà enregistré pour ce clone
+
+  // suppression du workspace → réimport possible : le dossier cloné est réutilisé (S2/D4)
+  const del = await fetch(`${base}/api/workspaces/${workspace.id}`, { method: "DELETE" });
+  assert.equal(del.status, 200);
+  const reimport = await fetch(`${base}/api/workspaces`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ git_url: src }),
+  });
+  assert.equal(reimport.status, 201);
+
+  const both = await fetch(`${base}/api/workspaces`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ dir: projDir, git_url: src }),
+  });
+  assert.equal(both.status, 400); // dir ou git_url, jamais les deux
 });

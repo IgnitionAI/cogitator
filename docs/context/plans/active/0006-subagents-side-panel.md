@@ -1,4 +1,13 @@
-# Live subagents side panel (herdr enumeration)
+# Live subagents side panel (pi child session journals)
+
+> **Révisé le 2026-10-29 — ADR-013 remplace ADR-012.** La source n'est plus le démon herdr
+> (optionnel, absent en pratique) mais les journaux de session enfants écrits par l'extension
+> pi `@gotgenes/pi-subagents` : `<dir session parente>/<nom session parente>/tasks/<enfant>.jsonl`.
+> Conséquences sur ce plan : l'étape 1 (spike herdr + règle de liaison `agent_session`) est
+> **annulée** ; la règle de liaison devient le répertoire dérivé de la session parente,
+> revérifié par `parentSession` dans l'en-tête enfant ; les statuts sont `working|done|unknown`
+> déduits de la queue du journal. Les étapes 2 à 6 restent valables, avec ces adaptations.
+
 
 ## Request and decisions
 

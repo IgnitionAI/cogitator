@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test, before, after } from "node:test";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { FakeConfiguration } from "./fixtures/fake-configuration.js";
@@ -18,82 +18,115 @@ process.env.COGITATOR_AGENTS_DIR = join(piDir, "agents");
 process.env.COGITATOR_SKILLS_DIRS = join(home, "skills");
 writeFileSync(join(piDir, "models-store.json"), JSON.stringify({ openai: { models: [{ id: "gpt-5.4" }] } }));
 
-const { subagentsForConversation, linkBelongsToConversation, listSubagents } = await import("../src/subagents.js");
+const { listSubagents, readSubagent, statusOfEntries, tasksDirFor, parentSessionIdOf, MAX_SUBAGENTS } = await import("../src/subagents.js");
 const { openDb } = await import("../src/db.js");
 const { getPaths } = await import("../src/paths.js");
 const { createApp } = await import("../src/server.js");
 const { PiPool } = await import("../src/pool.js");
 const { createConversation, setConversationSession } = await import("../src/conversations.js");
 
-const SESSION_A = join(home, "sessions", "conv-a.json");
-const SESSION_B = join(home, "sessions", "conv-b.json");
+/** Session parente factice : en-tête seul, nom = celui que pi utilise en production. */
+function makeParentSession(name: string, parentId: string): string {
+  const file = join(home, "sessions", `${name}.jsonl`);
+  mkdirSync(join(home, "sessions"), { recursive: true });
+  writeFileSync(file, JSON.stringify({ type: "session", version: 3, id: parentId, timestamp: "2026-10-29T10:00:00.000Z" }) + "\n");
+  return file;
+}
 
-const pane = (over: Record<string, unknown>) => ({
-  pane_id: "w1:p1",
-  label: null,
-  agent: null,
-  agent_status: "working",
-  agent_session: null,
-  ...over,
+type ChildSpec = { id: string; parent?: string | null; label?: string | null; model?: string; last?: "toolCall" | "done" | "error"; mtime?: number };
+
+/** Journal enfant conforme à ce que pi-subagents écrit (voir src/session/session-dir.ts). */
+function writeChild(parentSession: string, spec: ChildSpec): string {
+  const dir = tasksDirFor(parentSession);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `${spec.id}.jsonl`);
+  const lines: unknown[] = [{ type: "session", version: 3, id: spec.id, timestamp: "2026-10-29T10:01:00.000Z", cwd: home, parentSession: spec.parent === undefined ? parentSessionIdOf(parentSession) : spec.parent }];
+  if (spec.model) lines.push({ type: "model_change", id: "m1", parentId: null, timestamp: "2026-10-29T10:01:00.001Z", provider: "kimi-coding", modelId: spec.model });
+  if (spec.label) lines.push({ type: "message", id: "u1", parentId: "m1", timestamp: "2026-10-29T10:01:01.000Z", message: { role: "user", content: [{ type: "text", text: spec.label }] } });
+  const last = spec.last ?? "done";
+  if (last === "toolCall") {
+    lines.push({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-10-29T10:01:02.000Z", message: { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", name: "bash", arguments: { command: "sleep 30" } }] } });
+  } else if (last === "error") {
+    lines.push({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-10-29T10:01:02.000Z", message: { role: "assistant", stopReason: "error", content: [] } });
+  } else {
+    lines.push({ type: "message", id: "a1", parentId: "u1", timestamp: "2026-10-29T10:01:02.000Z", message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "ok" }] } });
+  }
+  writeFileSync(file, lines.map((line) => JSON.stringify(line)).join("\n") + "\n");
+  if (spec.mtime) utimesSync(file, spec.mtime, spec.mtime);
+  return file;
+}
+
+const SESSION_A = makeParentSession("parent-a", "01PARENT-A");
+const SESSION_B = makeParentSession("parent-b", "01PARENT-B");
+
+// ---------- Lecture du journal d'un enfant (pas de démon : la source est la session pi) ----------
+
+test("tasksDirFor : répertoire des enfants dérivé du nom de la session parente", () => {
+  assert.equal(tasksDirFor("/s/dir/2026-01-01T00-00-00-000Z_abc.jsonl"), "/s/dir/2026-01-01T00-00-00-000Z_abc/tasks");
 });
 
-// ---------- Mapping pur (snapshot factice — mock identifié, preuve live = spike plan 0006) ----------
-
-test("linkBelongsToConversation : true seulement si agent_session.source == session_file", () => {
-  const linked = pane({ agent_session: { source: SESSION_A, agent: "explore", kind: "path", value: "/x/herdr/child.json" } });
-  assert.equal(linkBelongsToConversation(linked, SESSION_A), true);
-  assert.equal(linkBelongsToConversation(linked, SESSION_B), false);
-  assert.equal(linkBelongsToConversation(pane({}), SESSION_A), false); // sans agent_session
-  assert.equal(linkBelongsToConversation(pane({ agent_session: { source: SESSION_B, agent: "a", kind: "id", value: "v" } }), SESSION_A), false);
+test("statusOfEntries : appelle d'outil en attente → working ; message assistant clos → done", () => {
+  const msg = (role: string, stopReason?: string) => ({ message: { role, stopReason } });
+  assert.equal(statusOfEntries([msg("user"), msg("assistant", "toolUse")]), "working");
+  assert.equal(statusOfEntries([msg("assistant", "toolUse"), msg("toolResult")]), "working"); // l'agent reprend après l'outil
+  assert.equal(statusOfEntries([msg("assistant", "stop")]), "done");
+  assert.equal(statusOfEntries([msg("assistant", "length")]), "done");
+  assert.equal(statusOfEntries([msg("assistant", "error")]), "unknown");
+  assert.equal(statusOfEntries([]), "unknown");
 });
 
-test("subagentsForConversation : extrait les panes imbriqués, filtre par session, projette", () => {
-  const snapshot = {
-    workspaces: [{
-      tabs: [{
-        panes: [
-          pane({ pane_id: "w1:p1", label: "explore-code", agent: "explore", agent_session: { source: SESSION_A, agent: "explore", kind: "path", value: "/x/herdr/child-1.json" } }),
-          pane({ pane_id: "w1:p2", agent_session: { source: SESSION_B, agent: "general", kind: "path", value: "/x/herdr/child-2.json" }, agent_status: "blocked" }),
-          pane({ pane_id: "w1:p3" }), // pas de session déclarée
-        ],
-      }],
-    }],
-  };
-  const subs = subagentsForConversation(snapshot, SESSION_A);
-  assert.equal(subs.length, 1);
-  assert.deepEqual(subs[0], {
-    pane_id: "w1:p1",
-    label: "explore-code",
-    agent: "explore",
-    status: "working",
-    session: "/x/herdr/child-1.json",
-  });
-  // statut absent → unknown ; aucun lien croisé vers l'autre session
-  const subsB = subagentsForConversation(snapshot, SESSION_B);
-  assert.equal(subsB.length, 1);
-  assert.equal(subsB[0]!.status, "blocked");
+test("readSubagent : libellé = première consigne, modèle = model_change, statut du journal", () => {
+  const file = writeChild(SESSION_A, { id: "child-live", label: "Sonde état subagent", model: "kd-1", last: "toolCall" });
+  const view = readSubagent(file);
+  assert.ok(view);
+  assert.equal(view.id, "child-live");
+  assert.equal(view.label, "Sonde état subagent");
+  assert.equal(view.model, "kimi-coding/kd-1");
+  assert.equal(view.status, "working");
+  assert.equal(view.started_at, "2026-10-29T10:01:00.000Z");
 });
 
-test("subagentsForConversation : forme aplatie { panes: [...] } + dédoublonnage par pane_id", () => {
-  const p = pane({ pane_id: "w1:p1", agent_session: { source: SESSION_A, agent: "a", kind: "id", value: "s1" } });
-  const snapshot = { panes: [p], also: { panes: [p] } };
-  assert.equal(subagentsForConversation(snapshot, SESSION_A).length, 1);
-  assert.equal(subagentsForConversation(snapshot, SESSION_A)[0]!.session, "s1");
+test("readSubagent : enfant sans consigne ni modèle → label/model null, journal illisible → null", () => {
+  const file = writeChild(SESSION_A, { id: "child-brut" });
+  const view = readSubagent(file);
+  assert.equal(view?.label, null);
+  assert.equal(view?.model, null);
+  assert.equal(view?.status, "done");
+  assert.equal(readSubagent(join(home, "sessions", "parent-a", "tasks", "absent.jsonl")), null);
 });
 
-test("subagentsForConversation : snapshot sans pane → []", () => {
-  assert.deepEqual(subagentsForConversation({}, SESSION_A), []);
-  assert.deepEqual(subagentsForConversation(null, SESSION_A), []);
+test("listSubagents : enfant inactif depuis > 1 h → statut unknown (process probablement tué)", () => {
+  const old = Math.floor(Date.now() / 1000) - 7_200;
+  writeChild(SESSION_A, { id: "child-vieux", last: "toolCall", mtime: old });
+  const view = listSubagents(SESSION_A).subagents.find((s) => s.id === "child-vieux");
+  assert.equal(view?.status, "unknown");
 });
 
-test("listSubagents : runner en échec → live:false ; session_file null → jamais de mapping", async () => {
-  const failing = () => Promise.reject(new Error("no herdr server"));
-  assert.deepEqual(await listSubagents(SESSION_A, failing), { live: false, subagents: [] });
-  const ok = () => Promise.resolve(JSON.stringify({ panes: [] }));
-  assert.deepEqual(await listSubagents(null, ok), { live: true, subagents: [] });
-  // JSON invalide → live:false
-  const bad = () => Promise.resolve("not json");
-  assert.deepEqual(await listSubagents(SESSION_A, bad), { live: false, subagents: [] });
+test("listSubagents : session inconnue → live:false ; pas de répertoire tasks → live:true et liste vide", () => {
+  assert.deepEqual(listSubagents(null), { live: false, subagents: [] });
+  assert.deepEqual(listSubagents(join(home, "sessions", "inexistante.jsonl")), { live: false, subagents: [] });
+  assert.deepEqual(listSubagents(SESSION_B), { live: true, subagents: [] });
+});
+
+test("listSubagents : un enfant déclarant une autre session parente n'est jamais exposé", () => {
+  const foreign = makeParentSession("parent-x", "01PARENT-X");
+  writeChild(foreign, { id: "child-foreign", label: "autre conversation" });
+  // répertoire recyclé : l'enfant est déposé chez A mais déclare X
+  const dir = tasksDirFor(SESSION_A);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "child-recycle.jsonl"), JSON.stringify({ type: "session", id: "child-recycle", parentSession: "01PARENT-X" }) + "\n");
+  const ids = listSubagents(SESSION_A).subagents.map((s) => s.id);
+  assert.ok(!ids.includes("child-recycle"));
+  assert.ok(!ids.includes("child-foreign"));
+});
+
+test("listSubagents : tri par récence et borne MAX_SUBAGENTS", () => {
+  const parent = makeParentSession("parent-cap", "01PARENT-CAP");
+  const base = Math.floor(Date.now() / 1000) - 600;
+  for (let i = 0; i < MAX_SUBAGENTS + 5; i++) writeChild(parent, { id: `c${String(i).padStart(2, "0")}`, mtime: base + i });
+  const subs = listSubagents(parent).subagents;
+  assert.equal(subs.length, MAX_SUBAGENTS);
+  assert.equal(subs[0]!.id, `c${String(MAX_SUBAGENTS + 4).padStart(2, "0")}`); // le plus récent d'abord
 });
 
 // ---------- Route GET /api/conversations/:id/subagents ----------
@@ -113,22 +146,12 @@ class FakeClient {
 let db: Database.Database;
 let server: ReturnType<typeof createApp>;
 let base: string;
-const calls: string[][] = [];
-const SNAPSHOT = {
-  panes: [
-    pane({ pane_id: "w1:p1", label: "explore", agent_session: { source: SESSION_A, agent: "explore", kind: "path", value: "/x/child-a.json" } }),
-    pane({ pane_id: "w1:p2", agent_session: { source: SESSION_B, agent: "general", kind: "path", value: "/x/child-b.json" } }),
-  ],
-};
 
 before(async () => {
   const opened = openDb(join(home, "cogitator.db"));
   db = opened.db;
   const pool = new PiPool({ factory: (o) => new FakeClient(o) });
-  server = createApp({
-    db, dbPath: join(home, "cogitator.db"), dbVersion: opened.version, paths: getPaths(), pool,
-    subagentRunner: (cmd, args) => { calls.push([cmd, ...args]); return Promise.resolve(JSON.stringify(SNAPSHOT)); },
-  });
+  server = createApp({ db, dbPath: join(home, "cogitator.db"), dbVersion: opened.version, paths: getPaths(), pool });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -141,7 +164,7 @@ after(async () => {
 
 const getSubagents = async (id: string) => {
   const res = await fetch(`${base}/api/conversations/${id}/subagents`);
-  return { status: res.status, body: await res.json() as { live: boolean; subagents: Array<{ pane_id: string }> } };
+  return { status: res.status, body: await res.json() as { live: boolean; subagents: Array<{ id: string }> } };
 };
 
 test("route : 404 conversation inconnue", async () => {
@@ -149,27 +172,26 @@ test("route : 404 conversation inconnue", async () => {
   assert.equal(res.status, 404);
 });
 
-test("route : ne expose que les subagents liés à la session de cette conversation", async () => {
+test("route : chaque conversation ne voit que ses propres sous-agents", async () => {
   const a = createConversation(db, { spawn: { provider: "openai", model: "gpt-5.4" } });
   setConversationSession(db, a.id, SESSION_A);
   const b = createConversation(db, { spawn: { provider: "openai", model: "gpt-5.4" } });
   setConversationSession(db, b.id, SESSION_B);
+  writeChild(SESSION_B, { id: "child-b", label: "travail de B" });
 
   const ra = await getSubagents(a.id);
   assert.equal(ra.status, 200);
   assert.equal(ra.body.live, true);
-  assert.deepEqual(ra.body.subagents.map((s) => s.pane_id), ["w1:p1"]); // pas w1:p2 (session B)
+  assert.ok(!ra.body.subagents.some((s) => s.id === "child-b")); // pas de fuite inter-conversations
 
   const rb = await getSubagents(b.id);
-  assert.deepEqual(rb.body.subagents.map((s) => s.pane_id), ["w1:p2"]);
-
-  assert.deepEqual(calls[0], ["herdr", "api", "snapshot"]); // contrat shell-out figé
+  assert.deepEqual(rb.body.subagents.map((s) => s.id), ["child-b"]);
 });
 
-test("route : conversation sans session_file → live selon herdr, liste vide", async () => {
+test("route : conversation sans session pi → live:false, liste vide", async () => {
   const c = createConversation(db, { spawn: { provider: "openai", model: "gpt-5.4" } });
   const res = await getSubagents(c.id);
   assert.equal(res.status, 200);
-  assert.equal(res.body.live, true);
+  assert.equal(res.body.live, false);
   assert.deepEqual(res.body.subagents, []);
 });

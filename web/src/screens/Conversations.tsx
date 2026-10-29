@@ -25,9 +25,7 @@ export function bumpChatItemKey(): number {
 }
 
 const SUBAGENT_STATUS_KEYS: Record<SubagentView["status"], TranslationKey> = {
-  idle: "chat.subagentIdle",
   working: "chat.subagentWorking",
-  blocked: "chat.subagentBlocked",
   done: "chat.subagentDone",
   unknown: "chat.subagentUnknown",
 };
@@ -744,8 +742,8 @@ export function ChatView(props: {
           {subsLive && subs.length > 0 ? (
             <ul className="chat-side-list">
               {subs.map((s) => (
-                <li key={s.pane_id} className="subagent-row">
-                  <span className="subagent-name">{s.label ?? s.agent ?? s.pane_id}</span>
+                <li key={s.id} className="subagent-row">
+                  <span className="subagent-name">{s.label ?? s.id}</span>
                   <span className={`chat-state is-${s.status}`} role="status">{t(SUBAGENT_STATUS_KEYS[s.status])}</span>
                 </li>
               ))}

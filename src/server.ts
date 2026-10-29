@@ -70,7 +70,7 @@ import {
   type WorkspaceRow,
 } from "./workspaces.js";
 import { cloneRepo, isInsideDir, localDirFor } from "./git-import.js";
-import { listSubagents, type SubagentRunner } from "./subagents.js";
+import { listSubagents } from "./subagents.js";
 
 // ---------- Statique ----------
 
@@ -276,7 +276,6 @@ interface Deps {
   compose: (conv: ConversationRow) => ConversationRuntime;
   durable: DurableRuntimeManager;
   /** Runner herdr injectable (ADR-012) ; défaut : shell-out réel `herdr api snapshot`. */
-  subagentRunner?: SubagentRunner;
   /** Création de workspace injectée (tests : forcer l'exception post-clone et prouver le
    *  nettoyage, M3) ; défaut : createWorkspace réel. */
   createWorkspaceImpl?: typeof createWorkspace;
@@ -927,7 +926,7 @@ function conversationRoutes(deps: Deps): Route[] {
     ["GET", "/api/conversations/:id/subagents", async (ctx) => {
       const conv = requireConversation(deps, ctx);
       if (!conv) return;
-      sendJson(ctx.res, 200, await listSubagents(conv.session_file, deps.subagentRunner));
+      sendJson(ctx.res, 200, listSubagents(conv.session_file));
     }],
     ["GET", "/api/conversations/:id/file", (ctx) => {
       const conv = requireConversation(deps, ctx);
@@ -1387,7 +1386,6 @@ export interface AppOptions {
   /** Gestionnaire durable injecté (tests : modèle faux) ; défaut : production. */
   durable?: DurableRuntimeManager;
   /** Runner herdr injecté (ADR-012) ; défaut : shell-out réel. */
-  subagentRunner?: SubagentRunner;
   /** Création de workspace injectée (tests : forcer l'exception post-clone, M3) ; défaut : réel. */
   createWorkspaceImpl?: typeof createWorkspace;
 }
@@ -1467,7 +1465,6 @@ export function createApp(opts: AppOptions): Server {
     spawner,
     compose,
     durable,
-    subagentRunner: opts.subagentRunner,
     createWorkspaceImpl: opts.createWorkspaceImpl,
     team,
   };

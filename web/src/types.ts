@@ -219,13 +219,13 @@ export interface FileChange {
   lastConversationId?: string;
 }
 
-/** Subagent herdr live rattaché à une conversation (ADR-012, lecture seule). */
+/** Sous-agent pi vivant rattaché à une conversation (ADR-013, lecture seule). */
 export interface SubagentView {
-  pane_id: string;
+  id: string;
   label: string | null;
-  agent: string | null;
-  status: "idle" | "working" | "blocked" | "done" | "unknown";
-  session: string | null;
+  model: string | null;
+  status: "working" | "done" | "unknown";
+  started_at: string | null;
 }
 
 export interface FileEvent {

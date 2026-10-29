@@ -1,6 +1,7 @@
 # ADR-012 — Live subagent visibility: read the herdr socket, render a read-only side panel
 
-- Status: accepted
+- Status: **superseded by ADR-013** (herdr is an optional runtime; the real subagent path is
+  pi's own extension, whose child session journals are read instead)
 - Date: 2026-10-19
 - Related: ADR-005 (subagent setups → herdr definitions), ADR-001 (pi RPC processes), plan 0006
 

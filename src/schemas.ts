@@ -231,3 +231,16 @@ export const skillImportSchema = z.object({
   overwrite: z.boolean().optional(),
 });
 export type SkillImport = z.infer<typeof skillImportSchema>;
+
+/** Relais d'un agent vers une conversation (file durable lot 2). */
+export const teamSendSchema = z.object({
+  conversation_id: z.string().min(1),
+  body: z.string().min(1),
+  from_conversation_id: z.string().min(1).optional(),
+  from_agent_id: z.string().min(1).optional(),
+  chain_id: z.string().min(1).optional(),
+  hop: z.number().int().nonnegative().optional(),
+  idempotency_key: z.string().min(1).optional(),
+});
+/** hop/chain_id restent acceptés en HTTP pour prouver qu'ils ne baissent pas le hop serveur ; l'identité vient de from_conversation_id (COGITATOR_CONVERSATION_ID), jamais de from_agent_id. */
+export type TeamSendInput = z.infer<typeof teamSendSchema>;

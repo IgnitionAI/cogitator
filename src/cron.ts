@@ -7,6 +7,13 @@ import type { PiPool } from "./pool.js";
 import type { ScheduleCreate, ScheduleUpdate } from "./schemas.js";
 import { spawnConfigFromPreset } from "./spawn.js";
 import type { Spawner } from "./spawner.js";
+import {
+  enqueue,
+  originHop,
+  type LaneDispatcher,
+  type QueueItemRow,
+  type QueueStatus,
+} from "./team-queue.js";
 
 export interface CronTaskRow {
   id: string;
@@ -36,7 +43,6 @@ export interface CronRunRow {
 export type CronNotify = (event: Record<string, unknown>) => void;
 
 /** Bornes du service (surchargeables par les options pour les tests). */
-const DEFAULT_RUN_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_TICK_MS = 30_000;
 /** busy_policy=queue : on attend la fin du run actif, avec garde-fou. */
 const QUEUE_POLL_MS = 2_000;
@@ -47,8 +53,72 @@ export interface CronServiceOptions {
   pool: PiPool;
   spawner: Spawner;
   notify?: CronNotify;
-  /** Timeout d'un run en ms (défaut 15 min) */
+  /** File durable partagée avec les messages UI (injectée par createApp). */
+  team?: LaneDispatcher;
+  /** Conservé pour compat ; le stall sans progrès est celui du LaneDispatcher (PR #35). */
   runTimeoutMs?: number;
+}
+
+const QUEUE_ITEM_POLL_MS = 20;
+const TERMINAL_QUEUE: ReadonlySet<QueueStatus> = new Set(["done", "failed", "interrupted", "cancelled"]);
+
+export function waitForQueueItem(db: Db, itemId: string, pollMs = QUEUE_ITEM_POLL_MS): Promise<QueueItemRow> {
+  return new Promise((resolve, reject) => {
+    const tick = (): void => {
+      const row = db.prepare("SELECT * FROM queue_item WHERE id = ?").get(itemId) as QueueItemRow | undefined;
+      if (!row) {
+        reject(new Error("queue_item disparu"));
+        return;
+      }
+      if (TERMINAL_QUEUE.has(row.status)) {
+        resolve(row);
+        return;
+      }
+      setTimeout(tick, pollMs);
+    };
+    tick();
+  });
+}
+
+/** Met le prompt cron en file sur la lane de la conversation cible, puis attend le statut de l'item. */
+export function queueCronRun(
+  db: Db,
+  team: LaneDispatcher,
+  input: { conversationId: string; prompt: string; fromAgentId?: string | null; idempotencyKey?: string | null },
+): Promise<QueueItemRow> {
+  const inherited = originHop(db, input.conversationId);
+  const { id, laneId } = enqueue(db, {
+    conversationId: input.conversationId,
+    body: input.prompt,
+    fromAgentId: input.fromAgentId ?? null,
+    hop: inherited.hop,
+    chainId: inherited.chainId,
+    idempotencyKey: input.idempotencyKey,
+  });
+  void team.kick(laneId).catch(() => undefined);
+  return waitForQueueItem(db, id);
+}
+
+function cronStatusFromItem(item: QueueItemRow): { status: string; error?: string } {
+  switch (item.status) {
+    case "done":
+      return { status: "ok" };
+    case "failed": {
+      const error = item.error ?? "livraison échouée";
+      return { status: /timeout|stall|sans progrès|progress/i.test(error) ? "timeout" : "error", error };
+    }
+    case "interrupted":
+      return { status: "error", error: item.error ?? "interrupted" };
+    case "cancelled":
+      return { status: "error", error: "cancelled" };
+    case "queued":
+    case "delivering":
+      return { status: "error", error: `item encore ${item.status}` };
+    default: {
+      const _never: never = item.status;
+      return _never;
+    }
+  }
 }
 
 // ---------- DB ops ----------
@@ -189,8 +259,21 @@ function lastSessionFile(db: Db, taskId: string): string | null {
 export class CronService {
   private timer: ReturnType<typeof setInterval> | null = null;
   private firing = new Set<string>(); // garde anti-recouvrement dans un tick
+  private team: LaneDispatcher | undefined;
 
-  constructor(private opts: CronServiceOptions) {}
+  constructor(private opts: CronServiceOptions) {
+    this.team = opts.team;
+  }
+
+  /** Branche le dispatcher créé par createApp (même instance que les messages UI). */
+  attachTeam(team: LaneDispatcher): void {
+    this.team = team;
+  }
+
+  private requireTeam(): LaneDispatcher {
+    if (!this.team) throw new Error("file durable absente (LaneDispatcher)");
+    return this.team;
+  }
 
   /** Boucle de tick ; appelée par le timer et testable directement. */
   async tick(now = new Date()): Promise<void> {
@@ -221,7 +304,7 @@ export class CronService {
 
   /** Tire une exécution (manuelle ou planifiée). Crée toujours un CronRun (O3). */
   async fireNow(taskId: string): Promise<CronRunRow | null> {
-    const { db, spawner, pool } = this.opts;
+    const { db, pool } = this.opts;
     const task = getTask(db, taskId);
     if (!task) return null;
     if (this.firing.has(taskId)) {
@@ -247,15 +330,16 @@ export class CronService {
 
       const conv = this.createRunConversation(task, preset);
       convId = conv.id;
-      await spawner.ensure(conv);
-      // s'abonner AVANT de prompt : un LLM rapide peut settled avant l'abonnement sinon
-      const settled = pool.waitForSettled(conv.id, this.opts.runTimeoutMs ?? DEFAULT_RUN_TIMEOUT_MS);
-      await pool.prompt(conv.id, task.prompt);
-      await settled;
-
+      const item = await queueCronRun(db, this.requireTeam(), {
+        conversationId: conv.id,
+        prompt: task.prompt,
+        fromAgentId: preset.id,
+        idempotencyKey: `cron:${runId}`,
+      });
+      const mapped = cronStatusFromItem(item);
       const finalConv = db.prepare("SELECT session_file FROM conversation WHERE id = ?").get(conv.id) as { session_file: string | null };
-      finishRun(db, runId, "ok", finalConv.session_file);
-      this.opts.notify?.({ type: "cron_run_finished", taskId, runId, name: task.name, status: "ok", sessionFile: finalConv.session_file });
+      finishRun(db, runId, mapped.status, finalConv.session_file, mapped.error);
+      this.opts.notify?.({ type: "cron_run_finished", taskId, runId, name: task.name, status: mapped.status, sessionFile: finalConv.session_file, error: mapped.error });
       return this.getRun(runId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

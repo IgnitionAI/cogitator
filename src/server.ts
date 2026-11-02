@@ -1316,6 +1316,7 @@ export function createApp(opts: AppOptions): Server {
       return spawner.ensure(conv);
     },
   });
+  cron?.attachTeam(team);
   kickQueuedLanes(db, team);
   // Runtime Durable : un seul gestionnaire dans le processus contrôleur (bail OS
   // par conversation). Les tests injectent un modèle contrôlé via opts.durable.

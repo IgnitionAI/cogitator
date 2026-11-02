@@ -264,6 +264,94 @@ test("idempotence inchangée avec un hop hérité", () => {
   db.close(); rmSync(dir, { recursive: true, force: true });
 });
 
+/** Agent contrôlé : prompt démarre, les événements partent à la demande (horloge simulée). */
+function hangingPool() {
+  type Client = {
+    streaming: boolean;
+    emit: (event: unknown) => void;
+    prompt: (text: string) => Promise<{ disposition: string }>;
+  };
+  const clients = new Map<string, Client>();
+  const prompts: Array<[string, string]> = [];
+  const pool = new PiPool({
+    factory: ({ args }) => {
+      const convId = args[0]!;
+      const listeners = new Set<(e: unknown) => void>();
+      const client: Client & Record<string, unknown> = {
+        streaming: false,
+        async start() {}, async stop() {}, async abort() {},
+        onEvent(l: (e: unknown) => void) { listeners.add(l); return () => listeners.delete(l); },
+        async getState() { return { isStreaming: client.streaming }; },
+        async getAvailableModels() { return []; }, async getAvailableThinkingLevels() { return []; },
+        async setThinkingLevel() {}, async setModel() { return {}; },
+        emit(event: unknown) { for (const l of listeners) l(event); },
+        async prompt(text: string) {
+          prompts.push([convId, text]);
+          return { disposition: "started" };
+        },
+      };
+      clients.set(convId, client);
+      return client as never;
+    },
+  });
+  return { pool, clients, prompts };
+}
+
+const MIN = 60_000;
+
+async function flush(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+test("un tour de 20 min livré est marqué done (delivered), pas failed", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { db, dir } = freshDb();
+  const { pool, clients } = hangingPool();
+  const d = new LaneDispatcher({ db, pool, ensure: (id) => pool.ensure(id, { cwd: dir, args: [id] }) });
+  const { id, laneId } = enqueue(db, { conversationId: "a", body: "long" });
+  const kicked = d.kick(laneId);
+  await d.waitUntilPrompted(id);
+  const client = clients.get("a")!;
+  client.streaming = true;
+  for (let i = 0; i < 4; i++) {
+    client.emit({ type: "message_update" });
+    t.mock.timers.tick(5 * MIN);
+    await flush();
+  }
+  assert.equal(listItems(db, laneId)[0]!.status, "delivering", "toujours en livraison après 20 min de progrès");
+  client.streaming = false;
+  client.emit({ type: "agent_settled" });
+  await kicked;
+  assert.equal(listItems(db, laneId)[0]!.status, "done");
+  assert.equal(listItems(db, laneId)[0]!.error, null);
+  await pool.dispose(); db.close(); rmSync(dir, { recursive: true, force: true });
+});
+
+test("un tour bloqué sans progrès est marqué failed (stall, pas la durée totale)", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { db, dir } = freshDb();
+  const { pool, clients } = hangingPool();
+  const d = new LaneDispatcher({ db, pool, ensure: (id) => pool.ensure(id, { cwd: dir, args: [id] }) });
+  const { id, laneId } = enqueue(db, { conversationId: "a", body: "stuck" });
+  const kicked = d.kick(laneId);
+  await d.waitUntilPrompted(id);
+  const client = clients.get("a")!;
+  for (let i = 0; i < 4; i++) {
+    client.emit({ type: "message_update" });
+    t.mock.timers.tick(4 * MIN);
+    await flush();
+  }
+  assert.equal(listItems(db, laneId)[0]!.status, "delivering", "le progrès passé 15 min ne doit pas échouer le tour");
+  t.mock.timers.tick(15 * MIN);
+  await flush();
+  await kicked;
+  const item = listItems(db, laneId)[0]!;
+  assert.equal(item.status, "failed");
+  assert.match(item.error ?? "", /stall|sans progrès|progress/i);
+  await pool.dispose(); db.close(); rmSync(dir, { recursive: true, force: true });
+});
+
 test("ensure/spawn en erreur propage et marque failed (pas un succès silencieux)", async () => {
   const { db, dir } = freshDb();
   const { pool } = fakePool();

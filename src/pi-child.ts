@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPaths } from "./paths.js";
@@ -12,6 +12,7 @@ import { getPaths } from "./paths.js";
 
 const WRAP_JS = fileURLToPath(new URL("./pi-rpc-wrap.js", import.meta.url));
 const NO_SETPRIV = "COGITATOR_PI_NO_SETPRIV";
+const SHIM_PREFIX = "pdeathsig-";
 
 let cachedSetpriv: string | null | undefined;
 const shimDirs = new Map<string, string>();
@@ -51,21 +52,96 @@ function setprivAllowed(): boolean {
  * exécute un shim. Le shim restaure PATH avant exec setpriv, pour que les
  * outils de pi (bash / nohup node) n'héritent pas du pdeathsig.
  */
-function setprivShimDir(home: string, origPath: string): string | undefined {
+function setprivShimDir(home: string): string | undefined {
   if (!setprivAllowed()) return undefined;
   const setpriv = linuxSetprivPath();
   if (!setpriv) return undefined;
   const existing = shimDirs.get(home);
   if (existing) return existing;
   mkdirSync(home, { recursive: true });
-  const dir = mkdtempSync(join(home, "pdeathsig-"));
+  const dir = mkdtempSync(join(home, SHIM_PREFIX));
   chmodSync(dir, 0o700);
-  const script = `#!/bin/sh\nPATH=${shQuote(origPath)} exec ${shQuote(setpriv)} --pdeathsig KILL ${shQuote(process.execPath)} "$@"\n`;
+  // PATH recalculé à chaque exécution du shim (pas figé au premier spawn) : on retire
+  // le dossier de shim du PATH de l'appelant, puis on exec setpriv. Les outils de pi
+  // (bash, nohup node) héritent donc du PATH de l'appelant, sans le pdeathsig.
+  const script = [
+    "#!/bin/sh",
+    `shim=${shQuote(dir)}`,
+    'case $PATH in',
+    '  "$shim:"*) caller_path=${PATH#"$shim:"} ;;',
+    '  "$shim") caller_path= ;;',
+    '  *) caller_path=$PATH ;;',
+    'esac',
+    `PATH=$caller_path exec ${shQuote(setpriv)} --pdeathsig KILL ${shQuote(process.execPath)} "$@"`,
+    "",
+  ].join("\n");
   const dest = join(dir, "node");
   writeFileSync(dest, script, { encoding: "utf8" });
   chmodSync(dest, 0o755);
   shimDirs.set(home, dir);
   return dir;
+}
+
+/**
+ * Dossiers de shim encore référencés par un process vivant (PATH d'un `/proc/<pid>/environ`)
+ * plus ceux créés par ce process. Limite : hors Linux (`/proc` absent) ou pour un process
+ * d'un autre utilisateur (environ illisible), on ne peut pas savoir → on ne supprime rien.
+ */
+function pdeathsigDirsInUse(): Set<string> {
+  const used = new Set<string>(shimDirs.values());
+  if (process.platform !== "linux") return used;
+  let pids: string[];
+  try {
+    pids = readdirSync("/proc");
+  } catch {
+    return used;
+  }
+  for (const name of pids) {
+    if (!/^\d+$/.test(name)) continue;
+    let environ: string;
+    try {
+      environ = readFileSync(join("/proc", name, "environ"), "utf8");
+    } catch {
+      continue;
+    }
+    for (const entry of environ.split("\0")) {
+      if (!entry.startsWith("PATH=")) continue;
+      for (const part of entry.slice("PATH=".length).split(":")) {
+        if (part.includes(`/${SHIM_PREFIX}`)) used.add(part);
+      }
+    }
+  }
+  return used;
+}
+
+/**
+ * Ramasse les shims `pdeathsig-*` orphelins d'un hôte tué sans arrêt propre (`kill -9`,
+ * crash), à appeler au démarrage une fois le home verrouillé. Un dossier référencé par
+ * le PATH d'un process vivant est conservé. Renvoie les dossiers supprimés.
+ */
+export function reapStaleSetprivShims(home: string): string[] {
+  // Sans `/proc` on ne sait pas distinguer un shim vivant d'un orphelin : on ne touche à rien.
+  if (process.platform !== "linux") return [];
+  let names: string[];
+  try {
+    names = readdirSync(home);
+  } catch {
+    return [];
+  }
+  const candidates = names.filter((name) => name.startsWith(SHIM_PREFIX)).map((name) => join(home, name));
+  if (!candidates.length) return [];
+  const inUse = pdeathsigDirsInUse();
+  const removed: string[] = [];
+  for (const dir of candidates) {
+    if (inUse.has(dir)) continue;
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      removed.push(dir);
+    } catch {
+      /* déjà parti ou protégé */
+    }
+  }
+  return removed;
 }
 
 export function piRpcWrapPath(): string {
@@ -97,7 +173,7 @@ export function guardedRpcSpawn(
   const env: Record<string, string> = { ...opts.env };
   const home = env.COGITATOR_HOME ?? getPaths().home;
   const origPath = env.PATH ?? process.env.PATH ?? "";
-  const shim = setprivShimDir(home, origPath);
+  const shim = setprivShimDir(home);
   if (shim) {
     env.PATH = origPath ? `${shim}:${origPath}` : shim;
     return { cliPath: piCliPath, cwd: opts.cwd, args: opts.args, env, shimDir: shim };

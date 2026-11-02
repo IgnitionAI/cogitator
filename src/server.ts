@@ -41,7 +41,7 @@ import {
 import { PiPool } from "./pool.js";
 import { makeSpawner, type Spawner } from "./spawner.js";
 import {
-  hopContext, kickQueuedLanes, LaneDispatcher, QueueError, recoverInterrupted, submitToLane,
+  hopContext, kickQueuedLanes, LaneDispatcher, originHop, QueueError, recoverInterrupted, submitToLane,
   type QueueErrorCode,
 } from "./team-queue.js";
 import { reapOrphanOwnedPi, startPeriodicReap } from "./reap-orphans.js";
@@ -1321,12 +1321,9 @@ export function createApp(opts: AppOptions): Server {
   // par conversation). Les tests injectent un modèle contrôlé via opts.durable.
   const durable = opts.durable ?? new DurableRuntimeManager({ paths, toolchain: durableToolchainRegistry() });
   const compose = composeRuntime({ pool, spawner, durable });
-  // Tours déclenchés par un handoff : leur réponse ne re-handoffe pas (garde anti-boucle A↔B, #12)
-  const handoffTargets = new Set<string>();
-
-  // Handoff ADR-011 (#12) : une réponse de membre qui @ un autre membre est injectée dans sa session.
+  // Handoff ADR-011 (#12) : une réponse qui @ un autre membre est injectée dans sa session.
+  // Le hop du message d'origine est hérité (#30) : la limite de sauts coupe A↔B, plus de garde one-shot.
   async function handleHandoff(sourceConvId: string, groupId: string, text: string): Promise<void> {
-    if (handoffTargets.delete(sourceConvId)) return; // réponse d'un tour déclenché par handoff : pas de cascade
     const group = getGroupWithMembers(db, groupId);
     if (!group) return;
     const target = matchGroupMention(group, text);
@@ -1336,11 +1333,17 @@ export function createApp(opts: AppOptions): Server {
       .get(target.conversation_id) as ConversationRow | undefined;
     if (!conv) return;
     const source = getConversation(db, sourceConvId);
-    handoffTargets.add(target.conversation_id);
+    const inherited = originHop(db, sourceConvId);
     try {
-      await submitToLane(db, team, { conversationId: conv.id, body: text, fromAgentId: source?.agent_id ?? null });
-    } catch {
-      handoffTargets.delete(target.conversation_id);
+      await submitToLane(db, team, {
+        conversationId: conv.id,
+        body: text,
+        fromAgentId: source?.agent_id ?? null,
+        chainId: inherited.chainId,
+        hop: inherited.hop,
+      });
+    } catch (err) {
+      if (err instanceof QueueError && err.code === "hop_limit") return;
     }
   }
 

@@ -8,7 +8,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { openDb } from "../src/db.js";
 import { PiPool } from "../src/pool.js";
-import { enqueue, LaneDispatcher, listItems, QueueError, setLanePaused, cancelItem, DEFAULT_HOP_LIMIT, submitToLane } from "../src/team-queue.js";
+import { enqueue, LaneDispatcher, listItems, originHop, QueueError, setLanePaused, cancelItem, DEFAULT_HOP_LIMIT, submitToLane } from "../src/team-queue.js";
 
 const DRIVER = join(import.meta.dirname, "fixtures", "team-queue-driver.ts");
 
@@ -193,6 +193,74 @@ test("(d) même idempotency_key envoyée deux fois → un seul élément", () =>
   const other = enqueue(db, { conversationId: "b", body: "y", idempotencyKey: "k1" });
   assert.equal(other.created, true, "la clé est unique par lane, pas globale");
   assert.notEqual(other.id, one.id);
+  db.close(); rmSync(dir, { recursive: true, force: true });
+});
+
+test("message direct (sans hop) démarre à 0 ; originHop hors file est 0", () => {
+  const { db, dir } = freshDb();
+  assert.deepEqual(originHop(db, "a"), { hop: 0, chainId: null });
+  const queued = enqueue(db, { conversationId: "a", body: "depuis l'UI" });
+  assert.equal(queued.created, true);
+  const [item] = listItems(db, queued.laneId);
+  assert.equal(item!.hop, 0);
+  assert.deepEqual(originHop(db, "a"), { hop: 0, chainId: null }, "queued seulement : pas encore d'origine livrée");
+  db.prepare("UPDATE queue_item SET status = 'done' WHERE id = ?").run(item!.id);
+  const inherited = originHop(db, "a");
+  assert.equal(inherited.hop, 1, "relais = hop d'origine + 1");
+  assert.equal(inherited.chainId, item!.id);
+  db.close(); rmSync(dir, { recursive: true, force: true });
+});
+
+test("originHop hérite la valeur exacte du hop et de la chaîne", () => {
+  const { db, dir } = freshDb();
+  const first = enqueue(db, { conversationId: "a", body: "n2", hop: 2, chainId: "chaine-z" });
+  db.prepare("UPDATE queue_item SET status = 'delivering' WHERE id = ?").run(first.id);
+  assert.deepEqual(originHop(db, "a"), { hop: 3, chainId: "chaine-z" });
+  db.close(); rmSync(dir, { recursive: true, force: true });
+});
+
+test("chaîne A→B→A par handoff (originHop) s'arrête à la limite", async () => {
+  const { db, dir } = freshDb();
+  let refused = 0;
+  let d!: LaneDispatcher;
+  const { pool, prompts } = fakePool((convId) => {
+    const inherited = originHop(db, convId);
+    const to = convId === "a" ? "b" : "a";
+    try {
+      const { laneId } = enqueue(db, {
+        conversationId: to,
+        body: `handoff hop ${inherited.hop}`,
+        chainId: inherited.chainId,
+        hop: inherited.hop,
+      });
+      setImmediate(() => void d.kick(laneId));
+    } catch (e) { if (e instanceof QueueError && e.code === "hop_limit") refused++; else throw e; }
+  });
+  d = new LaneDispatcher({ db, pool, ensure: (id) => pool.ensure(id, { cwd: dir, args: [id] }) });
+  const start = enqueue(db, { conversationId: "a", body: "start", chainId: "chain-handoff", hop: 0 });
+  await d.kick(start.laneId);
+  const deadline = Date.now() + 5_000;
+  while (refused === 0 && Date.now() < deadline) await new Promise(r => setTimeout(r, 20));
+  await new Promise(r => setTimeout(r, 100));
+  assert.equal(refused, 1);
+  assert.equal(prompts.length, DEFAULT_HOP_LIMIT + 1, "hop 0..limite livrés, puis refus");
+  const hops = (db.prepare("SELECT hop FROM queue_item ORDER BY hop").all() as Array<{ hop: number }>).map((r) => r.hop);
+  assert.deepEqual(hops, [...Array(DEFAULT_HOP_LIMIT + 1).keys()], "chaque relais reprend hop+1 exact");
+  await pool.dispose(); db.close(); rmSync(dir, { recursive: true, force: true });
+});
+
+test("idempotence inchangée avec un hop hérité", () => {
+  const { db, dir } = freshDb();
+  const origin = enqueue(db, { conversationId: "a", body: "src", hop: 1 });
+  db.prepare("UPDATE queue_item SET status = 'done' WHERE id = ?").run(origin.id);
+  const inherited = originHop(db, "a");
+  const one = enqueue(db, { conversationId: "b", body: "x", hop: inherited.hop, chainId: inherited.chainId, idempotencyKey: "k-hop" });
+  const two = enqueue(db, { conversationId: "b", body: "x", hop: inherited.hop, chainId: inherited.chainId, idempotencyKey: "k-hop" });
+  assert.equal(one.created, true);
+  assert.equal(two.created, false);
+  assert.equal(two.id, one.id);
+  assert.equal(listItems(db, one.laneId).length, 1);
+  assert.equal(listItems(db, one.laneId)[0]!.hop, 2);
   db.close(); rmSync(dir, { recursive: true, force: true });
 });
 

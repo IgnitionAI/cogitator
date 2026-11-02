@@ -45,7 +45,7 @@ function freshDb() {
 
 test("v9 : base neuve et migration depuis un vrai schéma v8 (sans DROP v9)", () => {
   const { db, version, dir } = freshDb();
-  assert.equal(version, 9);
+  assert.equal(version, 10);
   db.close();
   const v8path = join(dir, "v8.db");
   const raw = new Database(v8path);
@@ -102,12 +102,15 @@ INSERT INTO conversation (id, provider, model) VALUES ('kept-a', 'fake', 'fake')
   raw.pragma("user_version = 8");
   raw.close();
   const again = openDb(v8path);
-  assert.equal(again.version, 9);
+  assert.equal(again.version, 10);
   assert.equal((again.db.prepare("SELECT COUNT(*) n FROM conversation").get() as { n: number }).n, 2);
   assert.ok(again.db.prepare("SELECT name FROM sqlite_master WHERE name='queue_item'").get());
   assert.ok(again.db.prepare("SELECT name FROM sqlite_master WHERE name='lane'").get());
   const idx = again.db.prepare("SELECT sql FROM sqlite_master WHERE name='queue_item'").get() as { sql: string };
   assert.match(idx.sql, /UNIQUE \(lane_id, idempotency_key\)/);
+  // v10 (#31) : images du message persistées avec l'item.
+  const cols = (again.db.prepare("PRAGMA table_info(queue_item)").all() as Array<{ name: string }>).map((c) => c.name);
+  assert.ok(cols.includes("images"), "queue_item.images ajoutée sans rebuild");
   again.db.close();
   rmSync(dir, { recursive: true, force: true });
 });

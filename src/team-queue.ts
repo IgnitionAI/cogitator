@@ -24,6 +24,8 @@ export interface QueueItemRow {
   lane_id: string;
   seq: number;
   body: string;
+  /** JSON des images du message (#31), `null` quand il n'y en a pas ou que l'item est terminé. */
+  images: string | null;
   from_agent_id: string | null;
   chain_id: string | null;
   hop: number;
@@ -48,11 +50,28 @@ export interface EnqueueInput {
   conversationId: string;
   kind?: string;
   body: string;
+  /** Images du message : sérialisées avec l'item pour survivre à un redémarrage. */
+  images?: unknown[];
   fromAgentId?: string | null;
   chainId?: string | null;
   hop?: number;
   idempotencyKey?: string | null;
   hopLimit?: number;
+}
+
+/** Images d'un item de file : JSON en base, `null` quand il n'y en a pas. */
+function serializeImages(images: unknown[] | undefined): string | null {
+  return images?.length ? JSON.stringify(images) : null;
+}
+
+function parseImages(raw: string | null | undefined): unknown[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Ajoute un élément en file. Même idempotency_key → même élément, aucun doublon. */
@@ -67,16 +86,17 @@ export function enqueue(db: Db, input: EnqueueInput): { id: string; laneId: stri
     }
     const { next } = db.prepare("SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM queue_item WHERE lane_id = ?").get(laneId) as { next: number };
     const id = randomUUID();
-    db.prepare(`INSERT INTO queue_item (id, lane_id, seq, body, from_agent_id, chain_id, hop, idempotency_key)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(id, laneId, next, input.body, input.fromAgentId ?? null, input.chainId ?? null, hop, input.idempotencyKey ?? null);
+    db.prepare(`INSERT INTO queue_item (id, lane_id, seq, body, images, from_agent_id, chain_id, hop, idempotency_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, laneId, next, input.body, serializeImages(input.images), input.fromAgentId ?? null, input.chainId ?? null, hop, input.idempotencyKey ?? null);
     return { id, laneId, created: true };
   })();
 }
 
 /** À appeler une fois au démarrage de l'hôte, avant tout dispatch (comme recoverConfigurations). */
 export function recoverInterrupted(db: Db): number {
+  // Un item `delivering` n'est jamais rejoué (invariant 2) : ses images ne resserviront pas, on les libère.
   return db.prepare(`UPDATE queue_item SET status = 'interrupted', finished_at = datetime('now'),
-    error = 'host restarted during delivery' WHERE status = 'delivering'`).run().changes;
+    error = 'host restarted during delivery', images = NULL WHERE status = 'delivering'`).run().changes;
 }
 
 export function setLanePaused(db: Db, laneId: string, paused: boolean): void {
@@ -84,7 +104,7 @@ export function setLanePaused(db: Db, laneId: string, paused: boolean): void {
 }
 
 export function cancelItem(db: Db, itemId: string): void {
-  if (!db.prepare("UPDATE queue_item SET status = 'cancelled', finished_at = datetime('now') WHERE id = ? AND status = 'queued'").run(itemId).changes)
+  if (!db.prepare("UPDATE queue_item SET status = 'cancelled', finished_at = datetime('now'), images = NULL WHERE id = ? AND status = 'queued'").run(itemId).changes)
     throw new QueueError("élément absent ou plus en file", "conflict");
 }
 
@@ -122,7 +142,6 @@ export interface DispatcherOptions {
 export class LaneDispatcher {
   private running = new Map<string, Promise<void>>();
   private current = new Map<string, QueueItemRow>();
-  private images = new Map<string, unknown[]>();
   private prompted = new Set<string>();
   private promptWaiters = new Map<string, Array<() => void>>();
 
@@ -131,8 +150,12 @@ export class LaneDispatcher {
   /** Élément en cours de livraison pour une conversation (contexte hop/chain des outils team_*). */
   currentItem(conversationId: string): QueueItemRow | undefined { return this.current.get(conversationId); }
 
+  /** Persiste les images sur l'item de file : la base est la seule source de vérité (survit au restart). */
   attachImages(itemId: string, images: unknown[]): void {
-    this.images.set(itemId, images);
+    const payload = serializeImages(images);
+    if (!payload) return;
+    // Un item déjà terminal ne sera plus livré : ne pas y laisser un JSON d'images qui ne serait jamais lu.
+    this.opts.db.prepare("UPDATE queue_item SET images = ? WHERE id = ? AND status IN ('queued','delivering')").run(payload, itemId);
   }
 
   waitUntilPrompted(itemId: string): Promise<void> {
@@ -188,7 +211,6 @@ export class LaneDispatcher {
 
   private markPrompted(itemId: string): void {
     this.prompted.add(itemId);
-    this.images.delete(itemId);
     const waiters = this.promptWaiters.get(itemId);
     if (!waiters) return;
     this.promptWaiters.delete(itemId);
@@ -210,14 +232,15 @@ export class LaneDispatcher {
         await this.opts.ensure(convId);
         const settled = this.waitUntilSettled(convId);
         settled.catch(() => undefined);
-        const result = await pool.prompt(convId, item.body, this.images.get(item.id));
+        const result = await pool.prompt(convId, item.body, parseImages(item.images));
         this.markPrompted(item.id);
         await settled;
         // Le pool a mis le message dans sa file mémoire (tour UI en cours) : attendre le tour suivant.
         if ((result as { disposition?: string } | null)?.disposition === "queued") await this.waitUntilSettled(convId);
-        db.prepare("UPDATE queue_item SET status = 'done', finished_at = datetime('now') WHERE id = ?").run(item.id);
+        // Images libérées à l'état terminal : elles ne resserviront pas (#31).
+        db.prepare("UPDATE queue_item SET status = 'done', finished_at = datetime('now'), images = NULL WHERE id = ?").run(item.id);
       } catch (error) {
-        db.prepare("UPDATE queue_item SET status = 'failed', finished_at = datetime('now'), error = ? WHERE id = ?").run(String(error), item.id);
+        db.prepare("UPDATE queue_item SET status = 'failed', finished_at = datetime('now'), error = ?, images = NULL WHERE id = ?").run(String(error), item.id);
       } finally {
         this.markPrompted(item.id);
         this.prompted.delete(item.id);
@@ -238,8 +261,9 @@ export async function submitToLane(
   input: EnqueueInput,
   images?: unknown[],
 ): Promise<{ id: string; laneId: string; created: boolean }> {
-  const result = enqueue(db, input);
-  if (images?.length) dispatcher.attachImages(result.id, images);
+  const result = enqueue(db, images?.length ? { ...input, images } : input);
+  // Doublon idempotent : les images n'ont pas été écrites par l'enqueue, on complète l'item existant.
+  if (images?.length && !result.created) dispatcher.attachImages(result.id, images);
   const paused = laneIsPaused(db, result.laneId);
   const busy = laneIsDelivering(db, result.laneId);
   const kicked = dispatcher.kick(result.laneId);

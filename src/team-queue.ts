@@ -4,7 +4,7 @@ import type { PiPool } from "./pool.js";
 
 /**
  * Files durables (pi-openbot lot 2, prototype Q1). Module ajouté AU-DESSUS du pool :
- * il n'utilise que l'API publique de PiPool (prompt, waitForSettled) et un `ensure`
+ * il n'utilise que l'API publique de PiPool (prompt, onEvent) et un `ensure`
  * fourni par l'appelant (Spawner.ensure en production). pool.ts n'est pas modifié.
  *
  * Invariant : un élément `delivering` trouvé au démarrage devient `interrupted`
@@ -12,6 +12,8 @@ import type { PiPool } from "./pool.js";
  */
 
 export const DEFAULT_HOP_LIMIT = 4;
+/** Délai sans progrès (battement de vie / agent encore actif), pas une durée totale de tour. */
+export const DEFAULT_STALL_MS = 15 * 60_000;
 
 export type QueueStatus = "queued" | "delivering" | "done" | "failed" | "interrupted" | "cancelled";
 
@@ -109,9 +111,10 @@ export function kickQueuedLanes(db: Db, dispatcher: LaneDispatcher): void {
 
 export interface DispatcherOptions {
   db: Db;
-  pool: Pick<PiPool, "prompt" | "waitForSettled">;
+  pool: Pick<PiPool, "prompt" | "onEvent">;
   /** Spawn paresseux de la conversation (Spawner.ensure en production). */
   ensure: (conversationId: string) => Promise<unknown>;
+  /** Délai sans progrès avant échec. Ce n'est pas un plafond sur la durée totale du tour. */
   settleTimeoutMs?: number;
 }
 
@@ -154,6 +157,35 @@ export class LaneDispatcher {
     return loop;
   }
 
+  private waitUntilSettled(convId: string): Promise<void> {
+    const stallMs = this.opts.settleTimeoutMs ?? DEFAULT_STALL_MS;
+    return new Promise((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let finished = false;
+      const finish = (error?: unknown) => {
+        if (finished) return;
+        finished = true;
+        if (timer !== undefined) clearTimeout(timer);
+        unsub();
+        if (error !== undefined) reject(error instanceof Error ? error : new Error(String(error)));
+        else resolve();
+      };
+      const arm = () => {
+        if (finished) return;
+        if (timer !== undefined) clearTimeout(timer);
+        timer = setTimeout(() => {
+          finish(new Error(`agent stalled (${stallMs}ms without progress)`));
+        }, stallMs);
+      };
+      const unsub = this.opts.pool.onEvent((id, event) => {
+        if (id !== convId) return;
+        if ((event as { type?: string } | null)?.type === "agent_settled") finish();
+        else arm();
+      });
+      arm();
+    });
+  }
+
   private markPrompted(itemId: string): void {
     this.prompted.add(itemId);
     this.images.delete(itemId);
@@ -176,13 +208,13 @@ export class LaneDispatcher {
       this.current.set(convId, item);
       try {
         await this.opts.ensure(convId);
-        const settled = pool.waitForSettled(convId, this.opts.settleTimeoutMs);
+        const settled = this.waitUntilSettled(convId);
         settled.catch(() => undefined);
         const result = await pool.prompt(convId, item.body, this.images.get(item.id));
         this.markPrompted(item.id);
         await settled;
         // Le pool a mis le message dans sa file mémoire (tour UI en cours) : attendre le tour suivant.
-        if ((result as { disposition?: string } | null)?.disposition === "queued") await pool.waitForSettled(convId, this.opts.settleTimeoutMs);
+        if ((result as { disposition?: string } | null)?.disposition === "queued") await this.waitUntilSettled(convId);
         db.prepare("UPDATE queue_item SET status = 'done', finished_at = datetime('now') WHERE id = ?").run(item.id);
       } catch (error) {
         db.prepare("UPDATE queue_item SET status = 'failed', finished_at = datetime('now'), error = ? WHERE id = ?").run(String(error), item.id);

@@ -336,6 +336,10 @@ export class PiPool {
       this.clearQueue(h);
       this.handles.delete(convId);
       try {
+        // RpcClient.stop() (pi-coding-agent, dist/modes/rpc/rpc-client.js) envoie SIGTERM puis
+        // SIGKILL après 1 s figé côté dépendance : le délai n'est pas configurable depuis
+        // Cogitator. Mesuré 108–121 ms sur un pi idle, donc 1 s suffit largement ; au pire un
+        // pi bloqué meurt 1 s plus tard, sans effet de bord (éviction/recyclage seulement).
         await h.client.stop();
       } catch {
         /* stop best-effort */

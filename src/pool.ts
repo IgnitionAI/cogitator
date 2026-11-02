@@ -43,9 +43,49 @@ interface Handle {
   lastActivityAt: number;
   dead: boolean;
   active: boolean;
+  /** Runs pi-subagents async encore vivants : le parent RPC se settle pendant que l'enfant tourne. */
+  background: number;
   queue: Array<{ text: string; run: () => Promise<unknown> }>;
   pending?: () => Promise<void>;
   cancelPending?: () => void;
+}
+
+const ASYNC_WIDGET_PREFIX = "PI_SUBAGENT_ASYNC_JSON:";
+const SUBAGENT_ALIVE = new Set(["queued", "running", "pending"]);
+
+function widgetRunStates(lines: string[] | undefined): string[] | undefined {
+  const line = lines?.find((entry) => entry.startsWith(ASYNC_WIDGET_PREFIX));
+  if (!line) return undefined;
+  try {
+    const snap = JSON.parse(line.slice(ASYNC_WIDGET_PREFIX.length)) as { runs?: Array<{ state?: string }> };
+    return Array.isArray(snap.runs) ? snap.runs.map((run) => run.state ?? "") : [];
+  } catch {
+    return undefined;
+  }
+}
+
+/** Met à jour le compteur de subagents async d'après les événements RPC pi-subagents. */
+function applySubagentBackground(current: number, event: unknown): number {
+  const e = event as {
+    type?: string;
+    toolName?: string;
+    method?: string;
+    widgetKey?: string;
+    widgetLines?: string[];
+    result?: { content?: Array<{ text?: string }>; details?: { runId?: string } };
+  };
+  if (e.type === "tool_execution_end" && e.toolName === "subagent") {
+    const text = (e.result?.content ?? []).map((part) => part.text ?? "").join("");
+    if (e.result?.details?.runId || /\bDetached\b|\bAsync:/.test(text)) return Math.max(current, 1);
+  }
+  if (e.type === "extension_ui_request" && e.method === "setWidget" && e.widgetKey === "subagent-async") {
+    const states = widgetRunStates(e.widgetLines);
+    if (states) return states.some((state) => SUBAGENT_ALIVE.has(state)) ? Math.max(current, 1) : 0;
+  }
+  if (e.type === "subagent:async-complete" || e.type === "subagent:process-terminal") {
+    return Math.max(0, current - 1);
+  }
+  return current;
 }
 
 export interface PoolCallbacks {
@@ -156,6 +196,7 @@ export class PiPool {
   }
 
   private async streaming(h: Handle): Promise<boolean> {
+    if (h.background > 0) return true; // enfant pi-subagents encore en vie : pas d'éviction (pdeathsig tuerait l'enfant)
     try {
       const state = await h.client.getState();
       return h.active || state.isStreaming === true || state.isCompacting === true;
@@ -188,7 +229,7 @@ export class PiPool {
         checkRequestAuthorization();
         const args = spawn.resumeSessionFile ? [...spawn.args, "--session", spawn.resumeSessionFile] : spawn.args;
         const client = this.opts.factory({ cwd: spawn.cwd, args, env: spawn.env });
-        const handle: Handle = { convId, client, lastActivityAt: Date.now(), dead: false, active: false, queue: [] };
+        const handle: Handle = { convId, client, lastActivityAt: Date.now(), dead: false, active: false, background: 0, queue: [] };
         this.handles.set(convId, handle);
         return handle;
       });
@@ -200,10 +241,13 @@ export class PiPool {
         client.onEvent((event) => {
           if (handle.dead) return;
           handle.lastActivityAt = Date.now();
+          const previousBackground = handle.background;
+          handle.background = applySubagentBackground(handle.background, event);
           const type = (event as { type?: string })?.type;
           if (type === "agent_start") handle.active = true;
-          if (type === "agent_settled") {
-            handle.active = false;
+          if (type === "agent_settled") handle.active = false;
+          // Drain seulement si plus aucun tour parent NI enfant async (sinon la file part trop tôt).
+          if (!handle.active && handle.background === 0 && (type === "agent_settled" || previousBackground > 0)) {
             this.lockContext.exit(() => { void this.serial(convId, () => this.drain(handle)); });
           }
           this.emit(convId, event);
@@ -324,11 +368,12 @@ export class PiPool {
       const unsub = this.onEvent((id, event) => {
         if (id !== convId) return;
         const type = (event as { type?: string } | null)?.type;
-        if (type === "agent_settled") {
-          clearTimeout(timer);
-          unsub();
-          resolve();
-        }
+        if (type !== "agent_settled") return;
+        const h = this.handles.get(convId);
+        if (h && h.background > 0) return; // parent settled mais l'enfant pi-subagents tourne encore
+        clearTimeout(timer);
+        unsub();
+        resolve();
       });
     });
   }

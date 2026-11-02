@@ -14,7 +14,7 @@ import { authCommand } from "./auth-cli.js";
 import { loadAuth, lockHome, protectedRequired, type AuthState } from "./auth-state.js";
 import { listenOwnerSocket } from "./owner-transport.js";
 import { makeSpawner } from "./spawner.js";
-import { disposeSetprivShims, guardedRpcSpawn } from "./pi-child.js";
+import { disposeSetprivShims, guardedRpcSpawn, reapStaleSetprivShims } from "./pi-child.js";
 import { mkdirSync } from "node:fs";
 
 const SWEEP_INTERVAL_MS = 60_000;
@@ -36,6 +36,9 @@ try {
 async function start(explicit: boolean): Promise<void> {
   mkdirSync(paths.home, { recursive: true });
   const unlock = process.platform === "win32" ? () => {} : lockHome(paths.home);
+  // Home verrouillé : les shims pdeathsig-* restants viennent d'un hôte mort (kill -9) et
+  // ne sont référencés par aucun process vivant. Best-effort, jamais bloquant au démarrage.
+  try { reapStaleSetprivShims(paths.home); } catch { /* nettoyage opportuniste */ }
   let auth: AuthState | undefined;
   let db: ReturnType<typeof openDb>["db"] | undefined;
   const server = createServer((_req, res) => { res.writeHead(503, { "content-type": "application/json", "cache-control": "no-store" }); res.end('{"error":"AUTH_UNAVAILABLE"}'); });

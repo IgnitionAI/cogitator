@@ -26,6 +26,7 @@ const { createApp } = await import("../src/server.js");
 const { PiPool } = await import("../src/pool.js");
 const { setConversationStatus } = await import("../src/conversations.js");
 const { createAgent } = await import("../src/agents.js");
+const { DEFAULT_HOP_LIMIT, listItems } = await import("../src/team-queue.js");
 
 class FakeClient {
   configuration = new FakeConfiguration(() => this.opts.args);
@@ -285,19 +286,45 @@ test("member reply that @ another member hands off to that member's session", as
   await new Promise((r) => setTimeout(r, 100));
 });
 
-test("host reply that @ a member hands off; the handoff reply cannot hand off again (anti-loop)", async () => {
+test("host reply that @ a member hands off with inherited hop; A→B→A stops at hop limit", async () => {
   promptCalls = [];
-  replyAndEnd(hostConvId, "@bot-b à toi de jouer");
-  await waitFor(() => promptCalls.length > 0);
-  assert.deepEqual(
-    promptCalls.map((p) => [p.convId, p.text]),
-    [[memberConvId, "@bot-b à toi de jouer"]],
-  );
+  const start = await post(`/api/groups/${group.id}/messages`, { text: "départ hop" });
+  assert.equal(start.status, 200);
+  const hostLane = db.prepare("SELECT id FROM lane WHERE conversation_id = ?").get(hostConvId) as { id: string };
+  const origin = listItems(db, hostLane.id).find((i) => i.body === "départ hop");
+  assert.ok(origin);
+  assert.equal(origin.hop, 0, "message UI / fil de groupe démarre à 0");
 
-  // réponse du membre déclenché par le handoff : un @ vers l'hôte ne réinjecte pas (pas de cascade A↔B)
-  replyAndEnd(memberConvId, "@bot-a c'est fait");
+  replyAndEnd(hostConvId, "@bot-b à toi de jouer");
+  await waitFor(() => promptCalls.some((p) => p.convId === memberConvId && p.text === "@bot-b à toi de jouer"));
+  const memberLane = db.prepare("SELECT id FROM lane WHERE conversation_id = ?").get(memberConvId) as { id: string };
+  const firstRelay = listItems(db, memberLane.id).find((i) => i.body === "@bot-b à toi de jouer");
+  assert.ok(firstRelay);
+  assert.equal(firstRelay.hop, 1, "hop serveur = hop d'origine + 1");
+  assert.equal(firstRelay.chain_id, origin.chain_id ?? origin.id);
+
+  let from = memberConvId;
+  let mention = "@bot-a";
+  let expectedHop = 2;
+  while (expectedHop <= DEFAULT_HOP_LIMIT) {
+    const target = from === memberConvId ? hostConvId : memberConvId;
+    const text = `${mention} ping ${expectedHop}`;
+    promptCalls = [];
+    replyAndEnd(from, text);
+    await waitFor(() => promptCalls.some((p) => p.convId === target && p.text === text));
+    const lane = db.prepare("SELECT id FROM lane WHERE conversation_id = ?").get(target) as { id: string };
+    const item = listItems(db, lane.id).find((i) => i.body === text);
+    assert.ok(item);
+    assert.equal(item.hop, expectedHop);
+    from = target;
+    mention = from === memberConvId ? "@bot-a" : "@bot-b";
+    expectedHop += 1;
+  }
+
+  promptCalls = [];
+  replyAndEnd(from, `${mention} au-delà`);
   await new Promise((r) => setTimeout(r, 200));
-  assert.equal(promptCalls.length, 1);
+  assert.equal(promptCalls.length, 0, "la limite de sauts arrête la chaîne A→B→A");
 });
 
 test("member reply with unmatched @ wakes no one", async () => {

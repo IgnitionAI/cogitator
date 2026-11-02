@@ -224,3 +224,18 @@ export function hopContext(dispatcher: LaneDispatcher, fromConversationId: strin
   if (!current) return { hop: 0, chainId: null };
   return { hop: current.hop + 1, chainId: current.chain_id ?? current.id };
 }
+
+/**
+ * Hop du prochain relais (handoff) : dernier élément delivering/done de la lane,
+ * pas seulement l'élément encore en cours — agent_end arrive souvent après agent_settled.
+ */
+export function originHop(db: Db, conversationId: string | undefined, kind = "chat"): { hop: number; chainId: string | null } {
+  if (!conversationId) return { hop: 0, chainId: null };
+  const lane = db.prepare("SELECT id FROM lane WHERE conversation_id = ? AND kind = ?").get(conversationId, kind) as { id: string } | undefined;
+  if (!lane) return { hop: 0, chainId: null };
+  const item = db.prepare(
+    "SELECT id, chain_id, hop FROM queue_item WHERE lane_id = ? AND status IN ('delivering', 'done') ORDER BY seq DESC LIMIT 1",
+  ).get(lane.id) as { id: string; chain_id: string | null; hop: number } | undefined;
+  if (!item) return { hop: 0, chainId: null };
+  return { hop: item.hop + 1, chainId: item.chain_id ?? item.id };
+}

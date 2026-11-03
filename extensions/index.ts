@@ -8,21 +8,20 @@ import { fileURLToPath } from "node:url";
 import { BASE_URL } from "../src/config.js";
 import { decodeMcpEnv, MCP_ENV_VAR } from "../src/mcp-env.js";
 import { ownerRequest } from "../src/owner-transport.js";
+import { packageVersion } from "../src/pi.js";
+import { isProcessAlive, readServerIdentity } from "../src/server-identity.js";
+import { ensureCompatibleServer, probeServer, UNAVAILABLE_MESSAGE } from "../src/server-compat.js";
 
 // I4 : l'entry de l'extension ne démarre RIEN au load — uniquement la commande et
 // l'enregistrement MCP (qui ne fait que déclarer des serveurs, le builtin connecte).
 
-/** Attente du démarrage du serveur détaché : ~5 s au total. */
-const STARTUP_ATTEMPTS = 50;
-const STARTUP_POLL_MS = 100;
+const paths = getPaths();
 
-async function isUp(): Promise<boolean> {
-  try {
-    const res = await fetch(`${BASE_URL}/api/status`);
-    return res.ok;
-  } catch {
-    return false;
-  }
+/** Démarre le serveur détaché (même entry que `cogitator`). */
+function startDetachedServer(): void {
+  const here = dirname(fileURLToPath(import.meta.url)); // dist/extensions
+  const entry = join(here, "..", "src", "cli.js");
+  spawn(process.execPath, [entry], { detached: true, stdio: "ignore" }).unref();
 }
 
 function openBrowser(url: string): void {
@@ -80,23 +79,26 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("cogitator", {
     description: "Start the local Cogitator web panel if needed, then open it in the browser",
     handler: async (_args, ctx) => {
-      if (!(await isUp())) {
-        const here = dirname(fileURLToPath(import.meta.url)); // dist/extensions
-        const entry = join(here, "..", "src", "cli.js");
-        spawn(process.execPath, [entry], { detached: true, stdio: "ignore" }).unref();
-        for (let i = 0; i < STARTUP_ATTEMPTS; i++) {
-          if (await isUp()) break;
-          await new Promise((resolve) => setTimeout(resolve, STARTUP_POLL_MS));
-        }
-      }
-      if (!(await isUp())) {
-        ctx.ui.notify("Cogitator unavailable: check the server/auth state and stop incompatible previous instances.", "error");
+      // Après `pi update --extensions`, un serveur encore en mémoire peut être plus
+      // ancien : on ne s'y connecte que si sa version est ≥ la version installée.
+      const outcome = await ensureCompatibleServer({
+        installedVersion: packageVersion(),
+        baseUrl: BASE_URL,
+        probeServer,
+        readIdentity: () => readServerIdentity(paths.home),
+        isAlive: isProcessAlive,
+        kill: (pid, signal) => process.kill(pid, signal),
+        spawnServer: startDetachedServer,
+        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      });
+      if (outcome.action === "unavailable") {
+        ctx.ui.notify(UNAVAILABLE_MESSAGE, "error");
         return;
       }
       let browserUrl = BASE_URL;
       if (process.env.COGITATOR_URL === undefined) {
         try {
-          const config: unknown = JSON.parse(readFileSync(join(getPaths().home, "auth", "config.json"), "utf8"));
+          const config: unknown = JSON.parse(readFileSync(join(paths.home, "auth", "config.json"), "utf8"));
           if (config && typeof config === "object" && "origin" in config && typeof config.origin === "string") {
             const url = new URL(config.origin);
             if (url.protocol === "https:" && url.origin === config.origin) browserUrl = url.origin;

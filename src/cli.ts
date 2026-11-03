@@ -16,6 +16,9 @@ import { listenOwnerSocket } from "./owner-transport.js";
 import { makeSpawner } from "./spawner.js";
 import { disposeSetprivShims, guardedRpcSpawn, reapStaleSetprivShims } from "./pi-child.js";
 import { mkdirSync } from "node:fs";
+import { packageVersion } from "./pi.js";
+import { isProcessAlive, removeServerIdentity, writeServerIdentity } from "./server-identity.js";
+import { assertNoLiveInstance, probeServer } from "./server-compat.js";
 
 const SWEEP_INTERVAL_MS = 60_000;
 const CRON_TICK_MS = 30_000;
@@ -45,8 +48,14 @@ async function start(explicit: boolean): Promise<void> {
   let privateServer: Server | undefined;
   try {
     auth = protectedRequired(paths.home, explicit) ? loadAuth(paths.home) : undefined;
+    // Un pidfile encore revendiqué par un serveur vivant qui répond interdit le takeover :
+    // on s'arrête proprement plutôt que d'écraser l'identité d'une instance en service.
+    await assertNoLiveInstance(paths.home, { probeServer, isAlive: isProcessAlive, host: HOST });
     // Detect even an old incompatible binary on the configured port before catalog/seed side effects.
     await new Promise<void>((done, reject) => { server.once("error", reject); server.listen(PORT, HOST, done); });
+    // Identité publiée dès que le port est tenu : l'extension `/cogitator` compare alors
+    // les versions et peut cibler ce pid précis lors d'une mise à jour.
+    writeServerIdentity(paths.home, { pid: process.pid, version: packageVersion(), port: PORT, startedAt: new Date().toISOString() });
     privateServer = auth ? await listenOwnerSocket(server, paths.home) : undefined;
     const opened = openDb(paths.db);
     db = opened.db;
@@ -70,6 +79,7 @@ async function start(explicit: boolean): Promise<void> {
       clearInterval(sweeper); cron.stop();
       privateServer?.closeAllConnections(); server.closeAllConnections();
       await Promise.all([close(server), ...(privateServer ? [close(privateServer)] : [])]);
+      removeServerIdentity(paths.home, process.pid);
       await pool.dispose(); disposeSetprivShims(); auth?.db.close(); catalog.close(); unlock();
     };
     for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => { void shutdown().catch(() => { process.exitCode = 1; }); });
@@ -77,6 +87,7 @@ async function start(explicit: boolean): Promise<void> {
     privateServer?.closeAllConnections(); server.closeAllConnections();
     if (privateServer?.listening) await close(privateServer);
     if (server.listening) await close(server);
+    removeServerIdentity(paths.home, process.pid);
     auth?.db.close(); db?.close(); unlock(); disposeSetprivShims();
     throw err;
   }

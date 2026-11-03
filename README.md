@@ -77,6 +77,16 @@ The default app is a **trusted service on 127.0.0.1**, not a secured remote prod
 
 [Native single-owner login and MFA](https://github.com/IgnitionAI/cogitator/blob/dev/docs/native-auth.md) has passed independent code re-reviews and bounded local verification (Node 22/26, real local HTTPS/browser journeys). Login is **not** isolation of agent execution. Public remote operation, autonomous recovery, and the remaining Durable work are not approved. See the [evidence and remaining gates](https://github.com/IgnitionAI/cogitator/blob/dev/docs/native-auth-verification.md).
 
+## Updating
+
+After `pi update --extensions`, run `/cogitator` again. The command asks the running server for its version (`GET /api/health`) and compares it with the version it just installed:
+
+- **equal or newer server** — it is reused, nothing is stopped;
+- **older server** — it is stopped (`SIGTERM`) and restarted, so the panel runs the code you just installed;
+- **nothing listening** — the server is started as usual.
+
+A restart only happens when the server's identity is certain. Every server writes `~/.cogitator/server.pid` (JSON `{ pid, version, port, startedAt }`, mode `0600`) once it listens, and removes it on shutdown. To stop an older server, that file must designate exactly the process answering: same pid (still alive), same version, same port. Otherwise **nothing is killed** and `/cogitator` reports `Cogitator unavailable: check the server/auth state and stop incompatible previous instances.` That is the case for a server started before this pidfile existed, and for any non-Cogitator listener on the port. Stop it manually — `Ctrl+C` for a foreground `cogitator`, `kill <pid>` for the detached server started by `/cogitator` — then run `/cogitator` again.
+
 ## Features
 
 - **Composable agents** — each preset combines a provider, model, thinking level, explicit skill set, MCP servers, scope prompt, and subagents. These become native pi flags when the process starts (`--model id:thinking`, `--no-skills --skill …`, `--append-system-prompt`).

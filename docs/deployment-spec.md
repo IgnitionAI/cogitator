@@ -108,7 +108,9 @@ controller runs under a dedicated non-root account"):
 Description=Cogitator control server
 After=network.target
 # Fail closed: never start unauthenticated by accident.
-ConditionEnvironment=COGITATOR_AUTH_REQUIRED
+ConditionPathExists=/var/lib/cogitator/auth/config.json
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -118,12 +120,15 @@ Environment=COGITATOR_AUTH_REQUIRED=1
 Environment=COGITATOR_HOME=/var/lib/cogitator
 Environment=COGITATOR_PORT=5320
 Environment=NODE_ENV=production
-ExecStart=/usr/bin/node /opt/cogitator/dist/cli.js --auth-required
+Environment=PATH=/opt/cogitator/runtime/bin:/opt/cogitator/current/node_modules/.bin:/usr/bin:/bin
+WorkingDirectory=/opt/cogitator/current
+ExecStart=/opt/cogitator/runtime/bin/node /opt/cogitator/current/dist/src/cli.js --auth-required
 Restart=on-failure
 RestartSec=5
 # Bounded restart, not a retry storm (Plan 0002 worker/limits philosophy).
-StartLimitIntervalSec=300
-StartLimitBurst=5
+UMask=0077
+StateDirectory=cogitator
+StateDirectoryMode=0700
 
 # Filesystem and privilege hardening
 NoNewPrivileges=true
@@ -160,12 +165,20 @@ Provisioning steps for P5 (execute only in the P5 ticket):
 ```sh
 sudo useradd --system --home /var/lib/cogitator --shell /usr/sbin/nologin cogitator
 sudo install -d -o cogitator -g cogitator -m 0700 /var/lib/cogitator
-# Install the pinned release (same version the test matrix ran on) under /opt/cogitator.
-sudo systemctl daemon-reload && sudo systemctl enable --now cogitator
+# Install and qualify the isolated Node runtime under /opt/cogitator/runtime.
+# Install the exact verified release under /opt/cogitator/current.
 # Owner bootstrap (offline, one owner, mandatory MFA) — interactive password prompt:
-sudo -u cogitator COGITATOR_AUTH_REQUIRED=1 node /opt/cogitator/dist/cli.js auth init \
+sudo -u cogitator env COGITATOR_HOME=/var/lib/cogitator COGITATOR_AUTH_REQUIRED=1 \
+  /opt/cogitator/runtime/bin/node /opt/cogitator/current/dist/src/cli.js auth init \
   --origin https://cogitator.example.com --email owner@example.com
+# Enable only after bootstrap and the deployment gates; the service remains protected.
+sudo systemctl daemon-reload && sudo systemctl enable --now cogitator
 ```
+
+The 2026-11-07 [Firetower checkpoint](firetower-readiness.md) records the owner-delegated
+operational defaults and private rendered files. The chosen destination folder and DNS
+answer are preparation evidence, not activation of this specification. The existing SSH
+account has no non-interactive sudo; these provisioning commands have not been executed.
 
 ## 5. Firewall and exposure
 
@@ -190,7 +203,7 @@ sudo -u cogitator COGITATOR_AUTH_REQUIRED=1 node /opt/cogitator/dist/cli.js auth
 
 ## 7. Explicit non-goals
 
-- No Authelia/OIDC gateway (superseded by ADR-009); no Firetower changes.
+- No Authelia/OIDC gateway (superseded by ADR-009); preserve existing Firetower services.
 - No multi-user, registration or reset surface.
 - This specification does not cover P2 worker isolation, backups or the durable runtime —
   those remain separate gates in Plan 0002.

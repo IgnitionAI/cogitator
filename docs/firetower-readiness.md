@@ -1,5 +1,13 @@
 # Firetower deployment readiness
 
+## OAuth streaming proxy correction — 2026-11-07
+
+The owner's real browser remained on the provider pending screen after choosing account login. Chrome network evidence identified the cause: the HTTP/2 provider-login SSE response had `Content-Encoding: zstd` and did not deliver the authorization events promptly. The earlier uncompressed HTTP checks and local browser fixtures did not exercise this proxy path.
+
+The Firetower Caddy site now excludes all four current SSE route families from `encode`; compression remains enabled elsewhere. Its configuration was backed up privately, validated and gracefully reloaded without restarting Cogitator or changing credentials. See the reusable [Caddy example](examples/Caddyfile.cogitator).
+
+Live verification: replaying OAuth events with either identity or zstd in `Accept-Encoding` returns an uncompressed event stream and `auth_url` in approximately 0.1 seconds. In the owner's actual Chrome tab, starting account login produced the authorization link in **654 ms**; network observation confirmed an uncompressed HTTP/2 stream and both `auth_url` and `prompt` events. The authorization page was not opened or approved on the owner's behalf. The pending flow was left open for the owner; real provider acceptance remains unverified.
+
 ## Conversation startup correction — 2026-11-07
 
 The owner's failing chat exposed an unhandled setup state: no provider credential was configured, but the UI offered catalog models and the RPC startup rejected the default tuple as `unsupported model`. Its SSE endpoint returned a failure that the browser retried indefinitely. Service and catalog health did not establish working model conversations.

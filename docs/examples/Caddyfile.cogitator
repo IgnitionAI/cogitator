@@ -1,0 +1,14 @@
+# Set COGITATOR_DOMAIN to the hostname matching the native owner-auth origin.
+{$COGITATOR_DOMAIN} {
+	# Stream routes must bypass compression: buffering can hide OAuth prompts/deltas.
+	@compressible not path /api/events /api/provider-logins/*/events /api/conversations/*/events /api/groups/*/events
+	encode @compressible zstd gzip
+	request_body {
+		max_size 10MB
+	}
+	header {
+		-Server
+		-X-Powered-By
+	}
+	reverse_proxy 127.0.0.1:5320
+}

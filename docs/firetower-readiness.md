@@ -1,5 +1,13 @@
 # Firetower deployment readiness
 
+## Extension updates and short release notes — 2026-11-07
+
+Release **c20ebbf** adds explicit update checks, per-package npm updates, an always-visible extension reload action, and a short bilingual What’s new dialog. Installed manifests determine versions; unknown/prerelease comparisons report unavailable rather than up to date. Native pi installation replaces a pinned source with the newer exact version while preserving package resource filters. Reload recycles idle handles and defers busy parents/children.
+
+Typecheck, build and 19 focused tests passed locally and on Firetower. A temporary profile upgraded @gotgenes/pi-subagents 25.0.4 to 25.0.5 with filters retained. A separate isolated local browser test exercised Check updates → Update → Up to date and Reload → confirmation, plus the release notes dialog. No model request was initiated.
+
+**Staged, not activated:** `/opt/cogitator/releases/c20ebbf` is built and tested. The idle guard repeatedly reported one busy conversation, so the current symlink and service were left unchanged at 912ab89. Activate only after parent and background subagents settle, then verify the live browser. No npm publication occurred.
+
 ## Subagent conversation viewer — 2026-11-07
 
 Release **912ab89** makes subagent rows open a wide read-only dialog with mission, status/model, messages, collapsed tool calls/results, and automatic three-second refresh. Reading earlier messages preserves scroll position; a latest-messages action resumes following. It reads existing journals only and never prompts or restarts a child. The API resolves child session IDs inside the parent task directory, validates the parent relationship, rejects symlinks and bounds reads to 4 MiB / 300 rendered entries with a truncation notice.

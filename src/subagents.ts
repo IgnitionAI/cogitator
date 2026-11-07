@@ -1,4 +1,5 @@
-import { closeSync, fstatSync, openSync, readSync, readdirSync, statSync } from "node:fs";
+import { entriesFromLines, type HistoryEntry } from "./history.js";
+import { constants, realpathSync, closeSync, fstatSync, openSync, readSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 /**
@@ -196,4 +197,48 @@ export function listSubagents(sessionFile: string | null): { live: boolean; suba
     if (view) subagents.push(view);
   }
   return { live: true, subagents };
+}
+
+export interface SubagentTranscript { subagent: SubagentView; entries: HistoryEntry[]; truncated: boolean }
+/** Resolve by verified session id, never a client-supplied path; read a bounded snapshot on one fd. */
+export function readSubagentTranscript(sessionFile: string | null, id: string): SubagentTranscript | null {
+  if (!sessionFile || !id || id.length > 200) return null;
+  const parentId = parentSessionIdOf(sessionFile);
+  if (!parentId) return null;
+  const dir = tasksDirFor(sessionFile);
+  try {
+    const expected = join(realpathSync(dirname(sessionFile)), basename(sessionFile).replace(/\.jsonl$/, ""), "tasks");
+    if (realpathSync(dir) !== expected) return null;
+    const files = readdirSync(dir, { withFileTypes: true }).filter(e => e.isFile() && e.name.endsWith(".jsonl")).slice(0, 500);
+    for (const file of files) {
+      let fd: number | undefined;
+      try {
+        const path = join(dir, file.name);
+        fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+        const stat = fstatSync(fd);
+        if (!stat.isFile()) continue;
+        const header = parseLines(readWindow(fd, 0, Math.min(stat.size, HEADER_BYTES)).split("\n")[0] ?? "")[0];
+        if (header?.type !== "session" || header.id !== id || header.parentSession !== parentId) continue;
+        const cap = 4 * 1024 * 1024;
+        const offset = Math.max(0, stat.size - cap);
+        let raw = readWindow(fd, offset, Math.min(stat.size, cap));
+        if (offset) raw = raw.slice(raw.indexOf("\n") + 1);
+        const all = entriesFromLines(raw.split("\n"), 100_000);
+        const head = parseLines(readWindow(fd, 0, Math.min(stat.size, HEAD_WINDOWS[1])));
+        const model = head.find(e => e.type === "model_change");
+        const user = head.find(e => (e.message as { role?: string } | undefined)?.role === "user");
+        const label = textOf((user?.message as { content?: unknown } | undefined)?.content);
+        const status = statusOfEntries(parseLines(raw));
+        const subagent: SubagentView = {
+          id, label: label ? label.split("\n")[0]!.slice(0, 120) : null,
+          model: typeof model?.provider === "string" && typeof model.modelId === "string" ? `${model.provider}/${model.modelId}` : null,
+          status: status === "working" && Date.now() - stat.mtimeMs > MAX_AGE_MS ? "unknown" : status,
+          started_at: typeof header.timestamp === "string" ? header.timestamp : null,
+        };
+        return { subagent, entries: all.slice(-300), truncated: offset > 0 || all.length > 300 };
+      } catch { /* a changing or unreadable journal is unavailable */ }
+      finally { if (fd !== undefined) closeSync(fd); }
+    }
+  } catch { /* no valid child directory */ }
+  return null;
 }

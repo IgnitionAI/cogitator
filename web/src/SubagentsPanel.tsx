@@ -1,3 +1,4 @@
+import { SubagentConversation } from "./SubagentConversation";
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { formatNumber, localizeText, t, type TranslationKey } from "./i18n";
@@ -16,6 +17,7 @@ export function SubagentsPanel({ conversationId, onCountChange }: {
 }) {
   const [data, setData] = useState<{ live: boolean; subagents: SubagentView[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<SubagentView | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   // ADR-013 : une lecture à la fois ; fermer le panneau annule la lecture active.
@@ -45,7 +47,7 @@ export function SubagentsPanel({ conversationId, onCountChange }: {
     };
   }, [conversationId, onCountChange, attempt]);
 
-  return <aside className="chat-side" aria-label={t("chat.subagentsTitle")}>
+  return <><aside className="chat-side" aria-label={t("chat.subagentsTitle")}>
     <div className="chat-side-head">
       <span>{t("chat.subagents")}</span>
       {data ? <span className="muted">{data.live ? formatNumber(data.subagents.length) : t("chat.subagentsOffline")}</span> : null}
@@ -60,12 +62,15 @@ export function SubagentsPanel({ conversationId, onCountChange }: {
     {data?.live && data.subagents.length === 0 ? <Empty>{t("chat.noSubagents")}</Empty> : null}
     {data?.live && data.subagents.length > 0 ? <ul className="chat-side-list">
       {data.subagents.map((subagent) => <li key={subagent.id} className="subagent-row">
+        <button type="button" className="subagent-open" onClick={() => setSelected(subagent)} aria-label={t("subchat.open", { name: subagent.label ?? subagent.id })}>
         <span className="subagent-description">
           <span className="subagent-name">{subagent.label ?? subagent.id}</span>
           {subagent.model ? <span className="muted mono subagent-model">{subagent.model}</span> : null}
         </span>
         <span className={`chat-state is-${subagent.status}`} role="status">{t(STATUS_KEYS[subagent.status])}</span>
+        <span className="subagent-open-label">{t("subchat.view")} →</span>
+        </button>
       </li>)}
     </ul> : null}
-  </aside>;
+  </aside>{selected && <SubagentConversation key={`${conversationId}:${selected.id}`} conversationId={conversationId} agent={selected} onClose={() => setSelected(null)} />}</>;
 }

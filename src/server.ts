@@ -73,7 +73,7 @@ import {
   type WorkspaceRow,
 } from "./workspaces.js";
 import { cloneRepo, isInsideDir, localDirFor } from "./git-import.js";
-import { listSubagents } from "./subagents.js";
+import { listSubagents, readSubagentTranscript } from "./subagents.js";
 
 // ---------- Statique ----------
 
@@ -974,6 +974,13 @@ function conversationRoutes(deps: Deps): Route[] {
       const conv = requireConversation(deps, ctx);
       if (!conv) return;
       sendJson(ctx.res, 200, listSubagents(conv.session_file));
+    }],
+    ["GET", "/api/conversations/:id/subagents/:subagentId", (ctx) => {
+      const conv = requireConversation(deps, ctx);
+      if (!conv) return;
+      const transcript = readSubagentTranscript(conv.session_file, ctx.params.subagentId!);
+      if (!transcript) return sendJson(ctx.res, 404, { error: "Subagent transcript unavailable" });
+      sendJson(ctx.res, 200, transcript);
     }],
     ["GET", "/api/conversations/:id/file", (ctx) => {
       const conv = requireConversation(deps, ctx);

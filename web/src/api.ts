@@ -30,6 +30,7 @@ async function req<T>(method: string, url: string, body?: unknown, signal?: Abor
 }
 
 export const api = {
+  subagentTranscript: (conversationId: string, id: string, signal?: AbortSignal) => req<{ subagent: import("./types").SubagentView; entries: import("./types").HistoryEntry[]; truncated: boolean }>("GET", `/api/conversations/${encodeURIComponent(conversationId)}/subagents/${encodeURIComponent(id)}`, undefined, signal),
   githubConnection: () => req<GitHubConnectionState>("GET", "/api/github/connection"),
   connectGithub: () => req<GitHubConnectionState>("POST", "/api/github/connection"),
   cancelGithub: () => req<{ ok: true }>("DELETE", "/api/github/connection"),

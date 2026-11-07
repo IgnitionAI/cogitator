@@ -208,3 +208,16 @@
 .session-issue { margin: 16px; padding: 16px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); }
 .session-issue p { margin: 0 0 12px; }
 .session-issue .toolbar { margin-bottom: 0; }
+.subagent-open { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; padding: 12px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.subagent-open:hover, .subagent-open:focus-visible { background: var(--raised); border-color: var(--border); }
+.subagent-open .subagent-description { flex: 1 1 150px; min-width: 0; }
+.subagent-open-label { flex-basis: 100%; color: var(--accent); font-size: 12px; }
+.subchat-meta, .subchat-footer { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.subchat-mission { overflow-wrap: anywhere; }
+.subchat-history { height: min(55vh, 650px); overflow: auto; overscroll-behavior: contain; padding: 12px; border: 1px solid var(--border); border-radius: 10px; margin: 14px 0; }
+.subchat-message { padding: 12px 4px; overflow-wrap: anywhere; }
+.subchat-message.is-user { border-left: 3px solid var(--border); padding-left: 12px; }
+.subchat-tool { padding: 12px; margin: 10px 0; border: 1px solid var(--border); border-radius: 8px; }
+.subchat-tool summary { cursor: pointer; overflow-wrap: anywhere; }
+.subchat-tool summary span { margin-left: 12px; font-size: 12px; }
+.subchat-tool pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 350px; overflow: auto; }

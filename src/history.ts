@@ -40,10 +40,14 @@ function blockIsError(content: unknown): boolean {
 
 /** Parse le .jsonl pi en entrées ordonnées : user / assistant / thinking / tool (avec résultat). */
 export function readEntries(sessionFile: string, limit = 300): HistoryEntry[] {
+  return entriesFromLines(readSessionLines(sessionFile, HISTORY_LINES_SCAN), limit);
+}
+
+export function entriesFromLines(lines: string[], limit = 300): HistoryEntry[] {
   const out: HistoryEntry[] = [];
   const pendingTools = new Map<string, number>(); // toolCallId → index dans out
 
-  for (const line of readSessionLines(sessionFile, HISTORY_LINES_SCAN)) {
+  for (const line of lines) {
     const entry = parseJsonLine(line);
     if (!entry || entry.type !== "message") continue;
     const msg = entry.message as {
@@ -52,6 +56,7 @@ export function readEntries(sessionFile: string, limit = 300): HistoryEntry[] {
       toolCallId?: string;
       isError?: boolean;
     };
+    if (!msg || typeof msg !== "object") continue;
     const content = msg.content;
 
     if (msg.role === "user") {

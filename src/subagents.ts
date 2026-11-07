@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 /**
@@ -34,6 +34,19 @@ export const MAX_AGE_MS = 60 * 60 * 1000;
 export const MAX_SUBAGENTS = 20;
 const HEAD_WINDOWS = [64 * 1024, 1024 * 1024] as const;
 const TAIL_BYTES = 65_536;
+const HEADER_BYTES = 16 * 1024;
+
+/** Les positions et tailles sont en octets, avant tout décodage UTF-8. */
+function readWindow(fd: number, position: number, length: number): string {
+  const buffer = Buffer.alloc(length);
+  let bytes = 0;
+  while (bytes < length) {
+    const count = readSync(fd, buffer, bytes, length - bytes, position + bytes);
+    if (!count) break;
+    bytes += count;
+  }
+  return buffer.subarray(0, bytes).toString("utf8");
+}
 
 /** Répertoire des journaux enfants pour une session parente donnée. */
 export function tasksDirFor(sessionFile: string): string {
@@ -42,11 +55,17 @@ export function tasksDirFor(sessionFile: string): string {
 
 /** Identifiant de session porté par l'en-tête du journal parent, null si illisible. */
 export function parentSessionIdOf(sessionFile: string): string | null {
+  let fd: number | undefined;
   try {
-    const header = JSON.parse(readFileSync(sessionFile, "utf8").slice(0, 2_000).split("\n")[0]!) as { id?: string };
-    return typeof header.id === "string" ? header.id : null;
+    fd = openSync(sessionFile, "r");
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) return null;
+    const header = parseLines(readWindow(fd, 0, Math.min(stat.size, HEADER_BYTES)).split("\n")[0] ?? "")[0];
+    return header?.type === "session" && typeof header.id === "string" && header.id ? header.id : null;
   } catch {
     return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 
@@ -55,7 +74,8 @@ function parseLines(raw: string): Record<string, unknown>[] {
   for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
     try {
-      out.push(JSON.parse(line) as Record<string, unknown>);
+      const entry: unknown = JSON.parse(line);
+      if (entry && typeof entry === "object" && !Array.isArray(entry)) out.push(entry as Record<string, unknown>);
     } catch {
       // ligne tronquée (bornes head/tail) ou corrompue : ignorée
     }
@@ -90,30 +110,39 @@ export function statusOfEntries(entries: Record<string, unknown>[]): SubagentSta
 }
 
 /** Lecture bornée d'un journal enfant : en-tête (id, modèle, consigne) + queue (statut). */
-export function readSubagent(file: string): SubagentView | null {
-  let head: string;
+export function readSubagent(file: string, expectedParentId?: string): SubagentView | null {
   let headEntries: Record<string, unknown>[];
   let tail: string;
   let mtimeMs: number;
+  let fd: number | undefined;
   try {
-    const size = statSync(file).size;
-    mtimeMs = statSync(file).mtimeMs;
-    const raw = readFileSync(file, "utf8");
+    fd = openSync(file, "r");
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) return null;
+    const { size } = stat;
+    mtimeMs = stat.mtimeMs;
     // Le préambule système d'un enfant pèse ~120 Kio : on élargit la fenêtre jusqu'à la
     // première consigne utilisateur, bornée à 1 Mio (au-delà, libellé laissé vide).
     headEntries = [];
-    head = "";
     for (const window of HEAD_WINDOWS) {
-      head = raw.slice(0, window);
-      headEntries = parseLines(head);
+      headEntries = parseLines(readWindow(fd, 0, Math.min(size, window)));
       if (size <= window || headEntries.some((entry) => (entry.message as { role?: string } | undefined)?.role === "user")) break;
     }
-    tail = size > head.length ? raw.slice(Math.max(0, size - TAIL_BYTES)) : head;
+    const offset = Math.max(0, size - TAIL_BYTES);
+    tail = readWindow(fd, Math.max(0, offset - 1), Math.min(size, TAIL_BYTES + (offset > 0 ? 1 : 0)));
+    // Si la fenêtre commence au milieu d'une entrée, seule sa suite est ignorée.
+    if (offset > 0) {
+      const newline = tail.indexOf("\n");
+      tail = newline < 0 ? "" : tail.slice(newline + 1);
+    }
   } catch {
     return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
-  const header = headEntries.find((entry) => entry.type === "session") as { id?: string; timestamp?: string } | undefined;
-  if (!header?.id) return null;
+  const header = headEntries[0];
+  if (header?.type !== "session" || typeof header.id !== "string" || !header.id) return null;
+  if (expectedParentId !== undefined && header.parentSession !== expectedParentId) return null;
   const modelChange = headEntries.find((entry) => entry.type === "model_change") as
     | { provider?: string; modelId?: string }
     | undefined;
@@ -128,7 +157,7 @@ export function readSubagent(file: string): SubagentView | null {
     label: label ? label.split("\n")[0]!.slice(0, 120) : null,
     model: modelChange?.provider && modelChange.modelId ? `${modelChange.provider}/${modelChange.modelId}` : null,
     status: status === "working" && Date.now() - mtimeMs > MAX_AGE_MS ? "unknown" : status,
-    started_at: header.timestamp ?? null,
+    started_at: typeof header.timestamp === "string" ? header.timestamp : null,
   };
 }
 
@@ -137,25 +166,33 @@ export function readSubagent(file: string): SubagentView | null {
  * (rien à inspecter) ; un répertoire absent ou vide est un état normal → `live: true, []`.
  */
 export function listSubagents(sessionFile: string | null): { live: boolean; subagents: SubagentView[] } {
-  if (!sessionFile || !existsSync(sessionFile)) return { live: false, subagents: [] };
-  const dir = tasksDirFor(sessionFile);
-  if (!existsSync(dir)) return { live: true, subagents: [] };
+  if (!sessionFile) return { live: false, subagents: [] };
   const parentId = parentSessionIdOf(sessionFile);
-  const files = readdirSync(dir)
-    .filter((name) => name.endsWith(".jsonl"))
-    .map((name) => join(dir, name))
-    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
-    .slice(0, MAX_SUBAGENTS);
+  if (!parentId) return { live: false, subagents: [] };
+  const dir = tasksDirFor(sessionFile);
+  let files: Array<{ file: string; mtimeMs: number }>;
+  try {
+    files = readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+      .flatMap((entry) => {
+        const file = join(dir, entry.name);
+        try {
+          return [{ file, mtimeMs: statSync(file).mtimeMs }];
+        } catch {
+          return []; // Un journal supprimé pendant le rafraîchissement n'interrompt pas la liste.
+        }
+      })
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)
+      .slice(0, MAX_SUBAGENTS);
+  } catch {
+    return { live: true, subagents: [] };
+  }
   const subagents: SubagentView[] = [];
-  for (const file of files) {
+  for (const { file } of files) {
     // Le répertoire est dérivé du nom de la session parente ; le lien déclaré dans
     // l'enfant est revérifié pour qu'un dossier recyclé ne fuite pas vers une autre
     // conversation.
-    const declared = readFileSync(file, "utf8").slice(0, 2_000);
-    const parent = (parseLines(declared).find((entry) => entry.type === "session") as { parentSession?: string } | undefined)
-      ?.parentSession;
-    if (parentId && parent && parent !== parentId) continue;
-    const view = readSubagent(file);
+    const view = readSubagent(file, parentId);
     if (view) subagents.push(view);
   }
   return { live: true, subagents };

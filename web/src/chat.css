@@ -198,3 +198,9 @@
 @media (max-width: 640px) {
   .approval-facts { grid-template-columns: minmax(0, 1fr); }
 }
+.subagent-row { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; }
+.subagent-description { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
+.subagent-model { font-size: 11px; }
+.subagent-row .is-working { color: var(--progress); }
+.subagent-row .is-done { color: var(--success); }
+.chat .chat-side > [role="alert"] { margin: 12px; }

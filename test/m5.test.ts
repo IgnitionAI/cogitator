@@ -275,3 +275,31 @@ test("tick : tâche due avec catchup → fire ; sans catchup → avance le curse
   const after1 = (await (await fetch(`${base}/api/schedules`)).json()).schedules.find((s: { id: string }) => s.id === dueNoCatchup.id);
   assert.ok(new Date(after1.last_run_at).getTime() > Date.now() - 60_000, "curseur avancé");
 });
+
+test("tick : sans catchup, une occurrence normale s'exécute une seule fois et une pause ne se rattrape pas", async () => {
+  db.prepare("UPDATE cron_task SET enabled = 0").run();
+  const task = (await (await fetch(`${base}/api/schedules`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "RegularNoCatchup", cron_expr: "* * * * *", prompt: "normal", agent_id: agentId, workspace_id: wsId, catchup: false }),
+  })).json()).schedule;
+  const start = Math.floor(Date.now() / 60_000) * 60_000;
+  db.prepare("UPDATE cron_task SET created_at = ?, last_run_at = ? WHERE id = ?").run(new Date(start).toISOString(), new Date(start).toISOString(), task.id);
+  await cron.tick(new Date(start));
+  await cron.tick(new Date(start + 60_000));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  let runs = (await (await fetch(`${base}/api/schedules/${task.id}/runs`)).json()).runs;
+  assert.equal(runs.length, 1, "désactiver le rattrapage ne désactive pas les occurrences normales");
+  assert.equal(runs[0]!.status, "ok");
+  await cron.tick(new Date(start + 60_000));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  runs = (await (await fetch(`${base}/api/schedules/${task.id}/runs`)).json()).runs;
+  assert.equal(runs.length, 1, "le même créneau n'est pas relancé");
+  cron.stop();
+  await cron.tick(new Date(start + 120_000));
+  assert.equal((await (await fetch(`${base}/api/schedules/${task.id}/runs`)).json()).runs.length, 1, "le créneau manqué pendant l'arrêt est ignoré");
+  await cron.tick(new Date(start + 180_000));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  runs = (await (await fetch(`${base}/api/schedules/${task.id}/runs`)).json()).runs;
+  assert.equal(runs.length, 2, "l'occurrence suivante après reprise s'exécute normalement");
+  assert.equal(runs[0]!.status, "ok");
+});

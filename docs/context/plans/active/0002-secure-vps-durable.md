@@ -63,7 +63,7 @@ Access (owner-confirmed replacement, 2026-10-10): Cogitator owns single-owner lo
 
 The earlier Firetower/Caddy/sslip.io/Authelia preparation is suspended. Its read-only findings and staged metadata inspector remain historical; the owner is not asked to run the administrator handoff. No service/configuration changes or public Cogitator route were installed. See the [historical access note](../../../vps-access-options.md) and [suspended inventory](../../../vps-access-setup.md) only for evidence, not current provisioning instructions.
 
-The eventual VPS, canonical HTTPS origin and off-host backup destination remain to be selected and verified. A maintained TLS terminator may still be used without owning product authentication. Do not grant blanket sudo/Docker access, expose the current application, restore the withheld installer or perform further Firetower actions.
+The owner selected **Firetower** on 2026-11-07; the [read-only readiness checkpoint](../../../firetower-readiness.md) records its Node/runtime and rootless gaps. The canonical HTTPS origin, off-host backup destination and alert channel remain to be selected and verified. A maintained TLS terminator may still be used without owning product authentication. Do not grant blanket sudo/Docker access, expose the current application, restore the withheld installer or change existing Firetower services as part of readiness inspection.
 
 Execution: retain Node/TypeScript, the current React application, and REST/SSE. Use Pi Durable as the scheduler/checkpoint engine, not a new homegrown workflow engine. Use rootless container workers because arbitrary development commands must not run in the credential-owning control process.
 

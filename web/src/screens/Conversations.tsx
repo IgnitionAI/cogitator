@@ -1,11 +1,12 @@
 import { QueueRecovery, appendRecoveredMessage, type QueueFailure } from "../QueueRecovery";
 import { LiveConfiguration } from "../ModelConfiguration";
-import { t, formatNumber, statusLabel, thinkingLabel, localizeText, type TranslationKey } from "../i18n";
+import { SubagentsPanel } from "../SubagentsPanel";
+import { t, formatNumber, statusLabel, thinkingLabel, localizeText } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, openEvents, type EventConnectionState } from "../api";
 import { thinkingLevelsFor } from "../types";
 import type {
-  AgentPreset, Conversation, FileChange, HistoryEntry, ImageContentInput, ProviderView, SkillRef, SseEvent, SubagentView, Workspace,
+  AgentPreset, Conversation, FileChange, HistoryEntry, ImageContentInput, ProviderView, SkillRef, SseEvent, Workspace,
  } from "../types";
 import { Badge, Empty, ErrorText, Field, IconBtn, Modal, PageHead, Skeleton, Spinner, statusColor, useToast } from "../ui";
 import { FileDiffModal, FileRow } from "../FileViews";
@@ -24,11 +25,6 @@ export function bumpChatItemKey(): number {
   return ++nextChatItemKey;
 }
 
-const SUBAGENT_STATUS_KEYS: Record<SubagentView["status"], TranslationKey> = {
-  working: "chat.subagentWorking",
-  done: "chat.subagentDone",
-  unknown: "chat.subagentUnknown",
-};
 export type ChatItem = (
   | QueueFailure
   | { kind: "user"; text: string; attachmentCount?: number }
@@ -332,8 +328,7 @@ export function ChatView(props: {
   const [openThinking, setOpenThinking] = useState<Set<number>>(new Set());
   const [filesPanel, setFilesPanel] = useState(false);
   const [subsPanel, setSubsPanel] = useState(false);
-  const [subs, setSubs] = useState<SubagentView[]>([]);
-  const [subsLive, setSubsLive] = useState(true);
+  const [subagentCount, setSubagentCount] = useState(0);
   const [files, setFiles] = useState<FileChange[]>([]);
   const [diffFor, setDiffFor] = useState<{ path: string } | null>(null);
 
@@ -456,19 +451,6 @@ export function ChatView(props: {
     };
   }, [conversation.id, loadHistory, refreshMission, updateConfiguration]);
 
-  // Subagents herdr live (ADR-012) : poll léger tant que le panneau est ouvert.
-  const refreshSubagents = useCallback(() => {
-    api.conversationSubagents(conversation.id)
-      .then((r) => { setSubs(r.subagents); setSubsLive(r.live); })
-      .catch(() => undefined);
-  }, [conversation.id]);
-  useEffect(() => {
-    if (!subsPanel) return;
-    refreshSubagents();
-    const timer = setInterval(refreshSubagents, 3_000);
-    return () => clearInterval(timer);
-  }, [subsPanel, refreshSubagents]);
-
   useEffect(() => {
     if (nearBottom.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [timeline.length, timeline[timeline.length - 1]?.text.length]);
@@ -561,7 +543,7 @@ export function ChatView(props: {
           aria-pressed={subsPanel}
           title={t("chat.subagentsTitle")}
         >
-          <Icon name="users" /> {t("chat.subagents")}{subs.length > 0 ? ` (${formatNumber(subs.length)})` : ""}
+          <Icon name="users" /> {t("chat.subagents")}{subagentCount > 0 ? ` (${formatNumber(subagentCount)})` : ""}
         </button>
         {busy || running || sessionStatus === "running" ? (
           <button type="button" className="btn btn-sm btn-danger" onClick={() => api.stopConversation(conversation.id).catch((e: Error) => toast(e.message, true))}>
@@ -731,26 +713,7 @@ export function ChatView(props: {
           ) : null}
         </aside>
       ) : null}
-      {subsPanel ? (
-        <aside className="chat-side">
-          <div className="chat-side-head">
-            <span>{t("chat.subagents")}</span>
-            <span className="muted">{subsLive ? formatNumber(subs.length) : t("chat.subagentsOffline")}</span>
-          </div>
-          {!subsLive ? <p role="status">{t("chat.subagentsUnavailable")}</p> : null}
-          {subsLive && subs.length === 0 ? <Empty>{t("chat.noSubagents")}</Empty> : null}
-          {subsLive && subs.length > 0 ? (
-            <ul className="chat-side-list">
-              {subs.map((s) => (
-                <li key={s.id} className="subagent-row">
-                  <span className="subagent-name">{s.label ?? s.id}</span>
-                  <span className={`chat-state is-${s.status}`} role="status">{t(SUBAGENT_STATUS_KEYS[s.status])}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </aside>
-      ) : null}
+      {subsPanel ? <SubagentsPanel conversationId={conversation.id} onCountChange={setSubagentCount} /> : null}
       </div>
       {diffFor ? (
         <FileDiffModal conversationId={conversation.id} path={diffFor.path} onClose={() => setDiffFor(null)} />

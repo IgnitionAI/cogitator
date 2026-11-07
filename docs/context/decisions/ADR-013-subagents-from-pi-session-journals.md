@@ -18,11 +18,11 @@ Verified facts (2026-10-29, live run):
 ## Decision
 
 1. **No external daemon, no parallel supervision.** The server derives the child directory from `conversation.session_file` and reads the journals directly — the same files pi writes.
-2. **Bounded reads.** Head 16 KiB (header, model, first prompt) and tail 64 KiB (status) per child; at most 20 children, most recent first.
+2. **Bounded reads.** Parent header 16 KiB; child head 64 KiB, expanded to 1 MiB when needed to find the first prompt after a large system preamble, and tail 64 KiB (status). Windows use byte offsets before UTF-8 decoding, without loading the full journal. At most 20 child candidates, most recent first; non-files, malformed journals and unverifiable parent links are skipped.
 3. **Isolation by construction** (directory derived from the parent's own name) **and** by re-checking `parentSession` in each child header, so a recycled directory never leaks another conversation's subagents.
 4. **Statuses**: `working` | `done` | `unknown`. A child idle for more than an hour on a non-final entry is reported `unknown` (its process is gone without a final message).
 5. **Read-only**, polling from the UI while the panel is open (unchanged from ADR-012).
-6. **`live`** now means "this conversation has an inspectable pi session". No session file → `live: false, subagents: []`.
+6. **`live`** now means "this conversation has an inspectable pi session". Missing or unreadable parent header → `live: false, subagents: []`.
 
 ## Limits (stated, not hidden)
 

@@ -1,30 +1,42 @@
 # AS-IS — Cogitator
 
-## Current baseline — 2026-10-28
+## Current baseline — 2026-11-07
 
-Package on `dev`: **@ignitionai/cogitator 0.5.2** (`package.json`). Catalog SQLite `user_version` is **8** (`src/db.ts` `openDb`). Node engine is `>=22.19.0`.
+Package on `dev`: **@ignitionai/cogitator 0.5.2** (`package.json`). Catalog SQLite `user_version` is **10** (`src/db.ts` `openDb`). Node engine is `>=22.19.0`. The local branch integrates `origin/dev` through `daf3d37`, preserving the local GitHub-import and subagent-panel work. This is not a new published release.
 
 What exists in `src/` (application code, not docs):
 
 - HTTP app: `cli.ts`, `config.ts`, `server.ts`, `schemas.ts`, `runtime.ts`, `paths.ts`.
-- Catalog: `db.ts` (migrations v1→v8), `agents.ts`, `workspaces.ts`, `conversations.ts`, `groups.ts`, `cron.ts`, `default-agent.ts`, `classic-configuration.ts`.
+- Catalog: `db.ts` (migrations v1→v10), `agents.ts`, `workspaces.ts`, `conversations.ts`, `groups.ts`, `cron.ts`, `default-agent.ts`, `classic-configuration.ts`. **v9** adds durable team lanes/queue items; **v10** preserves queued images.
 - Schema versions that matter for Plan 0004: **v4** `agent_preset.default_workspace_id`; **v5** `agent_group` + `conversation.group_id`; **v6** `group_message` bus; **v7** `conversation.runtime_kind`; **v8** `conversation.pending_configuration`.
 - Pi RPC pool: `pool.ts`, `spawn.ts`, `spawner.ts`, `pi.ts`, `host-pi.ts` (host `pi` on PATH, else local copies), `session-lines.ts`, `history.ts`.
 - Groups (ADR-011): `groups.ts` + `groupRoutes` in `server.ts` — create/list/get/delete, bus messages, `@` vs host routing, member handoff, SSE `/api/groups/:id/events`. Tests: `test/s4-groups.test.ts`, `test/s4-group-messages.test.ts`. Web: `web/src/screens/Bots.tsx`.
 - Bots shell (ADR-010): nav item **Bots** is first and the default screen (`web/src/App.tsx`); resume-last 1–1 ignores group member sessions (`listConversations`). Tests: `test/s0-s2.test.ts`, `test/s3-agents-changed.test.ts`.
 - Native owner auth: `native-auth.ts`, `auth-http.ts`, `auth-state.ts`, `auth-cli.ts`, `owner-transport.ts`, `request-authorization.ts` (in tree on `dev`, not an uncommitted working copy).
 - Durable / execution modules present: `src/durable/*`, `src/execution/*`. Isolated SDK spike: `npm run durable:spike` (`scripts/durable-spike`); see [durable-spike.md](../durable-spike.md).
+- Classic conversation/group/cron dispatch uses `team-queue.ts` with persisted items and restart classification. This is distinct from the Durable mission SDK and does not complete Plan 0002's worker or scheduling gates. Subagent activity prevents idle pool eviction; server-version compatibility is checked before extension takeover.
+- GitHub workspace cloning: `git-import.ts`, `POST /api/workspaces` with `git_url`, local project roots and same-source reuse checks (`test/git-import.test.ts`).
+- Child subagent visibility: `subagents.ts` and `web/src/SubagentsPanel.tsx`, based on pi child journals (ADR-013). Reads are bounded in bytes, parent linkage must be verified, and malformed/non-file children are skipped. The panel shows loading, refresh errors/retry and model/status; closing it aborts polling. Tests use journal/API and UI doubles; desktop and 390 px mobile browser checks use synthetic APIs, including an HTTP 503 and automatic recovery. This is not a new live LLM run.
 - Also in `src/`: `mcp-server.ts` / `mcp-env.ts`, `registry.ts`, `generative-ui.ts`, `board.ts`, `file-changes.ts`, `workspace-files.ts`, `skills-import.ts`, `json-files.ts`, `provider-login.ts`.
 
-TCP remains loopback-only (`HOST` in `src/config.ts`). Workspace/file/import/MCP still assume trusted same-UID local execution. See [native-auth verification](../native-auth-verification.md). Cron source notes from 2026-10-09 (due ticks with `catchup=false`, persisted `running` rows) remain code-level findings in `src/cron.ts`, not a new runtime recertification.
+TCP remains loopback-only (`HOST` in `src/config.ts`). Workspace/file/import/MCP still assume trusted same-UID local execution. See [native-auth verification](../native-auth-verification.md). The 2026-11-07 cron correction distinguishes ordinary due occurrences from missed downtime when `catchup=false`; regression coverage checks normal execution, repeat ticks and stop/resume. This does not resolve persisted stale `running` rows or the full durable scheduling/restart acceptance gates.
 
 Plan 0004 / ADR-010 / ADR-011 were written 2026-10-14 as “specified, not implemented” (no schema v4, no group bus, no nav change). That sentence is **obsolete**. The bots shell and group bus are in `src/` as listed above. Remaining gaps vs the original ADRs are recorded on [ADR-010](decisions/ADR-010-bots-as-primary-shell.md) and [ADR-011](decisions/ADR-011-group-conversations.md) (no group MCP tools, no `PATCH`/`stop` group routes, one `@` target per user line). Plan file [0004](plans/active/0004-bots-shell.md) and some architecture docs may still say “not implemented”; they were not updated in this pass.
 
 The owner-confirmed native auth path (Plan 0003 / ADR-009) is the in-tree implementation above, not a Firetower/Authelia substitute in this repo. Historical 105-test / 140-test counts are stale; the suite is `npm test` → `tsx --test test/*.test.ts`. This document does not certify a new npm release.
 
-The broader VPS/Durable product (Plan 0002 / ADR-008) is not certified as complete by this file. The overall P0–P5 request remains **INCOMPLETE — NOT PROVEN** in [issue #7](https://github.com/IgnitionAI/cogitator/issues/7). The local native-auth slice does not certify deployed P1 or the missing P2–P5 isolation, Durable execution, scheduling, restore and operations. Socket interruption before its ownership receipt can still require stopped-owner inspection. Firetower administration and its staged inventory handoff remain suspended; do not run that script. The eventual target, HTTPS origin and off-host backup destination remain unselected. No host route or identity portal has been installed, and public exposure remains prohibited until the separate gates pass.
+The broader VPS/Durable product (Plan 0002 / ADR-008) is not certified as complete by this file. The overall P0–P5 request remains **INCOMPLETE — NOT PROVEN** in [issue #7](https://github.com/IgnitionAI/cogitator/issues/7). The local native-auth slice does not certify deployed P1 or the missing P2–P5 isolation, Durable execution, scheduling, restore and operations. Socket interruption before its ownership receipt can still require stopped-owner inspection. The owner selected **Firetower** on 2026-11-07; read-only SSH readiness findings and the remaining hostname/backup/alert choices are recorded in [Firetower readiness](../firetower-readiness.md). The historical administrator inventory remains obsolete; do not run that script. No host route or identity portal was installed in this resumption.
 
 Historical access-preparation checkpoint (superseded as a next action): the metadata-only inspector was reviewed and passed five focused checks plus an actual disposable local Docker metadata test. Build and 105 application tests pass. A private copy is staged on the selected host, with matching SHA256; running it unprivileged correctly refuses before scanning. Existing Caddy configuration is unchanged and remains active. Human root execution was the then-proposed next gate; it is no longer requested or required for the native-auth path. No configuration parsing, identity-service changes or public Cogitator deployment have occurred.
+
+## Resumption verification — 2026-11-07
+
+- `npm ci --no-audit --no-fund` restored the checked-in dependency lock. Installed package versions match it; no manifest/lockfile change was needed.
+- On macOS / Node 26.10.0: `npm test` completed with **387 tests: 375 passed, 12 skipped, zero failed**. The skips are nine Linux-only process/shim cases and three opt-in real-pi cases without a designated test binary. They are not Linux/VPS acceptance evidence.
+- `npm run build` passed, including server/web TypeScript checks. The existing large-bundle warning remains.
+- Subagent regressions first failed for UTF-8 tail offsets, malformed children and unverifiable parents, then passed after the reader correction. UI lifecycle doubles cover loading, model/status, refresh failure/retry, late replies, cancellation and polling; synthetic browser APIs cover desktop/mobile rendering and HTTP 503 recovery.
+- Cron regression first failed with `catchup=false`, then passed for ordinary execution, a repeated tick, a missed interval while stopped and the next ordinary occurrence after resuming. This is a local scheduler correction, not completion of #18.
+- Changes remain local; no push, npm publication, live provider run or Firetower service change was performed.
 
 ## Historical milestone record — 2026-10-06
 

@@ -4,13 +4,14 @@ import { authMessages } from "./locales/auth";
 import type {
   AgentPreset, ApprovalGrantView, BoardCard, Conversation, CronRun, CronTask, EffectReceiptView, FeedEvent, FileChange, FileEvent, Group, GroupMessage, GroupWrite, Health, ImageContentInput, MissionStatusView, PendingActionView, ProviderView, SkillRef, Workspace, AgentWrite, CardWrite, ConversationWrite, ProviderWrite, ScheduleWrite, SseEvent, WorkspaceWrite } from "./types";
 
-async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
+async function req<T>(method: string, url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const mutation = method !== "GET" && method !== "HEAD";
   const res = await fetch(url, {
     method,
     credentials: "same-origin",
     headers: mutation ? { "content-type": "application/json" } : undefined,
     body: mutation && body !== undefined ? JSON.stringify(body) : undefined,
+    signal,
   });
   if (res.status === 401 || res.status === 403) void recheckAccess();
   const data = await res.json().catch(() => ({}));
@@ -107,8 +108,8 @@ export const api = {
       "GET", `/api/conversations/${id}/history`,
     ),
   conversationFiles: (id: string) => req<{ files: FileChange[] }>("GET", `/api/conversations/${id}/files`),
-  conversationSubagents: (id: string) =>
-    req<{ live: boolean; subagents: import("./types").SubagentView[] }>("GET", `/api/conversations/${id}/subagents`),
+  conversationSubagents: (id: string, signal?: AbortSignal) =>
+    req<{ live: boolean; subagents: import("./types").SubagentView[] }>("GET", `/api/conversations/${id}/subagents`, undefined, signal),
   fileDetail: (id: string, path: string) =>
     req<{ path: string; operations: FileEvent[] }>("GET", `/api/conversations/${id}/file?path=${encodeURIComponent(path)}`),
   workspaceFeed: (id: string) =>

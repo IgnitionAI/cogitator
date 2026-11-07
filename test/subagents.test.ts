@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test, before, after } from "node:test";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, utimesSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, appendFileSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import Database from "better-sqlite3";
 import { FakeConfiguration } from "./fixtures/fake-configuration.js";
@@ -93,6 +93,33 @@ test("readSubagent : enfant sans consigne ni modèle → label/model null, journ
   assert.equal(view?.model, null);
   assert.equal(view?.status, "done");
   assert.equal(readSubagent(join(home, "sessions", "parent-a", "tasks", "absent.jsonl")), null);
+});
+
+test("readSubagent : statut correct après un long préambule UTF-8 et une ligne corrompue", () => {
+  const file = writeChild(SESSION_A, { id: "child-unicode", label: "Vérifier les accents", last: "toolCall" });
+  appendFileSync(file, JSON.stringify({ type: "custom", data: "é🚀".repeat(100_000) }) + "\nnull\n");
+  appendFileSync(file, JSON.stringify({ type: "message", message: { role: "assistant", stopReason: "stop" } }) + "\n");
+  const view = readSubagent(file);
+  assert.equal(view?.label, "Vérifier les accents");
+  assert.equal(view?.status, "done");
+});
+
+test("listSubagents : ignore les entrées non fichiers et les enfants sans lien parent vérifiable", () => {
+  const parent = makeParentSession("parent-invalid-children", "PARENT-VALID");
+  const dir = tasksDirFor(parent);
+  mkdirSync(dir, { recursive: true });
+  mkdirSync(join(dir, "directory.jsonl"));
+  writeChild(parent, { id: "child-unlinked", parent: null });
+  writeChild(parent, { id: "child-linked", label: "Consigne valide" });
+  writeFileSync(join(dir, "corrupt.jsonl"), "null\n{\n");
+  assert.deepEqual(listSubagents(parent).subagents.map((s) => s.id), ["child-linked"]);
+});
+
+test("listSubagents : en-tête parent corrompu → session indisponible, aucun enfant exposé", () => {
+  const parent = makeParentSession("parent-corrupt", "PARENT-CORRUPT");
+  writeChild(parent, { id: "child-hidden" });
+  writeFileSync(parent, "null\n");
+  assert.deepEqual(listSubagents(parent), { live: false, subagents: [] });
 });
 
 test("listSubagents : enfant inactif depuis > 1 h → statut unknown (process probablement tué)", () => {

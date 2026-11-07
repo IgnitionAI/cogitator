@@ -260,6 +260,7 @@ export class CronService {
   private timer: ReturnType<typeof setInterval> | null = null;
   private firing = new Set<string>(); // garde anti-recouvrement dans un tick
   private team: LaneDispatcher | undefined;
+  private lastTickAt: Date | null = null;
 
   constructor(private opts: CronServiceOptions) {
     this.team = opts.team;
@@ -278,32 +279,40 @@ export class CronService {
   /** Boucle de tick ; appelée par le timer et testable directement. */
   async tick(now = new Date()): Promise<void> {
     const { db } = this.opts;
+    const previousTick = this.lastTickAt ?? now;
+    this.lastTickAt = now;
     const tasks = db.prepare("SELECT * FROM cron_task WHERE enabled = 1").all() as unknown as CronTaskRow[];
     for (const task of tasks) {
       if (this.firing.has(task.id)) continue;
       const next = nextAfter(task, now);
       if (!next || next > now) continue;
       if (!task.catchup) {
-        // rattrapage désactivé : on avance au prochain créneau sans exécuter
-        db.prepare("UPDATE cron_task SET last_run_at = ? WHERE id = ?").run(now.toISOString(), task.id);
-        continue;
+        // Seul le retard antérieur à cette instance est ignoré. Une occurrence
+        // tombée entre deux ticks du service reste une exécution normale.
+        const regular = nextAfter({ ...task, last_run_at: previousTick.toISOString() }, now);
+        if (!regular || regular > now) {
+          db.prepare("UPDATE cron_task SET last_run_at = ? WHERE id = ?").run(now.toISOString(), task.id);
+          continue;
+        }
       }
-      void this.fireNow(task.id).catch(() => undefined);
+      void this.fireNow(task.id, now).catch(() => undefined);
     }
   }
 
   start(intervalMs = DEFAULT_TICK_MS): void {
     if (this.timer) return;
+    this.lastTickAt = new Date();
     this.timer = setInterval(() => this.tick().catch(() => undefined), intervalMs);
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    this.lastTickAt = null;
   }
 
   /** Tire une exécution (manuelle ou planifiée). Crée toujours un CronRun (O3). */
-  async fireNow(taskId: string): Promise<CronRunRow | null> {
+  async fireNow(taskId: string, now = new Date()): Promise<CronRunRow | null> {
     const { db, pool } = this.opts;
     const task = getTask(db, taskId);
     if (!task) return null;
@@ -315,7 +324,7 @@ export class CronService {
     }
     this.firing.add(taskId);
     const runId = createRun(db, taskId);
-    db.prepare("UPDATE cron_task SET last_run_at = ? WHERE id = ?").run(new Date().toISOString(), taskId);
+    db.prepare("UPDATE cron_task SET last_run_at = ? WHERE id = ?").run(now.toISOString(), taskId);
     this.opts.notify?.({ type: "cron_run_started", taskId, runId, name: task.name });
 
     let convId: string | null = null;

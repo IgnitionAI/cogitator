@@ -1,22 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { spawn } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { disposeSetprivShims, guardedRpcSpawn, linuxSetprivPath, piRpcWrapPath, reapStaleSetprivShims } from "../src/pi-child.js";
-import { parseProcStat, processIsGone } from "../src/reap-orphans.js";
+import { processIsGone } from "../src/reap-orphans.js";
 
-function childOf(ppid: number): number | undefined {
-  for (const name of readdirSync("/proc")) {
-    if (!/^\d+$/.test(name)) continue;
-    const pid = Number(name);
-    try {
-      const stat = parseProcStat(readFileSync(join("/proc", name, "stat"), "utf8"));
-      if (stat?.ppid === ppid) return pid;
-    } catch { /* disparu */ }
-  }
-  return undefined;
+function childIsGone(pid: number): boolean {
+  if (process.platform === "linux") return processIsGone(pid);
+  try { process.kill(pid, 0); return false; } catch { return true; }
 }
 
 test("shim setpriv : mkdtemp sous home en 0700, nettoyé à dispose", { skip: process.platform !== "linux" || !linuxSetprivPath() ? "setpriv indisponible" : false }, () => {
@@ -44,7 +37,8 @@ const SIGNALS = ["SIGTERM", "SIGINT", "SIGHUP"] as const;
 async function assertSignalKillsChild(signal: NodeJS.Signals): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), `cog-wrap-${signal.toLowerCase()}-`));
   const fakeCli = join(dir, "fake-cli.js");
-  writeFileSync(fakeCli, "setInterval(() => {}, 1000);\n");
+  const pidFile = join(dir, "child.pid");
+  writeFileSync(fakeCli, `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(pidFile)}, String(process.pid));\nsetInterval(() => {}, 1000);\n`);
   const wrap = spawn(process.execPath, [piRpcWrapPath(), "--mode", "rpc"], {
     env: { ...process.env, COGITATOR_PI_CLI: fakeCli, COGITATOR_PI_NO_SETPRIV: "1" },
     stdio: "ignore",
@@ -52,25 +46,27 @@ async function assertSignalKillsChild(signal: NodeJS.Signals): Promise<void> {
   const wrapPid = wrap.pid;
   assert.ok(wrapPid);
   let childPid: number | undefined;
-  const deadline = Date.now() + 3_000;
-  while (Date.now() < deadline) {
-    childPid = childOf(wrapPid);
-    if (childPid) break;
-    await new Promise((r) => setTimeout(r, 30));
-  }
-  assert.ok(childPid, "l'enfant du wrapper doit exister");
-  // Le wrapper installe ses handlers juste après `spawn` : laisser passer un tour pour éviter
-  // de lui envoyer le signal avant (action par défaut = wrapper tué, enfant orphelin).
-  await new Promise((r) => setTimeout(r, 200));
   try {
+    // Le vrai enfant publie son PID : ce test du repli fonctionne aussi sur macOS,
+    // sans /proc. Tout échec de découverte passe désormais par le finally de nettoyage.
+    const deadline = Date.now() + 3_000;
+    while (Date.now() < deadline) {
+      try { childPid = Number(readFileSync(pidFile, "utf8")); } catch { /* pas encore prêt */ }
+      if (childPid) break;
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    assert.ok(childPid && Number.isInteger(childPid) && childPid > 0, "l'enfant du wrapper doit exister");
     process.kill(wrapPid, signal);
-    await new Promise((r) => wrap.once("close", r));
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`wrapper toujours actif après ${signal}`)), 3_000);
+      wrap.once("close", () => { clearTimeout(timer); resolve(); });
+    });
     const goneDeadline = Date.now() + 2_000;
-    while (!processIsGone(childPid) && Date.now() < goneDeadline) await new Promise((r) => setTimeout(r, 30));
-    assert.equal(processIsGone(childPid), true, `${signal} au wrapper doit tuer l'enfant`);
+    while (!childIsGone(childPid) && Date.now() < goneDeadline) await new Promise((r) => setTimeout(r, 30));
+    assert.equal(childIsGone(childPid), true, `${signal} au wrapper doit tuer l'enfant`);
   } finally {
     for (const pid of [wrapPid, childPid]) {
-      try { process.kill(pid, "SIGKILL"); } catch { /* déjà mort */ }
+      if (pid) { try { process.kill(pid, "SIGKILL"); } catch { /* déjà mort */ } }
     }
     rmSync(dir, { recursive: true, force: true });
   }

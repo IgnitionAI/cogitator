@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OWNED_PI_ENV, ownedPiMarker, processIsGone, reapOrphanOwnedPi, startPeriodicReap } from "../src/reap-orphans.js";
 
+const linuxOnly = process.platform === "linux" ? false : "requires Linux /proc";
+
 const SPAWNER = join(import.meta.dirname, "fixtures", "reap-orphan-spawn.ts");
 
 function alive(pid: number): boolean {
@@ -46,7 +48,7 @@ function killPid(pid: number): void {
   try { process.kill(pid, "SIGKILL"); } catch { /* déjà mort */ }
 }
 
-test("reapOrphanOwnedPi tue un process marqué devenu orphelin (hôte mort, ppid quelconque)", { timeout: 15_000 }, async () => {
+test("reapOrphanOwnedPi tue un process marqué devenu orphelin (hôte mort, ppid quelconque)", { timeout: 15_000, skip: linuxOnly }, async () => {
   const home = mkdtempSync(join(tmpdir(), "cog-reap-"));
   const pid = await spawnOrphanViaHelper(home, "rpc");
   assert.equal(alive(pid), true, "l'orphelin doit encore vivre avant le reap");
@@ -57,7 +59,7 @@ test("reapOrphanOwnedPi tue un process marqué devenu orphelin (hôte mort, ppid
   rmSync(home, { recursive: true, force: true });
 });
 
-test("reapOrphanOwnedPi ne tue pas un process marqué dont l'hôte est vivant", { timeout: 15_000 }, async () => {
+test("reapOrphanOwnedPi ne tue pas un process marqué dont l'hôte est vivant", { timeout: 15_000, skip: linuxOnly }, async () => {
   const home = mkdtempSync(join(tmpdir(), "cog-reap-live-"));
   const marker = ownedPiMarker();
   assert.ok(marker, "marqueur de l'hôte de test");
@@ -70,7 +72,7 @@ test("reapOrphanOwnedPi ne tue pas un process marqué dont l'hôte est vivant", 
   rmSync(home, { recursive: true, force: true });
 });
 
-test("reapOrphanOwnedPi ne tue pas un process sans marqueur", { timeout: 15_000 }, async () => {
+test("reapOrphanOwnedPi ne tue pas un process sans marqueur", { timeout: 15_000, skip: linuxOnly }, async () => {
   const home = mkdtempSync(join(tmpdir(), "cog-reap-unmarked-"));
   const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)", "--", "--mode", "rpc"], {
     env: { ...process.env, COGITATOR_HOME: home },
@@ -88,7 +90,7 @@ test("reapOrphanOwnedPi ne tue pas un process sans marqueur", { timeout: 15_000 
   rmSync(home, { recursive: true, force: true });
 });
 
-test("reapOrphanOwnedPi ignore un descendant détaché sans cmdline --mode rpc", { timeout: 15_000 }, async () => {
+test("reapOrphanOwnedPi ignore un descendant détaché sans cmdline --mode rpc", { timeout: 15_000, skip: linuxOnly }, async () => {
   const home = mkdtempSync(join(tmpdir(), "cog-reap-desc-"));
   const pid = await spawnOrphanViaHelper(home, "plain");
   assert.equal(alive(pid), true);
@@ -99,7 +101,7 @@ test("reapOrphanOwnedPi ignore un descendant détaché sans cmdline --mode rpc",
   rmSync(home, { recursive: true, force: true });
 });
 
-test("reapOrphanOwnedPi traite un starttime d'hôte falsifié comme orphelin", { timeout: 15_000 }, async () => {
+test("reapOrphanOwnedPi traite un starttime d'hôte falsifié comme orphelin", { timeout: 15_000, skip: linuxOnly }, async () => {
   const home = mkdtempSync(join(tmpdir(), "cog-reap-forge-"));
   const pid = await spawnMarked(home, { marker: `${process.pid}:1`, rpc: true });
   assert.equal(alive(pid), true);
@@ -110,7 +112,7 @@ test("reapOrphanOwnedPi traite un starttime d'hôte falsifié comme orphelin", {
   rmSync(home, { recursive: true, force: true });
 });
 
-test("reap périodique tue un orphelin rpc sans tuer un hôte vivant", { timeout: 15_000 }, async () => {
+test("reap périodique tue un orphelin rpc sans tuer un hôte vivant", { timeout: 15_000, skip: linuxOnly }, async () => {
   const home = mkdtempSync(join(tmpdir(), "cog-reap-loop-"));
   const orphan = await spawnOrphanViaHelper(home, "rpc");
   const marker = ownedPiMarker();

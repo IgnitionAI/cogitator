@@ -6,7 +6,7 @@ Release **c20ebbf** adds explicit update checks, per-package npm updates, an alw
 
 Typecheck, build and 19 focused tests passed locally and on Firetower. A temporary profile upgraded @gotgenes/pi-subagents 25.0.4 to 25.0.5 with filters retained. A separate isolated local browser test exercised Check updates → Update → Up to date and Reload → confirmation, plus the release notes dialog. No model request was initiated.
 
-**Staged, not activated:** `/opt/cogitator/releases/c20ebbf` is built and tested. The idle guard repeatedly reported one busy conversation, so the current symlink and service were left unchanged at 912ab89. Activate only after parent and background subagents settle, then verify the live browser. No npm publication occurred.
+**Activated after the conversation settled:** the idle guard returned zero busy conversations before switching `/opt/cogitator/current` to `/opt/cogitator/releases/c20ebbf` and restarting Cogitator. Cogitator, Caddy and the worker user manager are active; anonymous update checks return 401. The live authenticated Chrome UI checked all nine installed npm packages as up to date and confirmed extension reload; the new controls are visible on Firetower. No npm publication occurred.
 
 ## Subagent conversation viewer — 2026-11-07
 

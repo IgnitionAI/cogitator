@@ -369,3 +369,20 @@ test("final enrollment retirement failure rolls back verification and removes th
     assert.equal((await browser.call('/api/auth/status')).status,503);
   } finally {await f.close();}
 });
+
+
+test("external top-level navigation can open only the public login shell, never APIs or writes", async () => {
+  const f = await fixture();
+  try {
+    const navigation = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document" };
+    for (const path of ["/", "/index.html"]) {
+      const result = await httpCall(f.port, path, "GET", undefined, navigation);
+      assert.equal(result.status, 200); assert.match(result.text, /<!doctype html>/i);
+      assert.equal((await httpCall(f.port, path, "GET", undefined, { ...navigation, origin: "https://evil.invalid" })).status, 403);
+      assert.equal((await httpCall(f.port, path, "GET", undefined, { "sec-fetch-site": "cross-site" })).status, 403);
+    }
+    for (const path of ["/api/agents", "/api/auth/status", "/api/status", "/unknown-spa"]) assert.equal((await httpCall(f.port, path, "GET", undefined, navigation)).status, 403);
+    assert.equal((await httpCall(f.port, "/api/auth/sign-in/email", "POST", { email, password }, navigation)).status, 403);
+    assert.equal(f.spawns(), 0);
+  } finally { await f.close(); }
+});

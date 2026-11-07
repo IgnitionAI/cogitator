@@ -40,7 +40,12 @@ export function validateBoundary(req: IncomingMessage, state: AuthState): void {
   const localLiveness = req.method === "GET" && raw === "/api/status" && req.headers.host === `127.0.0.1:${req.socket.localPort}`;
   if (req.headers.host !== new URL(state.config.origin).host && !localLiveness) throw new AuthError("FORBIDDEN", 403);
   const origin = req.headers.origin;
-  if ((origin && origin !== state.config.origin) || (req.headers["sec-fetch-site"] === "cross-site")) throw new AuthError("FORBIDDEN", 403);
+  // A browser may enter the public login shell from a bookmark or an external link.
+  // Only a top-level GET of the exact shell is exempt; API reads and every mutation
+  // retain the cross-site boundary, and an explicit foreign Origin is always rejected.
+  const publicNavigation = req.method === "GET" && (raw === "/" || raw === "/index.html")
+    && !origin && req.headers["sec-fetch-mode"] === "navigate" && req.headers["sec-fetch-dest"] === "document";
+  if ((origin && origin !== state.config.origin) || (req.headers["sec-fetch-site"] === "cross-site" && !publicNavigation)) throw new AuthError("FORBIDDEN", 403);
   if (!["GET", "HEAD"].includes(req.method ?? "") && origin !== state.config.origin) throw new AuthError("FORBIDDEN", 403);
   if (!["GET", "HEAD"].includes(req.method ?? "") && !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(String(req.headers["content-type"] ?? ""))) throw new AuthError("INVALID_INPUT", 400);
 }

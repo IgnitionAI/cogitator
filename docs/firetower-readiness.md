@@ -1,5 +1,11 @@
 # Firetower deployment readiness
 
+## Subagent conversation viewer — 2026-11-07
+
+Release **912ab89** makes subagent rows open a wide read-only dialog with mission, status/model, messages, collapsed tool calls/results, and automatic three-second refresh. Reading earlier messages preserves scroll position; a latest-messages action resumes following. It reads existing journals only and never prompts or restarts a child. The API resolves child session IDs inside the parent task directory, validates the parent relationship, rejects symlinks and bounds reads to 4 MiB / 300 rendered entries with a truncation notice.
+
+Build and 23 focused tests passed locally and on Linux, covering parent isolation, symlink rejection, incomplete/appended journal records, bounded history and localization. Deployed only after native status reported conversations idle. The actual owner subagent returned 25 entries including 22 tools; its completed result was opened and visually verified in Chrome. Anonymous transcript requests return 401. No paid model call was initiated for verification.
+
 ## GitHub browser connection — 2026-11-07
 
 Release **7580ef7** adds Connect GitHub to project import, using the native GitHub CLI device flow (compatible with Firetower gh 2.46). The authenticated UI displays a short-lived code and the fixed github.com/login/device link, polls completion, and supports cancellation/expiry. Credentials stay in the installation’s private `github` directory (directory 0700; configuration files 0600), with no token returned by the API. Connected GitHub imports use HTTPS and the gh credential helper; classic agents and board operations share this profile. Existing ambient authentication remains the fallback before a Cogitator connection exists.

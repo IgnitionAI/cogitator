@@ -45,6 +45,11 @@ function harness(screen: string, api: object, fetch?: unknown, component = "defa
           if (!(index in slots)) slots[index] = initial;
           return [slots[index], (value: unknown) => { slots[index] = typeof value === "function" ? value(slots[index]) : value; }];
         },
+        useRef(initial: unknown) {
+          const index = cursor++;
+          if (!(index in slots)) slots[index] = { current: initial };
+          return slots[index];
+        },
         useCallback: (callback: unknown) => callback,
         useEffect: (effect: () => void) => { if (!mounted) effects.push(effect); },
       };
@@ -203,4 +208,21 @@ test("pending key request blocks dialog dismissal and editing, then exposes dela
   assert.equal(find(failed, (e) => e.type === "fieldset")?.props.disabled, false);
   (find(failed, (e) => e.type === "Modal")!.props.onClose as () => void)();
   assert.equal(closed, 1);
+});
+
+
+test("single-method provider opened from its row always offers a working login action", async () => {
+  const calls: unknown[] = [];
+  const provider = { id: "deepseek", auth: { ready: false }, authMethods: [{ type: "api_key", name: "DeepSeek API key" }] };
+  const render = harness("Providers", { startProviderLogin: async (...args: unknown[]) => { calls.push(args); throw new Error("réessaie"); } }, undefined, "LoginModal");
+  const props = { providers: [provider], initialId: "deepseek", onClose() {}, onCustom() {}, onSaved() {} };
+  let tree = render(props);
+  const action = find(tree, e => e.type === "button" && e.props.children === "Utiliser une clé API")!;
+  assert.ok(action, "must not show a blank fieldset for single-method providers");
+  (action.props.onClick as () => void)(); await settle();
+  tree = render(props);
+  assert.deepEqual(calls, [["deepseek", "api_key"]]);
+  assert.equal(find(tree, e => e.type === "ErrorText")?.props.error, "réessaie");
+  assert.ok(find(tree, e => e.type === "button" && e.props.children === "Utiliser une clé API"), "retry must remain available");
+  assert.ok(find(tree, e => e.type === "button" && e.props.children === "Annuler"));
 });

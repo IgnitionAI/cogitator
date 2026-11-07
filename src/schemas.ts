@@ -41,7 +41,7 @@ export const providerLoginSchema = z.object({
 });
 
 export const providerLoginReplySchema = z.object({
-  value: z.string().min(1),
+  value: z.string().max(32_768),
 });
 
 // ---------- Agents ----------

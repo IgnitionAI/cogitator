@@ -858,3 +858,14 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 }
 
 .queue-message { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Provider setup: readable actions on both desktop and phone. */
+.provider-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 16px; }
+.provider-name { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.provider-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.provider-picker { max-height: 320px; overflow-y: auto; margin-bottom: 16px; }
+.provider-login-footer { margin-top: 16px; margin-bottom: 0; }
+@media (max-width: 767px) {
+  .provider-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .provider-actions { grid-column: 1 / -1; }
+}

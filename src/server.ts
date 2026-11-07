@@ -360,7 +360,9 @@ function registryRoutes(deps: Deps): Route[] {
       const body = parseBody(ctx.res, providerLoginSchema, ctx.body);
       if (!body) return;
       const id = ctx.params.id!;
-      if (authMethodsFor(id).length === 0) return sendJson(ctx.res, 404, { error: `Unknown provider: ${id}` });
+      const methods = authMethodsFor(id);
+      if (methods.length === 0) return sendJson(ctx.res, 404, { error: `Unknown provider: ${id}` });
+      if (!methods.some(method => method.type === body.type)) return sendJson(ctx.res, 400, { error: "Unsupported authentication method" });
       sendJson(ctx.res, 202, deps.logins.start(id, body.type));
     }],
     ["GET", "/api/provider-logins/:id/events", (ctx) => {

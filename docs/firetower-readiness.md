@@ -1,5 +1,13 @@
 # Firetower deployment readiness
 
+## Full application routing and provider setup — 2026-11-07
+
+After the owner reported HTTP 503 following login, the onboarding-only Caddy catch-all was removed. The full application is routed to the loopback backend; native owner authentication remains required. Anonymous application catalogs returned 401, while authenticated agents/groups/workspaces/conversations/providers returned 200. Earlier sections below describing an onboarding-only gate are historical and superseded by this checkpoint. The health heartbeat now treats an application HTTP 503 as an incident.
+
+Provider setup was simplified: searchable catalog with configured providers first, explicit API-key/account actions, inline errors with retry/cancel, masked key entry with Enter submission, and Ollama/custom endpoint templates. Local availability is read immediately from the explicit pi configuration used by login and RPC, without shelling out to another installation or caching stale results. OAuth prompts support out-of-band cancellation; completed/abandoned login sessions expire. Credential files and backups are owner-readable only. “Configured” means local credentials are available, not that a provider has accepted a billable model request.
+
+The broader Durable/worker/restore acceptance and nightly backups remain unfinished. This UI correction does not certify those gates.
+
 ## Simple owner login deployed — 2026-11-07
 
 The owner explicitly requested email/password instead of mandatory MFA and clarified that every user installs their own Cogitator. [ADR-014](context/decisions/ADR-014-simple-owner-login.md) records the revised product policy.
@@ -8,7 +16,7 @@ Release **95385a8** is now installed. The offline switch preserved the existing 
 
 Validation: macOS build and **379 passing tests / 12 skips**; target Linux build and **385 passing tests / six skips**, zero failures. The live HTTPS journey accepted the existing owner password without a setup key/MFA, returned authenticated status, authorized the backend and signed out correctly. The user's Chrome tab was refreshed and both email/password fields were verified enabled; the blocked enrollment screen is gone. Credential values were never printed. The clean password-only access file is in the private deployment bundle; the earlier file and its edits were preserved.
 
-The public application/agent execution gate is unchanged. Worker integration/recovery, general backup/restore and full remote acceptance remain separate unfinished work. **Human MFA enrollment is no longer a deployment prerequisite for this instance.**
+The historical public gate described below was subsequently replaced by full authenticated application routing (see the current checkpoint above). Worker integration/recovery, general backup/restore and full remote acceptance remain separate unfinished work. **Human MFA enrollment is no longer a deployment prerequisite for this instance.**
 
 ## Installed onboarding checkpoint — 2026-11-07
 

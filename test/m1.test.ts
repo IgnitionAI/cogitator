@@ -125,6 +125,10 @@ test("GET /api/skills scanne l'emplacement fixture", async () => {
 test("PUT /api/mcp valide le shape", async () => {
   const bad = await fetch(`${base}/api/mcp`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ servers: {} }) });
   assert.equal(bad.status, 400);
+  const unsupported = await fetch(`${base}/api/providers/deepseek/login`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "oauth" }),
+  });
+  assert.equal(unsupported.status, 400);
   const ok = await fetch(`${base}/api/mcp`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
@@ -241,6 +245,11 @@ test("provider login API-key flow writes auth.json through Models.login", async 
   assert.equal(auth.deepseek.type, "api_key");
   assert.equal(auth.deepseek.key, "sk-test-login");
   assert.equal(auth.openai.type, "oauth");
+  // The availability read must use this fixture's explicit pi directory immediately.
+  const providers = (await (await fetch(`${base}/api/providers`)).json()).providers;
+  assert.equal(providers.find((p: { id: string }) => p.id === "deepseek").auth.ready, true);
+  assert.equal(providers.find((p: { id: string }) => p.id === "anthropic").auth.ready, false);
+
 });
 
 test("provider login rejects unknown providers and types", async () => {
@@ -256,6 +265,10 @@ test("provider login rejects unknown providers and types", async () => {
     body: JSON.stringify({ type: "magic" }),
   });
   assert.equal(bad.status, 400);
+  const unsupported = await fetch(`${base}/api/providers/deepseek/login`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: "oauth" }),
+  });
+  assert.equal(unsupported.status, 400);
 });
 
 async function collectLoginEvents(id: string, until: (event: { type?: string }) => boolean): Promise<Array<Record<string, unknown>>> {

@@ -98,7 +98,7 @@ A restart only happens when the server's identity is certain. Every server write
 - **Live model settings** — change provider, model and reasoning in a classic chat or for an individual group member, without losing history. Changes wait for the current response to finish. Apply to the conversation only, or explicitly also save the bot's defaults for future conversations; existing sibling chats stay unchanged. Durable missions keep their frozen configuration. A pending change interrupted by a controller restart requires an explicit retry.
 - **Automatic interactive UI** — agents choose between text, forms, choices, checklists, and tables as needed, in both standalone and workspace conversations. Responses are submitted explicitly and saved in pi JSONL transcripts. Generated HTML and JavaScript are never executed. See the [contract and limitations](https://github.com/IgnitionAI/cogitator/blob/dev/docs/chat-generative-ui.md).
 - **Scheduled tasks** — cron scheduling with concurrent-run protection, catch-up behavior, run history, and notifications.
-- **Providers and skills** — inspect pi configuration, check authentication with `pi auth check`, use atomic writes with backups, and import skills from GitHub, local directories, or npm commands.
+- **Providers and skills** — connect provider accounts (OAuth/device code) or paste API keys directly from **Providers**, search the catalog and add custom endpoints (including Ollama). Availability uses the same pi credential/model files as conversations, without making a model request; the first message verifies provider acceptance. Writes are atomic with backups. Import skills from GitHub, local directories, or npm commands.
 
 ## Architecture
 

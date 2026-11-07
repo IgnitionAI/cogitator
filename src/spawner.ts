@@ -50,6 +50,7 @@ export function makeSpawner(opts: SpawnerOptions): Spawner {
         const mcpEnv = encodeMcpEnv(spawn.mcpServers ?? []);
         const env: Record<string, string> = {
           COGITATOR_HOME: paths.home,
+          PI_CODING_AGENT_DIR: paths.piAgentDir,
           COGITATOR_CONVERSATION_ID: conv.id,
         };
         const marker = ownedPiMarker();

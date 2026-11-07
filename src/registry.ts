@@ -1,9 +1,9 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { execFile } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readJson, atomicWriteJson } from "./json-files.js";
-import { piAiProviders } from "./host-pi.js";
+import { piAiProviders, piCodingAgent } from "./host-pi.js";
+import { fileCredentialStore } from "./provider-login.js";
 import type { Paths } from "./paths.js";
 import { MCP_NAME, PROVIDER_ID, THINKING_LEVELS, type ProviderUpsert } from "./schemas.js";
 
@@ -147,7 +147,7 @@ export function authMethodsFor(id: string): AuthMethod[] {
     for (const provider of piAiProviders.builtinProviders()) {
       const methods: AuthMethod[] = [];
       if (provider.auth.oauth) methods.push({ type: "oauth", name: provider.auth.oauth.loginLabel ?? provider.auth.oauth.name });
-      if (provider.auth.apiKey) methods.push({ type: "api_key", name: provider.auth.apiKey.name });
+      if (provider.auth.apiKey?.login) methods.push({ type: "api_key", name: provider.auth.apiKey.name });
       authMethodsCache.set(provider.id, methods);
     }
   }
@@ -162,27 +162,6 @@ function readAuth(paths: Paths): AuthFile {
   return readJson<AuthFile>(paths.piAuthJson, {});
 }
 
-const authCache = new Map<string, { at: number; ready: boolean | null }>();
-const AUTH_TTL_MS = 60_000;
-
-function checkAuthReady(provider: string): Promise<boolean | null> {
-  const cached = authCache.get(provider);
-  if (cached && Date.now() - cached.at < AUTH_TTL_MS) return Promise.resolve(cached.ready);
-  return new Promise((resolve) => {
-    execFile("pi", ["auth", "check", "--provider", provider, "--json"], { timeout: AUTH_CHECK_TIMEOUT_MS }, (err, stdout) => {
-      let ready: boolean | null = null;
-      try {
-        ready = JSON.parse(stdout).status === "ready";
-      } catch {
-        ready = null;
-      }
-      if (err && ready === null) ready = false;
-      authCache.set(provider, { at: Date.now(), ready });
-      resolve(ready);
-    });
-  });
-}
-
 /** providers enrichis : catalogue + source + statut auth. Prêt pour GET /api/providers. */
 export async function listProviders(paths: Paths): Promise<ProviderView[]> {
   const catalog = readCatalog(paths);
@@ -190,16 +169,32 @@ export async function listProviders(paths: Paths): Promise<ProviderView[]> {
   const customs = readJson<ModelsJsonFile>(paths.piModelsJson, {}).providers ?? {};
   const ids = new Set([...catalog.keys(), ...Object.keys(auth), ...Object.keys(customs)]);
 
+  // Same explicit files as login and RPC; never inspect another pi installation's home.
+  // checkAuth reports local availability only: no model request or OAuth refresh.
+  const runtime = await piCodingAgent.ModelRuntime.create({
+    credentials: fileCredentialStore(paths.piAuthJson),
+    modelsPath: paths.piModelsJson,
+    allowModelNetwork: false,
+    refreshOnCreate: false,
+  });
   const views = await Promise.all([...ids].map(async (id) => {
-    const configured = Boolean(auth[id]);
+    let check: Awaited<ReturnType<typeof runtime.checkAuth>>;
+    let ready: boolean | null = null;
+    try {
+      if (!runtime.getError()) {
+        check = await runtime.checkAuth(id, { signal: AbortSignal.timeout(AUTH_CHECK_TIMEOUT_MS) });
+        ready = Boolean(check);
+      }
+    } catch { /* Unavailable local check is distinct from missing credentials. */ }
+    const configured = Boolean(auth[id]) || Boolean(check);
     return {
       id,
       source: customs[id] ? "custom" as const : "builtin" as const,
       models: catalog.get(id) ?? [],
       auth: {
         configured,
-        type: auth[id]?.type ?? null,
-        ready: configured ? await checkAuthReady(id) : false,
+        type: auth[id]?.type ?? check?.type ?? null,
+        ready,
       },
       authMethods: authMethodsFor(id),
     };
@@ -223,6 +218,7 @@ export function upsertProvider(paths: Paths, id: string, input: ProviderInput): 
   if (!PROVIDER_ID.test(id)) return { error: `id provider invalide: ${id}` };
   const protocolError = validateProtocol(input.api);
   if (protocolError) return { error: protocolError };
+  mkdirSync(paths.piAgentDir, { recursive: true, mode: 0o700 });
   const file = readJson<ModelsJsonFile>(paths.piModelsJson, {});
   file.providers ??= {};
   const existing = file.providers[id] ?? {};
@@ -235,7 +231,7 @@ export function upsertProvider(paths: Paths, id: string, input: ProviderInput): 
   if (input.apiKey !== undefined) {
     const auth = readAuth(paths);
     auth[id] = { type: "api_key", key: input.apiKey };
-    atomicWriteJson(paths.piAuthJson, auth);
+    atomicWriteJson(paths.piAuthJson, auth, 0o600);
   }
   return {};
 }
@@ -249,7 +245,7 @@ export function deleteProvider(paths: Paths, id: string): void {
   const auth = readAuth(paths);
   if (auth[id]) {
     delete auth[id];
-    atomicWriteJson(paths.piAuthJson, auth);
+    atomicWriteJson(paths.piAuthJson, auth, 0o600);
   }
 }
 

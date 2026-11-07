@@ -351,13 +351,94 @@ export const screensMessages = {
     "fr": "Agent enregistré et appliqué, mais validation indisponible. La sauvegarde n’a pas été annulée.",
     "en": "Agent saved and applied, but validation is unavailable. The save was not rolled back."
   },
+  "screens.providerSaved": {
+    "fr": "Accès à {name} enregistré. Choisis ses modèles dans Agents.",
+    "en": "Access to {name} saved. Choose its models in Agents."
+},
+  "screens.providerAvailabilityHint": {
+    "fr": "« Configuré » indique que les identifiants sont disponibles. Leur acceptation sera vérifiée au premier message envoyé.",
+    "en": "“Configured” means credentials are available. The provider will verify them when you send your first message."
+},
+  "screens.providerConfigured": {
+    "fr": "Configuré",
+    "en": "Configured"
+},
+  "screens.providerCheckNeeded": {
+    "fr": "À vérifier",
+    "en": "Needs checking"
+},
+  "screens.providerReconnect": {
+    "fr": "Modifier la connexion",
+    "en": "Change connection"
+},
+  "screens.providerEnvironment": {
+    "fr": "Configuration sur le serveur",
+    "en": "Server configuration"
+},
+  "screens.providerModelCount": {
+    "fr": "{count} modèles",
+    "en": "{count} models"
+},
+  "screens.noProviderMatch": {
+    "fr": "Aucun fournisseur trouvé",
+    "en": "No providers found"
+},
+  "screens.providerSearchHint": {
+    "fr": "Essaie un autre nom ou ajoute un fournisseur personnalisé.",
+    "en": "Try another name or add a custom provider."
+},
+  "screens.providerUseKey": {
+    "fr": "Utiliser une clé API",
+    "en": "Use an API key"
+},
+  "screens.providerUseAccount": {
+    "fr": "Connecter mon compte",
+    "en": "Connect my account"
+},
+  "screens.providerReconnecting": {
+    "fr": "Connexion interrompue. Reconnexion en cours ; tu peux annuler et recommencer.",
+    "en": "Connection interrupted. Reconnecting; you can cancel and start again."
+},
+  "screens.providerBrowserHint": {
+    "fr": "Ouvre la page ci-dessus et termine la connexion. Si une URL de retour est demandée, copie-la depuis l’autre onglet et colle-la ici.",
+    "en": "Open the page above and complete sign-in. If a redirect URL is requested, copy it from the other tab and paste it here."
+},
+  "screens.providerKeyHint": {
+    "fr": "La clé reste masquée et est enregistrée sur ton installation.",
+    "en": "The key stays hidden and is saved on your installation."
+},
+  "screens.providerHelp": {
+    "fr": "Instructions du fournisseur",
+    "en": "Provider instructions"
+},
+  "screens.providerChange": {
+    "fr": "Changer de fournisseur",
+    "en": "Change provider"
+},
+  "screens.providerOllama": { "fr": "Ollama", "en": "Ollama" },
+  "screens.providerTemplate": {
+    "fr": "Type de fournisseur",
+    "en": "Provider type"
+},
+  "screens.providerCompatible": {
+    "fr": "API compatible OpenAI",
+    "en": "OpenAI-compatible API"
+},
+  "screens.providerOther": {
+    "fr": "Autre fournisseur",
+    "en": "Other provider"
+},
+  "screens.providerServerUrl": {
+    "fr": "Adresse accessible depuis le serveur Cogitator. « localhost » désigne ce serveur, pas ton navigateur.",
+    "en": "Address reachable from the Cogitator server. “localhost” means that server, not your browser."
+},
   "screens.providers": {
     "fr": "Fournisseurs",
     "en": "Providers"
   },
   "screens.providersSub": {
-    "fr": "Configuration pi : modèles et authentification. Les modifications sont sauvegardées avant écriture.",
-    "en": "pi configuration: models and authentication. Changes are backed up before writing."
+    "fr": "Connecte un compte ou ajoute une clé API pour utiliser ses modèles.",
+    "en": "Connect an account or add an API key to use its models."
   },
   "screens.addProvider": {
     "fr": "Se connecter",

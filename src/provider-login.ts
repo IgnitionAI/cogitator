@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { piAiProviders } from "./host-pi.js";
 import type { AuthEvent, AuthPrompt, AuthType, Credential, CredentialStore } from "@earendil-works/pi-ai";
@@ -12,6 +14,7 @@ export type LoginPrompt = Pick<AuthPrompt, "type" | "message"> & {
 export type LoginEvent =
   | { type: "prompt"; prompt: LoginPrompt }
   | AuthEvent
+  | { type: "prompt_clear" }
   | { type: "done" }
   | { type: "error"; message: string };
 
@@ -21,9 +24,12 @@ interface Session {
   abort: AbortController;
   resolvePrompt?: (value: string) => void;
   rejectPrompt?: (error: Error) => void;
+  expiry: ReturnType<typeof setTimeout>;
+  terminal?: boolean;
+  prompt?: LoginPrompt;
 }
 
-function fileCredentialStore(path: string): CredentialStore {
+export function fileCredentialStore(path: string): CredentialStore {
   let queue = Promise.resolve();
   const locked = <T>(fn: () => Promise<T>): Promise<T> => {
     const run = queue.then(fn, fn);
@@ -44,7 +50,8 @@ function fileCredentialStore(path: string): CredentialStore {
         const next = await fn(file[providerId]);
         if (next !== undefined) {
           file[providerId] = next;
-          atomicWriteJson(path, file);
+          mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+          atomicWriteJson(path, file, 0o600);
         }
         return next ?? file[providerId];
       });
@@ -53,7 +60,7 @@ function fileCredentialStore(path: string): CredentialStore {
       return locked(async () => {
         const file = all();
         delete file[providerId];
-        atomicWriteJson(path, file);
+        atomicWriteJson(path, file, 0o600);
       });
     },
   };
@@ -71,19 +78,35 @@ function publicPrompt(prompt: AuthPrompt): LoginPrompt {
 export class ProviderLogins {
   private readonly sessions = new Map<string, Session>();
 
-  constructor(private readonly paths: Paths) {}
+  private readonly models;
+
+  constructor(paths: Paths, models?: Pick<ReturnType<typeof piAiProviders.builtinModels>, "login">) {
+    this.models = models ?? piAiProviders.builtinModels({ credentials: fileCredentialStore(paths.piAuthJson) });
+  }
 
   start(providerId: string, type: AuthType): { id: string } {
+    if (this.sessions.size >= 64) throw new Error("Too many pending provider logins");
     const id = randomUUID();
     const abort = new AbortController();
-    const session: Session = { events: [], listeners: new Set(), abort };
+    const expiry = setTimeout(() => {
+      emit({ type: "error", message: "Provider login expired. Start again." });
+      this.cancel(id);
+    }, 15 * 60_000);
+    expiry.unref();
+    const session: Session = { events: [], listeners: new Set(), abort, expiry };
     this.sessions.set(id, session);
     const emit = (event: LoginEvent) => {
+      if (session.terminal) return;
       session.events.push(event);
+      if (event.type === "done" || event.type === "error") {
+        session.terminal = true;
+        clearTimeout(session.expiry);
+        session.expiry = setTimeout(() => this.cancel(id), 60_000);
+        session.expiry.unref();
+      }
       for (const listener of session.listeners) listener(event);
     };
-    const models = piAiProviders.builtinModels({ credentials: fileCredentialStore(this.paths.piAuthJson) });
-    void models.login(providerId, type, {
+    void this.models.login(providerId, type, {
       signal: abort.signal,
       notify: (event) => emit(event),
       prompt: (prompt) => new Promise<string>((resolve, reject) => {
@@ -91,9 +114,22 @@ export class ProviderLogins {
           reject(abort.signal.reason instanceof Error ? abort.signal.reason : new Error("cancelled"));
           return;
         }
-        session.resolvePrompt = resolve;
-        session.rejectPrompt = reject;
+        const signals = [abort.signal, prompt.signal].filter((signal): signal is AbortSignal => Boolean(signal));
+        const finish = (value?: string, error?: Error) => {
+          for (const signal of signals) signal.removeEventListener("abort", onAbort);
+          session.resolvePrompt = undefined;
+          session.rejectPrompt = undefined;
+          session.prompt = undefined;
+          emit({ type: "prompt_clear" });
+          if (error) reject(error); else resolve(value!);
+        };
+        const onAbort = () => finish(undefined, new Error("cancelled"));
+        session.prompt = publicPrompt(prompt);
+        session.resolvePrompt = (value) => finish(value);
+        session.rejectPrompt = (error) => finish(undefined, error);
+        for (const signal of signals) signal.addEventListener("abort", onAbort, { once: true });
         emit({ type: "prompt", prompt: publicPrompt(prompt) });
+        if (signals.some((signal) => signal.aborted)) onAbort();
       }),
     }, { agentName: "Cogitator" }).then(() => emit({ type: "done" }), (error: unknown) => {
       if (abort.signal.aborted) return;
@@ -119,7 +155,9 @@ export class ProviderLogins {
 
   reply(id: string, value: string): boolean {
     const session = this.sessions.get(id);
-    if (!session?.resolvePrompt) return false;
+    if (!session?.resolvePrompt || session.terminal) return false;
+    if (session.prompt?.type !== "text" && !value.trim()) return false;
+    if (session.prompt?.type === "select" && !session.prompt.options?.some(option => option.id === value)) return false;
     const resolve = session.resolvePrompt;
     session.resolvePrompt = undefined;
     session.rejectPrompt = undefined;
@@ -130,6 +168,7 @@ export class ProviderLogins {
   cancel(id: string): boolean {
     const session = this.sessions.get(id);
     if (!session) return false;
+    clearTimeout(session.expiry);
     session.rejectPrompt?.(new Error("cancelled"));
     session.abort.abort();
     this.sessions.delete(id);

@@ -1,4 +1,12 @@
 export const chatMessages = {
+  "chat.providerMissing": {"fr": "Ce fournisseur n’est plus dans le catalogue. Ajoute-le depuis Fournisseurs.", "en": "This provider is no longer in the catalog. Add it from Providers."},
+  "chat.sessionStartFailed": {"fr": "La session n’a pas pu démarrer. Revérifie la connexion ou les réglages du modèle.", "en": "The session could not start. Check the connection or model settings."},
+  "chat.modelUnavailable": {"fr": "Ce modèle n’est pas disponible avec cette connexion. Choisis un autre modèle dans les réglages.", "en": "This model is unavailable with this connection. Choose another model in settings."},
+  "chat.retrySession": {"fr": "Revérifier la connexion", "en": "Check connection again"},
+  "chat.setupRequired": {"fr": "Configuration requise", "en": "Setup required"},
+  "chat.connectionBlocked": {"fr": "Connexion requise", "en": "Connection required"},
+  "chat.connectProvider": {"fr": "Connecter {provider}", "en": "Connect {provider}"},
+  "chat.providerConnectionRequired": {"fr": "Connecte {provider} pour démarrer cette conversation. La connexion à Cogitator ne connecte pas ton compte au fournisseur.", "en": "Connect {provider} to start this conversation. Signing in to Cogitator does not connect your provider account."},
   "chat.queueAttachment": { "en": "Queued attachment was not delivered. Attach it again to retry.", "fr": "La pièce jointe en attente n’a pas été transmise. Joignez-la à nouveau pour réessayer." },
   "chat.queueFailed": { "en": "Queued message failed before delivery. Restore it to edit and retry.", "fr": "Le message en attente n’a pas été transmis. Restaurez-le pour le modifier et réessayer." },
   "chat.queueStopped": { "en": "Queued message canceled when the conversation stopped.", "fr": "Message en attente annulé à l’arrêt de la conversation." },

@@ -1,4 +1,5 @@
 import { QueueRecovery, appendRecoveredMessage, type QueueFailure } from "../QueueRecovery";
+import { ConnectProviderModal } from "./Providers";
 import { LiveConfiguration } from "../ModelConfiguration";
 import { SubagentsPanel } from "../SubagentsPanel";
 import { t, formatNumber, statusLabel, thinkingLabel, localizeText } from "../i18n";
@@ -314,6 +315,10 @@ export function ChatView(props: {
   const draftRevision = useRef(0);
   const nearBottom = useRef(true);
   const [connection, setConnection] = useState<EventConnectionState>("connecting");
+  const [sessionIssue, setSessionIssue] = useState<{ code: string; provider: string; error?: string } | null>(null);
+  const [connectProvider, setConnectProvider] = useState<string | null>(null);
+  const [restart, setRestart] = useState(0);
+  const retrySession = useCallback(() => { setSessionIssue(null); setRestart(value => value + 1); }, []);
   const [sessionStatus, setSessionStatus] = useState(conversation.status);
   const [running, setRunning] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -409,6 +414,12 @@ export function ChatView(props: {
       (e) => {
         const ev = e as SseEvent;
         eventRevision.current++;
+        if (ev.type === "session_error") {
+          setSessionIssue({ code: ev.code ?? "SESSION_START_FAILED", provider: ev.provider ?? conversation.provider, error: ev.error });
+          setRunning(false); setStreaming(false); setSubsPanel(false);
+          return;
+        }
+        if (ev.type === "session") setSessionIssue(null);
         if (ev.type === "configuration_changed" && ev.conversation) { updateConfiguration(ev.conversation); return; }
         if (ev.type === "mission_state" && ev.mission) {
           // État d'admission/approbation/budget poussé par le serveur (file, pause, …).
@@ -443,13 +454,14 @@ export function ChatView(props: {
           }).catch(() => undefined).finally(() => loadHistory());
         },
         onStateChange: setConnection,
+        stopOnEvents: ["session_error"],
       },
     );
     return () => {
       clearTimeout(refetch);
       close();
     };
-  }, [conversation.id, loadHistory, refreshMission, updateConfiguration]);
+  }, [conversation.id, loadHistory, refreshMission, updateConfiguration, restart]);
 
   useEffect(() => {
     if (nearBottom.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -457,7 +469,7 @@ export function ChatView(props: {
 
   const send = async () => {
     const text = input.trim();
-    if (busyRef.current || (!text && images.length === 0)) return;
+    if (sessionIssue || busyRef.current || (!text && images.length === 0)) return;
     const toSend = images;
     const sentRevision = draftRevision.current;
     busyRef.current = true;
@@ -480,6 +492,7 @@ export function ChatView(props: {
   };
 
   const sendInteraction = async (text: string) => {
+    if (sessionIssue) throw new Error(t("chat.providerConnectionRequired", { provider: sessionIssue.provider }));
     if (busyRef.current) throw new Error(t("chat.sendingBusy"));
     busyRef.current = true;
     setBusy(true);
@@ -498,8 +511,8 @@ export function ChatView(props: {
     const response = parseUIResponse(item.text);
     if (response) responses.set(uiRequestKey(response.request), response);
   }
-  const statusText = running ? t("chat.running") : ({ idle: t("chat.ready"), active: t("chat.ready"), running: t("chat.running"), spawning: t("chat.starting"), dead: t("chat.stopped"), error: t("chat.error") }[sessionStatus] ?? sessionStatus);
-  const connectionText = connection === "connected" ? t("chat.connected") : connection === "reconnecting" ? t("chat.reconnecting") : connection === "closed" ? t("chat.disconnected") : t("chat.connecting");
+  const statusText = sessionIssue ? t("chat.setupRequired") : connection !== "connected" ? t("chat.starting") : running ? t("chat.running") : ({ idle: t("chat.ready"), active: t("chat.ready"), running: t("chat.running"), spawning: t("chat.starting"), dead: t("chat.stopped"), error: t("chat.error") }[sessionStatus] ?? sessionStatus);
+  const connectionText = sessionIssue ? t("chat.connectionBlocked") : connection === "connected" ? t("chat.connected") : connection === "reconnecting" ? t("chat.reconnecting") : connection === "closed" ? t("chat.disconnected") : t("chat.connecting");
 
   const addFiles = (files: Iterable<File>) => {
     for (const file of files) {
@@ -526,7 +539,7 @@ export function ChatView(props: {
           <Title>{conversation.title || t("chat.untitled")}</Title>
           <div className="chat-context"><span className="mono">{conversation.provider} / {conversation.model}</span><span className="chat-connection" role="status">{connectionText}</span></div>
         </div>
-        <span className={`chat-state ${running ? "is-running" : sessionStatus === "error" || sessionStatus === "dead" ? "is-error" : ""}`} role="status"><Icon name={running ? "activity" : sessionStatus === "error" || sessionStatus === "dead" ? "warning" : "check"} size={14} />{statusText}</span>
+        <span className={`chat-state ${sessionIssue ? "is-error" : running ? "is-running" : sessionStatus === "error" || sessionStatus === "dead" ? "is-error" : ""}`} role="status"><Icon name={sessionIssue ? "warning" : running ? "activity" : sessionStatus === "error" || sessionStatus === "dead" ? "warning" : "check"} size={14} />{statusText}</span>
         <button
           type="button"
           className={`btn btn-sm ${filesPanel ? "btn-primary" : ""}`}
@@ -561,7 +574,15 @@ export function ChatView(props: {
           }}
         />
       </header>
-      {conversation.runtime_kind !== "durable" && runtimeKind !== "durable" && (conversation.runtime_kind || runtimeKind) ? <LiveConfiguration key={conversation.id} conversation={conversation} onChanged={updateConfiguration} /> : null}
+      {sessionIssue ? <div className="session-issue" role="alert">
+        <p>{sessionIssue.code === "PROVIDER_NOT_CONFIGURED" ? t("chat.providerConnectionRequired", { provider: sessionIssue.provider }) : sessionIssue.code === "MODEL_UNAVAILABLE" ? t("chat.modelUnavailable") : t("chat.sessionStartFailed")}</p>
+        <div className="toolbar">
+          {sessionIssue.code === "PROVIDER_NOT_CONFIGURED" ? <button type="button" className="btn btn-primary" onClick={() => setConnectProvider(sessionIssue.provider)}>{t("chat.connectProvider", { provider: sessionIssue.provider })}</button> : null}
+          <button type="button" className="btn" onClick={retrySession}>{t("chat.retrySession")}</button>
+        </div>
+      </div> : null}
+      {connectProvider ? <ConnectProviderModal providerId={connectProvider} onClose={() => setConnectProvider(null)} onSaved={() => { setConnectProvider(null); retrySession(); }} /> : null}
+      {conversation.runtime_kind !== "durable" && runtimeKind !== "durable" && (conversation.runtime_kind || runtimeKind) ? <LiveConfiguration key={conversation.id} conversation={conversation} onChanged={updateConfiguration} onProviderConnected={retrySession} refreshKey={restart} /> : null}
       <div className="chat-body">
       <div className="chat-main">
       <div className="chat-scroll" ref={scrollRef} role="log" aria-label={t("chat.history")} aria-live="off" tabIndex={0}
@@ -612,7 +633,7 @@ export function ChatView(props: {
           return (
             <div key={m.key ?? i} className={`msg msg-${m.kind}`} role="article" aria-label={m.kind === "user" ? t("chat.userMessage") : t("chat.agentMessage")}>
               <div className="message-label"><Icon name={m.kind === "user" ? "users" : "bot"} size={14} />{m.kind === "user" ? t("chat.you") : t("chat.agent")}</div>
-              {m.kind === "assistant" ? <AssistantContent text={m.text} responses={responses} disabled={busy || running} streaming={streaming && i === streamRef.current.assistantIndex} onSubmit={sendInteraction} /> : m.attachmentCount ? <span>{t(m.attachmentCount === 1 ? "chat.attachedImage" : "chat.attachedImages", { count: formatNumber(m.attachmentCount) })}</span> : <UserContent text={m.text} />}
+              {m.kind === "assistant" ? <AssistantContent text={m.text} responses={responses} disabled={!!sessionIssue || busy || running} streaming={streaming && i === streamRef.current.assistantIndex} onSubmit={sendInteraction} /> : m.attachmentCount ? <span>{t(m.attachmentCount === 1 ? "chat.attachedImage" : "chat.attachedImages", { count: formatNumber(m.attachmentCount) })}</span> : <UserContent text={m.text} />}
               {isLastAssistant && streaming ? <span className="caret" /> : null}
             </div>
           );
@@ -687,7 +708,7 @@ export function ChatView(props: {
             {skills.map((skill) => <option key={skill.name} value={skill.name}>{skill.name}</option>)}
           </select>
         </div>
-        <button type="button" className="btn btn-primary" onClick={() => void send()} disabled={busy || (!input.trim() && images.length === 0)}>
+        <button type="button" className="btn btn-primary" onClick={() => void send()} disabled={!!sessionIssue || connection !== "connected" || busy || (!input.trim() && images.length === 0)}>
           {busy ? <Spinner /> : <Icon name="send" />} <span className="composer-send-label">{t("chat.send")}</span>
         </button>
       </div>

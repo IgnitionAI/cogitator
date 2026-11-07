@@ -9,7 +9,7 @@ import { checkRequestAuthorization } from "./request-authorization.js";
 import { THINKING_LEVELS, type ModelSwitch } from "./schemas.js";
 
 export class ConfigurationError extends Error {
-  constructor(message: string, readonly status = 502) { super(message); }
+  constructor(message: string, readonly status = 502, readonly code = "CONFIGURATION_FAILED", readonly provider?: string) { super(message); }
 }
 interface Dependencies {
   db: Db;
@@ -34,11 +34,15 @@ async function readTuple(client: PiClientLike): Promise<Tuple> {
 }
 
 async function select(client: PiClientLike, target: Tuple): Promise<Tuple> {
+  const available = await client.getAvailableModels();
+  if (!available.some(m => m.provider === target.provider)) {
+    throw new ConfigurationError("Provider connection required", 409, "PROVIDER_NOT_CONFIGURED", target.provider);
+  }
+  if (!available.some(m => m.provider === target.provider && m.id === target.model)) {
+    throw new ConfigurationError("Model unavailable for this provider", 422, "MODEL_UNAVAILABLE", target.provider);
+  }
   const before = await readTuple(client);
   const thinking = target.thinking ?? before.thinking;
-  if (!(await client.getAvailableModels()).some(m => m.provider === target.provider && m.id === target.model)) {
-    throw new ConfigurationError("unsupported model", 422);
-  }
   if (before.provider !== target.provider || before.model !== target.model) await client.setModel(target.provider, target.model);
   const levels = await client.getAvailableThinkingLevels();
   if (!thinking || !THINKING_LEVELS.includes(thinking as ThinkingLevel) || !levels.includes(thinking as ThinkingLevel)) {

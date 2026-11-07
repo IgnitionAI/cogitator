@@ -16,7 +16,7 @@ function find(node: unknown, predicate: (node: Node) => boolean): Node | undefin
 }
 
 // Real component handlers, hook/API doubles. This is not real RPC or browser proof.
-function harness() {
+function harness(connected = true) {
   let conversation: Conversation = { id: "chat", agent_id: "bot", workspace_id: null, provider: "old", model: "one", thinking: "low", session_file: null, title: "Chat", status: "idle", updated_at: "", runtime_kind: "classic", pending_configuration: null };
   const slots: unknown[] = [];
   let cursor = 0;
@@ -43,8 +43,9 @@ function harness() {
       useRef(initial: unknown) { const index = cursor++; return slots[index] ??= { current: initial }; },
       useEffect(effect: () => void) { effects.push(effect); },
     };
+    if (name === "./screens/Providers") return { ConnectProviderModal: "ConnectProviderModal" };
     if (name === "./api") return { api: {
-      providers: async () => ({ providers: [{ id: "new", models: [{ id: "two" }] }] }),
+      providers: async () => ({ providers: [{ id: "new", models: [{ id: "two" }], auth: { ready: connected } }] }),
       switchModel: async (...args: unknown[]) => {
         calls.push(args);
         if (failure) throw new Error("Rejected");
@@ -242,4 +243,17 @@ test("queue cancellation/failure stays visible and restoration appends to drafts
     await flush();
     assert.ok(find(ui.render(), (node) => node.type === "p" && node.props.children === "Queued message failed before delivery. Restore it to edit and retry."));
   }
+});
+
+
+test("live editor explains missing provider credentials and blocks Apply without sending a configuration", async () => {
+  i18n.setLocale("fr");
+  const ui = harness(false); await flush();
+  (ui.fields().props.onChange as (value: unknown) => void)({ provider: "new", model: "two", thinking: "low" });
+  const tree = ui.render();
+  assert.ok(find(tree, node => node.type === "button" && node.props.children === "Connecter new"));
+  assert.equal(find(tree, node => node.type === "button" && node.props.children === "Appliquer les réglages")?.props.disabled, true);
+  ui.click("Appliquer les réglages"); await flush();
+  assert.deepEqual(ui.calls, []);
+  assert.match(find(tree, node => node.type === "ErrorText")!.props.error as string, /Connecte new/);
 });

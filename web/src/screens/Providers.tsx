@@ -107,7 +107,7 @@ function authLink(url?: string): string | undefined {
   try { const parsed = new URL(url); return ["https:", "http:"].includes(parsed.protocol) ? parsed.href : undefined; } catch { return; }
 }
 
-function LoginModal(props: {
+export function LoginModal(props: {
   providers: ProviderView[];
   initialId?: string;
   onClose: () => void;
@@ -333,4 +333,23 @@ export function KeyModal(props: { providerId: string; onClose: () => void; onSav
       {busy ? <p role="status" className="muted">{translate("screens.pending")}</p> : null}
     </Modal>
   );
+}
+
+
+/** Reuse the same provider flow from a blocked conversation, without losing its draft. */
+export function ConnectProviderModal(props: { providerId: string; onClose: () => void; onSaved: () => void }) {
+  const [providers, setProviders] = useState<ProviderView[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(() => {
+    setError(null);
+    api.providers().then(response => setProviders(response.providers)).catch((failure: Error) => setError(failure.message));
+  }, []);
+  useEffect(load, [load]);
+  const selected = providers?.find(provider => provider.id === props.providerId);
+  if (selected?.authMethods?.length) return <LoginModal providers={providers!} initialId={selected.id} onClose={props.onClose} onCustom={props.onClose} onSaved={props.onSaved} />;
+  if (selected?.source === "custom") return <KeyModal providerId={selected.id} onClose={props.onClose} onSaved={props.onSaved} />;
+  return <Modal title={translate("screens.loginTitle")} onClose={props.onClose}>
+    <ErrorText error={error ?? (providers ? translate("chat.providerMissing") : null)} />
+    {!providers && !error ? <Skeleton rows={2} /> : <button type="button" className="btn" onClick={load}>{translate("screens.retry")}</button>}
+  </Modal>;
 }

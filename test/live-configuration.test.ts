@@ -38,7 +38,7 @@ test("configuration waits for true settled and precedes retained follow-up", asy
 
 import { openDb } from "../src/db.js";
 import { createConversation, getConversation } from "../src/conversations.js";
-import { changeConfiguration } from "../src/classic-configuration.js";
+import { ConfigurationError, changeConfiguration } from "../src/classic-configuration.js";
 import { getPaths } from "../src/paths.js";
 test("atomic tuple commit preserves snapshot and authoritative reasoning", async () => {
   const { db } = openDb(":memory:");
@@ -325,4 +325,20 @@ test("group deletion cancels retained prompts/configuration before cascade and i
     await new Promise<void>(resolve => server.close(() => resolve()));
     await pool.dispose(); db.close(); rmSync(home, { recursive: true, force: true });
   }
+});
+
+
+test("missing credentials are distinct from an unavailable model and do not commit a tuple", async () => {
+  class MissingCredentials extends Client { override async getAvailableModels() { return []; } }
+  const missing = fixture(new MissingCredentials());
+  try {
+    await assert.rejects(missing.deps.ensure(), error => error instanceof ConfigurationError && error.code === "PROVIDER_NOT_CONFIGURED" && error.provider === "p");
+    assert.equal(missing.pool.isLive(missing.conv.id), false);
+    assert.equal(getConversation(missing.db, missing.conv.id)!.model, "old");
+  } finally { await missing.close(); }
+  const available = fixture();
+  try {
+    await assert.rejects(changeConfiguration(available.deps, available.conv.id, { provider: "p", id: "missing" }), error => error instanceof ConfigurationError && error.code === "MODEL_UNAVAILABLE");
+    assert.equal(getConversation(available.db, available.conv.id)!.model, "old");
+  } finally { await available.close(); }
 });

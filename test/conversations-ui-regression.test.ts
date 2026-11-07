@@ -236,6 +236,15 @@ test("SSE reports reconnects and removes handlers on cleanup without breaking le
   advance(5000);
   assert.equal(accessChecks, checksBeforeClose, "cleanup cancels scheduled revalidation");
   assert.equal(timers.size, 0);
+  const terminal: unknown[] = [];
+  exports.openEvents!("/startup-error", event => terminal.push(event), { stopOnEvents: ["session_error"] });
+  const terminalSource = instance;
+  terminalSource.onmessage!({ data: JSON.stringify({ type: "session_error", code: "PROVIDER_NOT_CONFIGURED" }) });
+  assert.equal(terminalSource.readyState, FakeSource.CLOSED);
+  assert.equal(terminalSource.onerror, null);
+  advance(60000);
+  assert.equal(timers.size, 0, "a setup error must not enter an automatic reconnect loop");
+  assert.equal(terminal.length, 1, "the terminal error still reaches the chat");
 });
 
 test("attachments survive failure and only sent images are removed on success; scrolling respects position", async () => {
@@ -298,4 +307,19 @@ test("retry after failed initial history merges old history with sent/live items
     chat.emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: " suite" } });
     assert.deepEqual(chat.messages(), ["Ancienne question", "Ancienne réponse", "Message envoyé", "Réponse live suite"]);
   }
+});
+
+
+test("missing provider is actionable in chat, preserves the draft and blocks Enter submission", () => {
+  const chat = chatHarness();
+  i18n.setLocale("fr");
+  chat.loadHistory();
+  chat.change("Brouillon à conserver");
+  chat.emit({ type: "session_error", code: "PROVIDER_NOT_CONFIGURED", provider: "openai" });
+  const tree = chat.render();
+  assert.ok(chat.find(tree, node => node.type === "button" && node.props.children === "Connecter openai"));
+  assert.ok(chat.find(tree, node => node.props.role === "alert"));
+  chat.enter();
+  assert.equal(chat.sends(), 0);
+  assert.equal(chat.find(chat.render(), node => node.type === "textarea")?.props.value, "Brouillon à conserver");
 });

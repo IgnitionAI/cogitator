@@ -149,7 +149,7 @@ export function closeAllEvents(): void { for (const close of eventClosers) close
 export function openEvents(
   url: string,
   onEvent: (event: SseEvent) => void,
-  opts?: { onOpen?: () => void; onClose?: () => void; onStateChange?: (state: EventConnectionState) => void },
+  opts?: { onOpen?: () => void; onClose?: () => void; onStateChange?: (state: EventConnectionState) => void; stopOnEvents?: string[] },
 ): () => void {
   let source: EventSource | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -165,7 +165,11 @@ export function openEvents(
     if (closed) return;
     source = new EventSource(url);
     source.onmessage = (msg) => {
-      try { onEvent(JSON.parse(msg.data) as SseEvent); }
+      try {
+        const event = JSON.parse(msg.data) as SseEvent;
+        if (opts?.stopOnEvents?.includes(event.type)) close();
+        onEvent(event);
+      }
       catch { /* Ignore non-JSON events. */ }
     };
     source.onopen = () => { opts?.onStateChange?.("connected"); opts?.onOpen?.(); };

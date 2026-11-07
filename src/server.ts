@@ -891,7 +891,18 @@ function conversationRoutes(deps: Deps): Route[] {
       const conv = requireConversation(deps, ctx);
       if (!conv) return;
       const runtime = deps.compose(conv);
-      const spawned = await runtime.ensure(conv);
+      let spawned: Awaited<ReturnType<typeof runtime.ensure>>;
+      try { spawned = await runtime.ensure(conv); }
+      catch (error) {
+        if (error instanceof AuthError) throw error;
+        ctx.check();
+        const send = openSse(ctx.res);
+        send({ type: "session_error", code: error instanceof ConfigurationError ? error.code : "SESSION_START_FAILED",
+          provider: error instanceof ConfigurationError ? error.provider : conv.provider,
+          error: error instanceof Error ? error.message : "Session startup failed" });
+        ctx.res.end();
+        return;
+      }
       // Mode durable : aucun spawn (la runtime vit dans le contrôleur) ; la lecture
       // d'événements ne crée jamais de mission (Plan 0002 §7).
       const send = openSse(ctx.res, runtime.kind === "durable"
@@ -1042,7 +1053,7 @@ function conversationRoutes(deps: Deps): Route[] {
       } catch (error) {
         if (error instanceof AuthError) throw error;
         sendJson(ctx.res, error instanceof ConfigurationError ? error.status : (error as { code?: string }).code === "pool_full" ? 503 : 502,
-          { error: error instanceof Error ? error.message : String(error) });
+          { error: error instanceof Error ? error.message : String(error), ...(error instanceof ConfigurationError ? { code: error.code, provider: error.provider } : {}) });
       }
     }],
     ["DELETE", "/api/conversations/:id/model", async (ctx) => {

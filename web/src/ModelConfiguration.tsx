@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ConnectProviderModal } from "./screens/Providers";
 import { api } from "./api";
 import { t, thinkingLabel } from "./i18n";
 import { THINKING_LEVELS, thinkingLevelsFor } from "./types";
@@ -41,8 +42,8 @@ export function ModelFields({ value, providers, onChange, preserve = false }: {
   </div>;
 }
 
-export function LiveConfiguration({ conversation, onChanged, name }: {
-  conversation: Conversation; onChanged: (conversation: Conversation) => void; name?: string;
+export function LiveConfiguration({ conversation, onChanged, name, onProviderConnected, refreshKey }: {
+  conversation: Conversation; onChanged: (conversation: Conversation) => void; name?: string; onProviderConnected?: () => void; refreshKey?: number;
 }) {
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +53,7 @@ export function LiveConfiguration({ conversation, onChanged, name }: {
   const [draft, setDraft] = useState<ModelDraft | null>(null);
   const [scope, setScope] = useState<"conversation" | "preset" | null>(null);
   const [applied, setApplied] = useState(false);
+  const [connect, setConnect] = useState(false);
   const pending = conversation.pending_configuration;
   const latestConversation = useRef(conversation);
   latestConversation.current = conversation;
@@ -63,15 +65,16 @@ export function LiveConfiguration({ conversation, onChanged, name }: {
   }, [pending]);
   const selectedScope = scope ?? pending?.scope ?? "conversation";
   const value = draft ?? pending ?? conversation;
+  const needsConnection = providers.find(provider => provider.id === value.provider)?.auth?.ready === false;
   const load = () => {
     setLoading(true);
     api.providers().then((response) => { setProviders(response.providers); setLoadError(null); })
       .catch((failure: Error) => setLoadError(failure.message)).finally(() => setLoading(false));
   };
-  useEffect(load, []);
+  useEffect(load, [refreshKey]);
 
   const change = async (dismiss = false) => {
-    if (writing.current || pending?.status === "pending") return;
+    if (writing.current || pending?.status === "pending" || (!dismiss && needsConnection)) return;
     writing.current = true;
     if (!dismiss) setDraft({ provider: value.provider, model: value.model, thinking: value.thinking });
     setBusy(true);
@@ -111,7 +114,9 @@ export function LiveConfiguration({ conversation, onChanged, name }: {
       <div role="status">
         {pending ? <p>{t(pending.status === "pending" ? "configuration.pending" : "configuration.failed")} <span className="mono">{pending.provider} / {pending.model} · {pending.thinking ? thinkingLabel(pending.thinking) : t("configuration.preserve")}</span></p> : applied ? <p>{t("configuration.applied")}</p> : null}
       </div>
-      <ErrorText error={error ?? pending?.error ?? loadError} />
+      <ErrorText error={loadError ?? (needsConnection ? t("chat.providerConnectionRequired", { provider: value.provider }) : error ?? pending?.error ?? null)} />
+      {needsConnection ? <button type="button" className="btn" onClick={() => setConnect(true)}>{t("chat.connectProvider", { provider: value.provider })}</button> : null}
+      {connect ? <ConnectProviderModal providerId={value.provider} onClose={() => setConnect(false)} onSaved={() => { setConnect(false); load(); onProviderConnected?.(); }} /> : null}
       {loadError ? <button type="button" className="btn btn-sm" onClick={load}>{t("screens.retryOptions")}</button> : null}
       {loading ? <p role="status">{t("configuration.loading")}</p> : null}
       <fieldset className="form-fields" disabled={busy || loading || !!loadError || pending?.status === "pending"} aria-label={name ? `${name} · ${t("configuration.title")}` : t("configuration.title")}>
@@ -124,7 +129,7 @@ export function LiveConfiguration({ conversation, onChanged, name }: {
         </Field>
         <p className="muted">{t("configuration.validation")}</p>
         <div className="toolbar">
-          <button type="button" className="btn btn-sm btn-primary" disabled={!value.provider || !value.model} onClick={() => void change()}>{busy ? t("configuration.applying") : pending?.status === "failed" ? t("configuration.retry") : t("configuration.apply")}</button>
+          <button type="button" className="btn btn-sm btn-primary" disabled={needsConnection || !value.provider || !value.model} onClick={() => void change()}>{busy ? t("configuration.applying") : pending?.status === "failed" ? t("configuration.retry") : t("configuration.apply")}</button>
           {pending?.status === "failed" ? <button type="button" className="btn btn-sm" onClick={() => void change(true)}>{t("configuration.dismiss")}</button> : null}
         </div>
       </fieldset>

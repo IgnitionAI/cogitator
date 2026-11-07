@@ -204,3 +204,7 @@
 .subagent-row .is-working { color: var(--progress); }
 .subagent-row .is-done { color: var(--success); }
 .chat .chat-side > [role="alert"] { margin: 12px; }
+
+.session-issue { margin: 16px; padding: 16px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface); }
+.session-issue p { margin: 0 0 12px; }
+.session-issue .toolbar { margin-bottom: 0; }

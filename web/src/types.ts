@@ -335,6 +335,8 @@ export interface MissionStatusView {
 }
 
 export interface SseEvent {
+  code?: string;
+  provider?: string;
   message?: string;
   messages?: string[];
   count?: number;

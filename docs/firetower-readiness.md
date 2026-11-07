@@ -1,5 +1,15 @@
 # Firetower deployment readiness
 
+## Simple owner login deployed — 2026-11-07
+
+The owner explicitly requested email/password instead of mandatory MFA and clarified that every user installs their own Cogitator. [ADR-014](context/decisions/ADR-014-simple-owner-login.md) records the revised product policy.
+
+Release **95385a8** is now installed. The offline switch preserved the existing owner and password, retired abandoned factor/setup state and revoked old sessions; an encrypted pre-change snapshot was retained. New installations default to password login, while MFA is opt-in and older configurations keep MFA until explicitly switched. No public signup or shared multi-user product was introduced.
+
+Validation: macOS build and **379 passing tests / 12 skips**; target Linux build and **385 passing tests / six skips**, zero failures. The live HTTPS journey accepted the existing owner password without a setup key/MFA, returned authenticated status, authorized the backend and signed out correctly. The user's Chrome tab was refreshed and both email/password fields were verified enabled; the blocked enrollment screen is gone. Credential values were never printed. The clean password-only access file is in the private deployment bundle; the earlier file and its edits were preserved.
+
+The public application/agent execution gate is unchanged. Worker integration/recovery, general backup/restore and full remote acceptance remain separate unfinished work. **Human MFA enrollment is no longer a deployment prerequisite for this instance.**
+
 ## Installed onboarding checkpoint — 2026-11-07
 
 The owner explicitly requested installation after selecting/delegating the operating defaults. The existing root SSH alias was verified to target the same host as the development alias; no sudo workaround or Docker-based privilege escalation was used.

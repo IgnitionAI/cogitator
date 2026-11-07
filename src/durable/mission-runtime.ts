@@ -51,11 +51,13 @@ import {
   decidePendingAction,
   findValidGrant,
   revokeGrant,
+  markReceiptUnknown,
   type ApprovalDecisionResult,
   type EffectDescriptor,
   type EffectReceipt,
   type PendingAction,
 } from "./approvals.js";
+import { attentionCases, type AttentionCase } from "./recovery.js";
 import {
   dailyUsage,
   evaluateBudget,
@@ -128,6 +130,7 @@ export type MissionState = "idle" | "running" | "queued" | "waiting_approval" | 
 
 export interface MissionStatusView {
   state: MissionState;
+  attentionCases: AttentionCase[];
   /** Motif visible (limite liante, claim détenu par…, slots pleins, …). */
   reason?: string;
   queueLength: number;
@@ -207,6 +210,8 @@ export interface DispatchDecision {
 export class DurableMissionRuntime {
   /** Écritures en cours (turns dispatchés) : le claim se relâche à zéro. */
   private activeWrites = 0;
+  private schedulingEnabled = false;
+  private admissionReason?: string;
   private draining = false;
   private closed = false;
 
@@ -264,9 +269,13 @@ export class DurableMissionRuntime {
       });
       await runtime.verifyFrozenProfile(versions);
       await runtime.reconcileWorkers();
+      await runtime.reconcileEffects();
       // Planification activée seulement après vérification bail/versions/état ;
       // si un orphelin n'est pas classé, la readiness reste fausse (Plan 0002 §8.2).
-      if (!runtime.recovery.needsAttention) harness.resume();
+      if (!(await runtime.blockingReason())) {
+        harness.resume();
+        runtime.schedulingEnabled = true;
+      }
       // Reprise : les inputs retenus en file (slots/budget à l'ancienne session)
       // restent durables ; on retente l'admission maintenant que la runtime est ouverte.
       void runtime.tryDrainQueue();
@@ -298,6 +307,37 @@ export class DurableMissionRuntime {
     );
   }
 
+  /** Only reopening classifies abandoned intents; status reads never do. */
+  private async reconcileEffects(): Promise<void> {
+    await this.root.commit(async (tx) => {
+      const doc = await tx.doc(MissionApprovals, this.root.id);
+      for (const receipt of doc.receipts) {
+        if (receipt.status === "intent_committed") {
+          markReceiptUnknown(doc, receipt.intentKey, "intent interrompu avant receipt observé : réconciliation requise", Date.now());
+        }
+      }
+    }, context);
+  }
+
+  private async blockingReason(): Promise<string | undefined> {
+    if (this.recovery.needsAttention) return this.recovery.reasons.join("; ");
+    const cases = attentionCases(await this.approvalsView());
+    if (cases.length) return cases.map((item) => item.reason).join("; ");
+    const queue = await this.harness.snapshot(MissionQueue, this.root.id, context);
+    return queue?.attention?.reason;
+  }
+
+  private tryAdmit(): ReturnType<MissionControlPlane["tryAdmit"]> {
+    const admission = this.control.tryAdmit();
+    this.admissionReason = admission.admitted ? undefined : admission.reason;
+    return admission;
+  }
+
+  private async assertContinuationAllowed(): Promise<void> {
+    const reason = await this.blockingReason();
+    if (reason) throw new NeedsAttentionError(reason);
+  }
+
   // ---------- File d'attente durable et admission ----------
 
   private async queuedInputs(): Promise<QueuedInput[]> {
@@ -306,7 +346,7 @@ export class DurableMissionRuntime {
   }
 
   /** État budget courant : cumuls re-lus depuis le transcript et pi.usage, base journalière roulée à UTC. */
-  async budgetState(now = Date.now()): Promise<MissionStatusView["budget"]> {
+  async budgetState(now = Date.now(), persist = true): Promise<MissionStatusView["budget"]> {
     // Requêtes modèle = entrées d'assistant commitées (authoritative, indépendant
     // du reporting d'usage du provider) ; tokens depuis pi.usage quand le provider
     // les rapporte (sinon 0 — la limite tokens reste applicable dès qu'ils sont là).
@@ -322,7 +362,7 @@ export class DurableMissionRuntime {
     const policy = doc?.policy ?? {};
     const missionUsed: UsageTotals = { calls, tokens };
     const baseline = rollDailyBaseline(doc?.baseline ?? { day: "", calls: 0, tokens: 0 }, missionUsed, now);
-    if (doc && (doc.missionCalls !== calls || doc.missionTokens !== tokens || doc.baseline.day !== baseline.day)) {
+    if (persist && doc && (doc.missionCalls !== calls || doc.missionTokens !== tokens || doc.baseline.day !== baseline.day)) {
       await this.root.commit(async (tx) => {
         const d = await tx.doc(MissionBudget, this.root.id);
         d.missionCalls = calls;
@@ -358,11 +398,12 @@ export class DurableMissionRuntime {
    * needs_attention > budget_paused > waiting_approval > queued > running/idle.
    */
   async missionStatus(now = Date.now()): Promise<MissionStatusView> {
-    const budget = await this.budgetState(now);
+    const budget = await this.budgetState(now, false);
     const queue = await this.queuedInputs();
     const approvals = await this.approvalsView();
     const holder = this.control.claimHolder();
     const base = {
+      attentionCases: attentionCases(approvals),
       queueLength: queue.length,
       budget,
       workspaceDir: this.control.workspaceDir,
@@ -371,6 +412,9 @@ export class DurableMissionRuntime {
     };
     if (this.recovery.needsAttention) {
       return { state: "needs_attention", reason: this.recovery.reasons.join("; "), ...base };
+    }
+    if (base.attentionCases.length) {
+      return { state: "needs_attention", reason: base.attentionCases.map((item) => item.reason).join("; "), ...base };
     }
     const queueDoc = await this.harness.snapshot(MissionQueue, this.root.id, context);
     if (queueDoc?.attention) {
@@ -383,10 +427,9 @@ export class DurableMissionRuntime {
       return { state: "waiting_approval", reason: "action sensible en attente de décision owner", ...base };
     }
     if (queue.length > 0) {
-      const admission = this.control.tryAdmit();
       return {
         state: "queued",
-        ...(admission.admitted ? {} : { reason: admission.reason }),
+        ...(this.admissionReason ? { reason: this.admissionReason } : {}),
         ...base,
       };
     }
@@ -403,12 +446,12 @@ export class DurableMissionRuntime {
     this.draining = true;
     try {
       for (;;) {
-        if (this.closed) break;
+        if (this.closed || await this.blockingReason()) break;
         const queue = await this.queuedInputs();
         if (queue.length === 0) break;
         const budget = await this.budgetState();
         if (budget.binding) break; // budget_paused : la file reste visible, aucun dispatch
-        const admission = this.control.tryAdmit();
+        const admission = this.tryAdmit();
         if (!admission.admitted) break;
         const input = queue[0]!;
         // Un échec de dispatch laisse l'input en tête de file : la tentative
@@ -446,17 +489,13 @@ export class DurableMissionRuntime {
     if (!REQUEST_ID_PATTERN.test(requestId)) {
       throw new Error(`requestId invalide (1–128, [A-Za-z0-9._-]): ${requestId}`);
     }
-    const unresolved = unresolvedWorkers(this.recovery.workers);
-    if (unresolved.length > 0) {
-      // Pas de travail de remplacement tant qu'un worker orphelin n'est pas classé.
-      throw new NeedsAttentionError(this.recovery.reasons.join("; "));
-    }
     const prior = await this.root.commit((tx) => tx.submissionByRequest(this.root.id, requestId), context);
     if (prior) return { submissionId: prior.id, duplicate: true, queued: false };
     const queued = await this.queuedInputs();
     if (queued.some((i) => i.requestId === requestId)) {
       return { duplicate: true, queued: true };
     }
+    await this.assertContinuationAllowed();
     // Admission : budget d'abord (budget_paused nomme la limite liante), puis
     // slots + claim via le plan de contrôle. En écriture active, la mission
     // détient déjà slot et claim : dispatch direct.
@@ -482,12 +521,9 @@ export class DurableMissionRuntime {
 
   /** Soumission effective au SDK + suivi d'écritures (relâchement à l'idle). */
   private async dispatch(text: string, requestId: string): Promise<SubmissionId> {
+    await this.assertContinuationAllowed();
     const submission = await this.root.submit({ type: "input", content: text, requestId }, context);
-    // Un dispatch réussi lève toute condition de denégation antérieure.
-    await this.root.commit(async (tx) => {
-      const doc = await tx.doc(MissionQueue, this.root.id);
-      if (doc.attention) delete doc.attention;
-    }, context);
+    this.schedulingEnabled = true;
     this.trackWrites();
     return submission.id;
   }
@@ -532,7 +568,7 @@ export class DurableMissionRuntime {
   ): Promise<PendingAction> {
     const action = await this.root.commit(async (tx) => {
       const doc = await tx.doc(MissionApprovals, this.root.id);
-      return createPendingAction(doc, input, Date.now());
+      return { ...createPendingAction(doc, input, Date.now()) };
     }, context);
     this.control.emit(await this.missionStatus());
     return action;
@@ -545,7 +581,15 @@ export class DurableMissionRuntime {
     denialReason?: string,
   ): Promise<ApprovalDecisionResult> {
     const result = await this.root.commit(
-      (tx) => tx.doc(MissionApprovals, this.root.id).then((doc) => decidePendingAction(doc, pendingActionId, decision, Date.now(), denialReason)),
+      async (tx) => {
+        const doc = await tx.doc(MissionApprovals, this.root.id);
+        const result = decidePendingAction(doc, pendingActionId, decision, Date.now(), denialReason);
+        if (result.kind === "error") return result;
+        return {
+          ...result, pendingAction: { ...result.pendingAction },
+          ...(result.grant ? { grant: { ...result.grant } } : {}),
+        };
+      },
       context,
     );
     if (result.kind === "decided" && decision === "denied") {
@@ -582,7 +626,10 @@ export class DurableMissionRuntime {
     }, context);
     await this.reconcileWorkers();
     // Tout orphelin classé : la runtime redevient prête.
-    if (!this.recovery.needsAttention) this.harness.resume();
+    if (!(await this.blockingReason())) {
+      this.harness.resume();
+      this.schedulingEnabled = true;
+    }
     this.control.emit(await this.missionStatus());
   }
 
@@ -601,6 +648,8 @@ export class DurableMissionRuntime {
   }
 
   async waitForIdle(): Promise<void> {
+    // The pinned SDK enables scheduling on waitForIdle too.
+    if (!this.schedulingEnabled) await this.assertContinuationAllowed();
     await this.root.waitForIdle(context);
   }
 

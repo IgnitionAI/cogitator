@@ -37,6 +37,7 @@ import { DurableRuntimeManager } from "../src/durable/manager.js";
 import { durableToolchainRegistry } from "../src/durable/compatibility.js";
 import { digest } from "../src/durable/profile.js";
 import { runProtectedEffect } from "../src/durable/effect-gateway.js";
+import { DurableMissionRuntime, type MissionStatusView } from "../src/durable/mission-runtime.js";
 
 /** Effets réellement « exécutés » par le fixture (le test vérifie qu'ils n'arrivent qu'avec grant). */
 const performedEffects: Array<{ artifact: string; intentKey: string }> = [];
@@ -76,6 +77,8 @@ const deployTool = defineTool({
       intentKey,
       async () => {
         performedEffects.push({ artifact, intentKey });
+        if (args.note === "failure") throw new Error("connector failed after effect");
+        if (args.note === "in-flight") await slowGate("in-flight");
         return { outcome: "deployed", reference: `run-${performedEffects.length}` };
       },
     );
@@ -212,7 +215,7 @@ async function fixture(opts: { slots?: number } = {}) {
   };
 }
 
-type MissionResponse = { mission: { state: string; reason?: string; queueLength: number; budget: { binding?: { kind: string; limit: number; used: number; nextAction: string } } } };
+type MissionResponse = { mission: MissionStatusView };
 type ApprovalsResponse = {
   pendingActions: Array<{ id: string; operation: string; target: string; artifactDigest: string; decision: string; expiresAt: number; allowedUses: number }>;
   grants: Array<{ id: string; remainingUses: number; revoked: boolean; valid: boolean }>;
@@ -321,11 +324,19 @@ test("deny durable : needs_attention (action_denied), jamais re-demandé ; revok
     assert.equal(redecide.status, 409);
     // Nouvelle tentative identique : la demande déniée est réutilisée, jamais dupliquée.
     fx.faux.setResponses([deployCall, deployFinal]);
-    await fx.call(`/api/conversations/${conv}/messages`, "POST", { text: "re-tente le même déploiement", requestId: "r2" });
+    const blocked = await fx.call(`/api/conversations/${conv}/messages`, "POST", { text: "re-tente le même déploiement", requestId: "r2" });
+    assert.equal(blocked.status, 409);
+    assert.equal(blocked.data.code, "needs_attention");
     await fx.waitIdle(conv);
     const after = (await fx.call(`/api/conversations/${conv}/approvals`)).data as unknown as ApprovalsResponse;
     assert.equal(after.pendingActions.length, 1, "pas de re-demande identique (UA1)");
     assert.equal(after.pendingActions[0]!.decision, "denied");
+    const retained = (await fx.call(`/api/conversations/${conv}/mission`)).data as unknown as MissionResponse;
+    assert.equal(retained.mission.state, "needs_attention");
+    assert.equal(retained.mission.attentionCases[0]!.reasonCode, "action_denied");
+    await fx.durable.release(conv);
+    const reopened = (await fx.call(`/api/conversations/${conv}/mission`)).data as unknown as MissionResponse;
+    assert.deepEqual(reopened.mission.attentionCases, retained.mission.attentionCases);
     assert.equal(performedEffects.length, 0);
 
     // Révocation d'un grant existant : plus aucune dispatch future.
@@ -468,4 +479,214 @@ test("budgets : envoi retenu en budget_paused (limite nommée + prochaine action
   } finally {
     await fx.close();
   }
+});
+
+// Local runtime proofs: no listening socket or real connector.
+async function directFixture() {
+  const home = mkdtempSync(join(tmpdir(), "cog-recovery-"));
+  const faux = fauxProvider();
+  const models = createModels();
+  models.setProvider(faux.provider);
+  let admissionCalls = 0;
+  let allowAdmission = true;
+  const emitted: MissionStatusView[] = [];
+  const open = () => {
+    const registry = createRegistry();
+    registry.install(fixtureExtension);
+    return DurableMissionRuntime.open({
+      dir: join(home, "state"), cwd: home, models, registry,
+      model: { provider: faux.getModel().provider, modelId: faux.getModel().id },
+      presetDigest: digest("recovery-test"), agentExtensions: [fixtureExtension],
+      toolchain: { commands: [], mcpServers: [] },
+      control: {
+        workspaceDir: home, tryAdmit: () => { admissionCalls++; return allowAdmission ? { admitted: true } : { admitted: false, reason: "slots_missions_pleins" }; },
+        release: () => undefined, claimHolder: () => undefined,
+        emit: (state) => emitted.push(state),
+      },
+    });
+  };
+  return { home, faux, open, emitted, admissionCalls: () => admissionCalls, denyAdmission: () => { allowAdmission = false; } };
+}
+
+const directAction = (note?: string) => ({
+  operation: "fixture.deploy", target: "fixture-remote", artifactDigest: digest("immutable-1"),
+  argumentDigest: digest(JSON.stringify({ artifact: "immutable-1", ...(note ? { note } : {}) })),
+  consequence: "simulated effect", expiresAt: Date.now() + 60_000, allowedUses: 1,
+});
+
+async function approveDirect(runtime: DurableMissionRuntime, note?: string) {
+  const action = await runtime.requestPendingAction(directAction(note));
+  const result = await runtime.decideApproval(action.id, "approved");
+  assert.equal(result.kind, "decided");
+  if (result.kind === "decided") assert.equal(result.pendingAction.decision, "approved");
+}
+
+async function untilDirect(predicate: () => Promise<boolean>) {
+  for (let attempts = 0; attempts < 200; attempts++) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail("local runtime condition timed out");
+}
+
+test("direct recovery: unknown effect blocks replacement, fresh grants and restart", async () => {
+  const fx = await directFixture();
+  let runtime = await fx.open();
+  performedEffects.length = 0;
+  try {
+    await approveDirect(runtime, "failure");
+    fx.faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("fixture_deploy", { artifact: "immutable-1", note: "failure" }), { stopReason: "toolUse" }), deployFinal,
+    ]);
+    await runtime.submit("effect", "accepted");
+    await runtime.waitForIdle();
+    const status = await runtime.missionStatus();
+    assert.equal(status.state, "needs_attention");
+    assert.ok("attentionCases" in status);
+    const cases = status.attentionCases;
+    const approvals = await runtime.approvalsView();
+    assert.equal(approvals.receipts[0]!.status, "unknown");
+    assert.equal(approvals.grants[0]!.remainingUses, 0);
+    await approveDirect(runtime, "failure");
+    assert.equal((await runtime.submit("effect", "accepted")).duplicate, true);
+    await assert.rejects(runtime.submit("replacement", "new"), /attention|réconcil/i);
+    await runtime.tryDrainQueue();
+    assert.equal(performedEffects.length, 1);
+    await untilDirect(async () => fx.emitted.some((state) => state.state === "needs_attention"));
+    const event = fx.emitted.find((state) => state.state === "needs_attention")!;
+    assert.deepEqual((event as unknown as { attentionCases: unknown }).attentionCases, cases);
+    await runtime.close();
+    runtime = await fx.open();
+    assert.deepEqual((await runtime.missionStatus() as unknown as { attentionCases: unknown }).attentionCases, cases);
+    await assert.rejects(runtime.submit("replacement", "restart"), /attention|réconcil/i);
+    assert.equal(fx.faux.state.callCount, 2);
+    assert.equal(performedEffects.length, 1);
+    assert.equal((await runtime.approvalsView()).grants[0]!.remainingUses, 0);
+  } finally { await runtime.close(); rmSync(fx.home, { recursive: true, force: true }); performedEffects.length = 0; }
+});
+
+test("direct recovery: denial survives input, queued duplicates, drain and restart; status is read-only", async () => {
+  const fx = await directFixture();
+  let runtime = await fx.open();
+  try {
+    await runtime.setBudgetPolicy({ missionCalls: 0 });
+    assert.equal((await runtime.submit("queued", "queued")).queued, true);
+    assert.equal((await runtime.submit("queued", "queued")).duplicate, true);
+    const calls = fx.admissionCalls();
+    await runtime.missionStatus();
+    await runtime.missionStatus();
+    assert.equal(fx.admissionCalls(), calls, "status must not acquire admission");
+    const action = await runtime.requestPendingAction(directAction());
+    await runtime.decideApproval(action.id, "denied", "owner refused");
+    const before = await runtime.missionStatus();
+    assert.ok("attentionCases" in before);
+    assert.equal((await runtime.submit("queued", "queued")).duplicate, true);
+    await assert.rejects(runtime.submit("new", "new"), /action_denied/);
+    await runtime.setBudgetPolicy({ missionCalls: 5 });
+    await runtime.tryDrainQueue();
+    assert.equal((await runtime.missionStatus()).queueLength, 1);
+    assert.equal(fx.faux.state.callCount, 0);
+    await runtime.close();
+    runtime = await fx.open();
+    assert.equal((await runtime.missionStatus()).state, "needs_attention");
+    assert.deepEqual((await runtime.missionStatus() as unknown as { attentionCases: unknown }).attentionCases, before.attentionCases);
+    assert.equal((await runtime.requestPendingAction(directAction())).id, action.id);
+    assert.equal((await runtime.approvalsView()).pendingActions.length, 1);
+    assert.equal(fx.faux.state.callCount, 0);
+  } finally { await runtime.close(); rmSync(fx.home, { recursive: true, force: true }); }
+});
+
+test("direct recovery: reading healthy in-flight intent does not classify it as interrupted", async () => {
+  const fx = await directFixture();
+  const runtime = await fx.open();
+  performedEffects.length = 0;
+  try {
+    await approveDirect(runtime, "in-flight");
+    fx.faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("fixture_deploy", { artifact: "immutable-1", note: "in-flight" }), { stopReason: "toolUse" }), deployFinal,
+    ]);
+    await runtime.submit("effect", "flight");
+    await untilDirect(async () => performedEffects.length === 1);
+    const before = await runtime.approvalsView();
+    assert.equal(before.receipts[0]!.status, "intent_committed");
+    for (let i = 0; i < 3; i++) assert.notEqual((await runtime.missionStatus()).state, "needs_attention");
+    assert.deepEqual(await runtime.approvalsView(), before);
+    slowResolvers.get("in-flight")!();
+    await runtime.waitForIdle();
+    assert.equal((await runtime.approvalsView()).receipts[0]!.status, "observed");
+  } finally { slowResolvers.get("in-flight")?.(); await runtime.close(); rmSync(fx.home, { recursive: true, force: true }); performedEffects.length = 0; }
+});
+
+
+test("direct recovery: queued status does not try admission or alter claims", async () => {
+  const fx = await directFixture();
+  fx.denyAdmission();
+  const runtime = await fx.open();
+  try {
+    await runtime.submit("queued", "queued");
+    // Let the explicit drain finish before counting read-only projections.
+    await untilDirect(async () => fx.emitted.some((state) => state.state === "queued"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const before = fx.admissionCalls();
+    const first = await runtime.missionStatus();
+    assert.equal(first.reason, "slots_missions_pleins");
+    assert.deepEqual(await runtime.missionStatus(), first);
+    assert.equal(fx.admissionCalls(), before);
+    assert.equal(fx.faux.state.callCount, 0);
+  } finally { await runtime.close(); rmSync(fx.home, { recursive: true, force: true }); }
+});
+
+async function missionEvents(port: number, conversation: string) {
+  const events: MissionStatusView[] = [];
+  const ready = Promise.withResolvers<void>();
+  const req = request({ hostname: "127.0.0.1", port, path: `/api/conversations/${conversation}/events` }, (res) => {
+    let buffer = "";
+    res.on("data", (chunk) => {
+      buffer += String(chunk);
+      let end: number;
+      while ((end = buffer.indexOf("\n\n")) >= 0) {
+        const frame = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        const data = frame.split("\n").find((line) => line.startsWith("data: "));
+        if (!data) continue;
+        const event = JSON.parse(data.slice(6)) as { type: string; mission?: MissionStatusView };
+        if (event.type === "session") ready.resolve();
+        if (event.type === "mission_state" && event.mission) events.push(event.mission);
+      }
+    });
+  });
+  req.on("error", ready.reject);
+  req.end();
+  await ready.promise;
+  return { events, close: () => req.destroy() };
+}
+
+test("HTTP recovery: GET mission and SSE expose the same structured unknown effect", { timeout: 60_000 }, async () => {
+  const fx = await fixture();
+  let stream: Awaited<ReturnType<typeof missionEvents>> | undefined;
+  performedEffects.length = 0;
+  try {
+    const conv = await fx.createDurable();
+    const runtime = await fx.durable.get(getConversation(fx.db, conv)!);
+    await approveDirect(runtime, "failure");
+    stream = await missionEvents(fx.port, conv);
+    fx.faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("fixture_deploy", { artifact: "immutable-1", note: "failure" }), { stopReason: "toolUse" }), deployFinal,
+    ]);
+    await fx.call(`/api/conversations/${conv}/messages`, "POST", { text: "effect", requestId: "effect" });
+    await fx.waitIdle(conv);
+    const read = await fx.call(`/api/conversations/${conv}/mission`);
+    assert.equal(read.status, 200);
+    const status = (read.data as unknown as MissionResponse).mission;
+    assert.equal(status.state, "needs_attention");
+    assert.equal(status.attentionCases[0]!.reasonCode, "effect_outcome_unknown");
+    assert.equal(status.attentionCases[0]!.receipt!.status, "unknown");
+    await fx.until(async () => stream!.events.some((event) => event.state === "needs_attention"), "mission_state unknown effect");
+    assert.deepEqual(stream.events.find((event) => event.state === "needs_attention")!.attentionCases, status.attentionCases);
+    await approveDirect(runtime, "failure");
+    const replacement = await fx.call(`/api/conversations/${conv}/messages`, "POST", { text: "new", requestId: "new" });
+    assert.equal(replacement.status, 409);
+    assert.equal(replacement.data.code, "needs_attention");
+    assert.equal(performedEffects.length, 1);
+  } finally { stream?.close(); await fx.close(); performedEffects.length = 0; }
 });

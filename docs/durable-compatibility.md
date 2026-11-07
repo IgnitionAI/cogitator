@@ -27,7 +27,7 @@ Règle directrice (Plan 0002 §4) : **tant qu'une capacité n'est pas classée e
 | Presets classiques (Majordome, Chef de Projet, Architecte) importés tels quels en durable | **NON SUPPORTÉ** | Leurs dépendances (mutations admin, board/GitHub writes, hooks, imports) n'ont pas d'adaptateur durable ; ils restent disponibles en classic local |
 | herdr / sous-agents | **NON SUPPORTÉ** | Aucun adaptateur ; une conversation Durable n'est jamais étiquetée herdr |
 | Basule de modèle à chaud (`POST /:id/model`) sur une mission durable | **REFUSÉ** | 409 : le modèle est figé par mission (O6) ; créer une nouvelle conversation |
-| Reprise automatique d'effets externes / approvals API / UI mission | **HORS SLICE (P3/P4)** | Le seam enregistre intents/identités ; l'API d'approbations et la projection UI arrivent en slice suivante |
+| Résolution/réouverture/renouvellement des attentions, rejeu automatique des effets incertains | **NON SUPPORTÉ dans #45** | GET mission et mission_state exposent les cas structurés ; une nouvelle autorisation ne réconcilie aucun ancien effet. Aucune API de résolution ni nouvel écran |
 
 ## Gestion et limites assumées
 
@@ -35,3 +35,19 @@ Règle directrice (Plan 0002 §4) : **tant qu'une capacité n'est pas classée e
 - Le bail est détenu par processus contrôleur unique ; deux instances du service sur le même `COGITATOR_HOME` refusent l'ouverture (une seule planifie, D3).
 - Les fournisseurs disponibles sont ceux du catalogue pi-ai dont le contrôleur détient les clés ; les workers n'ont aucune clé (frontière P2 inchangée).
 - Ce document ne couvre pas l'isolation rootless de production (P2 livré comme spec/confinement) ni les preuves déployées P3–P5.
+
+## Tranche #45 — attention durable
+
+Les cas `effect_outcome_unknown` et `action_denied` sont dérivés des documents
+autoritatifs et bloquent reprise/drain/nouveaux effets protégés. Les intents
+interrompus sont classés avant reprise SDK, les intents sains en vol ne sont
+pas modifiés par une lecture. Le refus survit aux messages et aux redémarrages.
+Voir le [contrat API](architecture/api-contract.md#durable-recovery-attention-bounded-45-increment).
+
+Les preuves locales utilisent un faux provider et un compteur externe simulé :
+elles ne certifient aucun connecteur externe réel. Les outils edit/worker de la
+matrice historique sont des fixtures ; la ligne worker ci-dessus ne prouve ni
+une identité worker robuste ni un backend utilisateur récupérable. Le registre
+serveur reste vide par défaut. Les routes d’approbation et le panneau existent
+déjà ; cette tranche enrichit uniquement leur contrat de statut, sans test UI.
+#17 demeure partiel ; aucune certification production ou Docker n’en découle.

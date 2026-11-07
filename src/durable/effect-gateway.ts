@@ -55,20 +55,20 @@ export async function runProtectedEffect(
     if (result.kind === "rejected") {
       // Pas de grant valide : le serveur crée l'action en attente (immumable) ;
       // l'appel est bloqué, la mission passe visiblement en waiting_approval.
-      createPendingAction(doc, {
+      if (!result.blocked) createPendingAction(doc, {
         ...descriptor,
         consequence: descriptor.operation,
         expiresAt: now + 24 * 60 * 60 * 1000,
         allowedUses: 1,
       }, now);
-      return { kind: "rejected" as const, reason: result.reason };
+      return { kind: "rejected" as const, reason: result.reason, blocked: result.blocked };
     }
-    if (result.kind === "duplicate") return { kind: "duplicate" as const, receipt: result.receipt };
+    if (result.kind === "duplicate") return { kind: "duplicate" as const, receipt: { ...result.receipt, observed: result.receipt.observed ? { ...result.receipt.observed } : undefined } };
     return { kind: "consumed" as const };
   }, context);
 
   if (decision.kind === "rejected") {
-    throw new GrantRejectedError(`${decision.reason} — action en attente de décision owner`);
+    throw new GrantRejectedError(decision.blocked ? decision.reason : `${decision.reason} — action en attente de décision owner`);
   }
   if (decision.kind === "duplicate") {
     if (decision.receipt.status === "observed") {
@@ -85,18 +85,20 @@ export async function runProtectedEffect(
     );
   }
 
-  let observed: { outcome: string; reference?: string };
   try {
-    observed = await perform();
+    const observed = await perform();
+    await api.commit(async (tx) => {
+      const doc = await tx.doc(MissionApprovals, api.conversationId);
+      const recorded = recordObservedReceipt(doc, intentKey, observed, Date.now());
+      if (!recorded.ok) throw new GrantRejectedError(recorded.reason);
+    }, context);
+    return { kind: "performed" };
   } catch (err) {
-    // L'issue externe est inconnue : on la conserve comme telle (jamais de
-    // rejeu implicite) et on propage l'échec à l'outil.
-    await api.commit((tx) => tx.doc(MissionApprovals, api.conversationId).then((doc) => markReceiptUnknown(doc, intentKey, err instanceof Error ? err.message : String(err), Date.now())), context);
+    // Neither connector failure nor receipt-write failure proves no external effect.
+    await api.commit(async (tx) => {
+      const doc = await tx.doc(MissionApprovals, api.conversationId);
+      markReceiptUnknown(doc, intentKey, err instanceof Error ? err.message : String(err), Date.now());
+    }, context);
     throw err;
   }
-  await api.commit(
-    (tx) => tx.doc(MissionApprovals, api.conversationId).then((doc) => recordObservedReceipt(doc, intentKey, observed, Date.now())),
-    context,
-  );
-  return { kind: "performed" };
 }

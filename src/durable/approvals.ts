@@ -145,9 +145,20 @@ export function consumeGrantForEffect(
   doc: ApprovalsDoc,
   effect: EffectDescriptor & { intentKey: string; taskId: number },
   now: number,
-): { kind: "consumed" } | { kind: "duplicate"; receipt: EffectReceipt } | { kind: "rejected"; reason: string } {
+): { kind: "consumed" } | { kind: "duplicate"; receipt: EffectReceipt } | { kind: "rejected"; reason: string; blocked?: boolean } {
   const prior = doc.receipts.find((r) => r.intentKey === effect.intentKey);
-  if (prior) return { kind: "duplicate", receipt: prior };
+  if (prior) {
+    const sameScope = prior.operation === effect.operation && prior.target === effect.target &&
+      prior.artifactDigest === effect.artifactDigest && prior.argumentDigest === effect.argumentDigest;
+    if (!sameScope) return { kind: "rejected", blocked: true, reason: "intent scope mismatch: opération/cible/digests différents" };
+    return { kind: "duplicate", receipt: prior };
+  }
+  if (doc.receipts.some((receipt) => receipt.status !== "observed")) {
+    return { kind: "rejected", blocked: true, reason: "issue externe non établie : réconcilier avant tout nouvel effet" };
+  }
+  if (doc.pendingActions.some((action) => action.decision === "denied")) {
+    return { kind: "rejected", blocked: true, reason: "action_denied: refus durable exigeant une décision owner explicite" };
+  }
   const found = findValidGrant(doc.grants, effect, now);
   if ("reason" in found) return { kind: "rejected", reason: found.reason };
   found.grant.remainingUses -= 1;
@@ -250,6 +261,8 @@ export function recordObservedReceipt(
 ): { ok: true; receipt: EffectReceipt } | { ok: false; reason: string } {
   const receipt = doc.receipts.find((r) => r.intentKey === intentKey);
   if (!receipt) return { ok: false, reason: "intent inconnu : la tentative n'a pas été associée à un grant" };
+  if (receipt.status === "observed") return { ok: true, receipt };
+  if (receipt.status === "unknown") return { ok: false, reason: "réconciliation requise : le receipt inconnu ne peut être résolu par un nouvel appel" };
   receipt.status = "observed";
   receipt.observed = { at: now, ...observed };
   receipt.updatedAt = now;
@@ -259,7 +272,7 @@ export function recordObservedReceipt(
 /** Marque une tentative dont l'issue externe ne peut être établie (réconciliation requise). */
 export function markReceiptUnknown(doc: ApprovalsDoc, intentKey: string, reason: string, now: number): void {
   const receipt = doc.receipts.find((r) => r.intentKey === intentKey);
-  if (!receipt) return;
+  if (!receipt || receipt.status !== "intent_committed") return;
   receipt.status = "unknown";
   receipt.unknownReason = reason;
   receipt.updatedAt = now;

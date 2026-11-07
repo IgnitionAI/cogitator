@@ -45,7 +45,7 @@ export class GitHubLogin {
     const dir = githubEnv(this.paths).GH_CONFIG_DIR!;
     mkdirSync(dir, { recursive: true, mode: 0o700 }); chmodSync(dir, 0o700);
     this.view = { available: true, connected: false, status: "starting" };
-    const child = spawn("gh", ["auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web", "--skip-ssh-key"], { env: githubEnv(this.paths), cwd: this.paths.home, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn("gh", ["auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web"], { env: githubEnv(this.paths), cwd: this.paths.home, stdio: ["pipe", "pipe", "pipe"] });
     this.child = child;
     let output = "";
     const receive = (chunk: Buffer) => {

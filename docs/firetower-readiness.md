@@ -1,5 +1,13 @@
 # Firetower deployment readiness
 
+## Existing resources and local skill folders — 2026-11-07
+
+Release **f0a55cc** adds a project preparation dialog with a live MCP probe and existing agent/skill inventory. Classic sessions explicitly load the bundled extension and receive resource reuse guidance; bundled MCP paths follow the active release. Skill import now distinguishes GitHub, a browser-selected computer folder, and a server directory. Uploaded references/scripts are preserved; existing skills are skipped. Server-directory self-import cannot erase its source.
+
+Build and 48 focused tests passed locally and on Firetower. A native Pi 1.1.0 diagnostic command confirmed tool_search, codemode and team_send without a model request; the MCP probe declared 29 tools and successfully listed agents. Activation followed an idle check. All three services are active; public status returns 200 and anonymous setup/agent APIs return 401. Authenticated Chrome showed the three import modes and the live preparation dialog with three agents and 21 skills.
+
+Local HTTP upload and duplicate preservation were verified with synthetic files. Automated browser folder selection was blocked by the Chrome extension's file-access setting, which was left unchanged; full browser upload acceptance is not claimed. No paid model initialization was run, so actual model resource selection/delegation still requires conversational acceptance. No npm publication occurred.
+
 ## Illustrated guides and sidebar release check — 2026-11-07
 
 Release **3dbd9f5** adds the sidebar Updates dialog next to What’s new. It checks npm metadata and distinguishes available/current/ahead/unknown versions; it provides pi and system-service instructions, not automatic controller replacement. The README now links illustrated English/French working guides and a single-owner HTTPS VPS recipe. Screenshots use an isolated demo profile without owner data.

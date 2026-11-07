@@ -1,0 +1,18 @@
+export const machineMessages = {
+  "machine.title": { fr: "Machine", en: "Machine" },
+  "machine.open": { fr: "État du serveur : CPU et mémoire", en: "Server status: CPU and memory" },
+  "machine.cpu": { fr: "CPU", en: "CPU" },
+  "machine.ram": { fr: "RAM", en: "RAM" },
+  "machine.memory": { fr: "Mémoire", en: "Memory" },
+  "machine.disk": { fr: "Disque des données", en: "Data disk" },
+  "machine.cores": { fr: "{count} cœurs logiques", en: "{count} logical cores" },
+  "machine.used": { fr: "{used} sur {total}", en: "{used} of {total}" },
+  "machine.free": { fr: "{amount} disponibles", en: "{amount} available" },
+  "machine.uptime": { fr: "Allumée depuis", en: "Uptime" },
+  "machine.duration": { fr: "{days} j {hours} h {minutes} min", en: "{days} d {hours} h {minutes} min" },
+  "machine.process": { fr: "Mémoire du serveur Cogitator", en: "Cogitator server memory" },
+  "machine.scope": { fr: "Machine hébergeant Cogitator · actualisation toutes les 5 s. Les limites du service ou du conteneur peuvent être différentes.", en: "Machine hosting Cogitator · refreshed every 5 s. Service or container limits may differ." },
+  "machine.unavailable": { fr: "Mesures indisponibles", en: "Metrics unavailable" },
+  "machine.measuring": { fr: "Mesure en cours…", en: "Measuring…" },
+  "machine.updated": { fr: "Mesuré à {time}", en: "Sampled at {time}" },
+} as const;

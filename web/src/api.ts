@@ -41,6 +41,7 @@ export const api = {
   packageCatalog: (q: string, type: string, page: number) => req<{ packages: PackageCard[]; hasNext: boolean }>("GET", `/api/packages/catalog?${new URLSearchParams({ q, type, page: String(page) })}`),
   changePackage: (name: string, action: "install" | "remove" | "update") => req<PackageOperation>("POST", "/api/packages", { name, action }),
   reloadPackages: () => req<{ deferred: number }>("POST", "/api/packages/reload"),
+  machineMetrics: () => req<import("../../src/machine-types").MachineMetrics>("GET", "/api/machine"),
   health: () => req<Health>("GET", "/api/health"),
   mcp: () => req<{ mcpServers: Record<string, unknown> }>("GET", "/api/mcp"),
   saveMcp: (config: unknown) => req<{ ok: true }>("PUT", "/api/mcp", config),

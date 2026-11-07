@@ -114,3 +114,9 @@ Back up the application data and pi profile coherently. Provider keys, GitHub cr
 ## Shared browsers
 
 Create a profile in **Browsers**, select the allowed agents, and open a page. **Take control** blocks agent input and inspection while you sign in. **Return control to agents** lets them use the same session. Conversations also have a **Browsers** button. Closing the view keeps the browser running; stopping it retains its profile. Website reauthentication and verification may still be required. See [installation, usage and limitations](browsers.md).
+
+### Machine indicators
+
+The **CPU / RAM** button at the bottom of navigation shows the machine hosting Cogitator, including a remote VPS. Open **Machine** for interval CPU usage, logical cores, memory, the data filesystem's disk usage and available space, uptime and Cogitator server process memory.
+
+Metrics require owner authentication and refresh every five seconds while the tab is visible. Linux memory uses `MemAvailable` to exclude reclaimable memory. Reserved filesystem blocks can make available space differ from free space. These are OS-visible machine metrics, not systemd/container quotas. Unavailable readings are shown explicitly instead of displaying old values as current.

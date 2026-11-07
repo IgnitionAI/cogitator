@@ -10,6 +10,8 @@ User-facing changes to Cogitator. GitHub development updates and npm releases ar
 
 ### Added
 
+- **Machine indicators:** live host CPU/RAM summary and a detail panel with logical cores, data-disk usage, uptime and Cogitator process memory. Metrics require authentication and refresh every five seconds.
+
 - **Shared browsers:** persistent Chromium profiles, explicit agent access, live interactive view and human takeover. Classic Pi conversations gain a browser tool; runtime installation and site-specific login acceptance are documented.
 
 - **Project preparation:** check MCP connectivity and preview existing agents/skills before initialization; provide resource inventory to conversations and load the bundled integration explicitly.

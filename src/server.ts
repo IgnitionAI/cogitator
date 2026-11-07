@@ -1,3 +1,4 @@
+import { machineMetrics } from "./machine-metrics.js";
 import { SharedBrowser } from "./shared-browser.js";
 import { browserRoutes, attachBrowserView } from "./browser-http.js";
 import { resourceInventory, probeCogitatorTools } from "./project-setup.js";
@@ -342,7 +343,11 @@ function requireAgent(deps: Deps, ctx: Ctx): AgentPreset | null {
 function registryRoutes(deps: Deps): Route[] {
   const { paths } = deps;
   const packages = new PackageManager(paths, () => deps.pool.refreshExtensions());
+  const sampleMachine = machineMetrics(paths.home);
   return [
+    ["GET", "/api/machine", async (ctx) => {
+      const metrics = await sampleMachine(); ctx.check(); sendJson(ctx.res, 200, metrics);
+    }],
     ["GET", "/api/github/connection", async (ctx) => {
       sendJson(ctx.res, 200, await deps.githubLogin.state());
     }],

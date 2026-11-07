@@ -1,0 +1,10 @@
+.machine-summary { display:flex; justify-content:space-between; gap:12px; width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:transparent; color:inherit; cursor:pointer; font:inherit; font-size:12px; }
+.machine-summary:hover { background:var(--hover); }
+.machine-summary strong { margin-left:5px; font-variant-numeric:tabular-nums; }
+.machine-panel { display:grid; gap:20px; }
+.machine-panel p { margin:0; }
+.machine-gauge div { display:flex; justify-content:space-between; gap:16px; }
+.machine-gauge progress { display:block; width:100%; height:9px; margin:12px 0 8px; accent-color:var(--progress); }
+.machine-gauge small, .machine-panel>small { color:var(--muted); }
+.machine-panel dl { display:grid; grid-template-columns:1fr auto; gap:10px 20px; margin:0; font-size:13px; }
+.machine-panel dd { margin:0; text-align:right; }

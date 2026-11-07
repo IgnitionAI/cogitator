@@ -112,3 +112,9 @@ Pour un VPS géré par systemd, l’administrateur déploie la nouvelle version 
 ## Navigateur partagé
 
 Dans **Navigateurs**, crée un profil (Marketing, Développement…), attribue les agents autorisés, puis ouvre une page. **Prendre la main** bloque les actions et lectures des agents pendant que tu te connectes. **Rendre la main aux agents** leur redonne accès à la même session. Le bouton **Navigateurs** est aussi disponible dans chaque conversation. Fermer la vue conserve le navigateur ; **Arrêter le navigateur** conserve ses connexions sur disque. Les sites peuvent demander une nouvelle connexion ou une vérification. Voir le [guide d’installation et les limites](browsers.md).
+
+### Indicateurs de la machine
+
+En bas de la navigation, le bouton **CPU / RAM** affiche les mesures de la machine qui héberge Cogitator, y compris sur un VPS. Cliquez pour ouvrir **Machine** : CPU sur l’intervalle de mesure, cœurs logiques, mémoire utilisée, occupation du disque des données, espace disponible, durée de fonctionnement et mémoire du processus serveur Cogitator.
+
+Les mesures sont privées derrière la connexion propriétaire et actualisées toutes les cinq secondes quand l’onglet est visible. Sur Linux, la mémoire utilisée exclut la mémoire récupérable signalée par `MemAvailable`. Le disque est le système de fichiers contenant les données Cogitator ; ses blocs réservés peuvent expliquer la différence entre espace libre et disponible. Ce panneau affiche la machine vue par le système, pas les quotas du service systemd ou du conteneur. Les valeurs indisponibles restent explicitement indiquées, sans afficher une ancienne valeur comme actuelle.

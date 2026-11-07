@@ -1,3 +1,4 @@
+import { MachineStatus } from "./MachineStatus";
 import Browsers from "./BrowserPanel";
 import { AppUpdates } from "./AppUpdates";
 import { WhatsNew } from "./WhatsNew";
@@ -156,6 +157,7 @@ export default function App() {
           ))}
         </nav>
         <div className="foot">
+          <MachineStatus />
           <LanguagePicker />
           <span className="running-version">{health ? `v${health.version} · pi ${health.pi_version ?? "?"}` : "…"}</span>
           <div className="footer-actions">

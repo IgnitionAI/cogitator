@@ -1,3 +1,4 @@
+import type { PackageCard, PackageOperation, PackageState } from "./types";
 import { recheckAccess } from "./auth-api";
 import { t } from "./i18n";
 import { authMessages } from "./locales/auth";
@@ -29,6 +30,10 @@ async function req<T>(method: string, url: string, body?: unknown, signal?: Abor
 }
 
 export const api = {
+  packages: () => req<PackageState>("GET", "/api/packages"),
+  packageCatalog: (q: string, type: string, page: number) => req<{ packages: PackageCard[]; hasNext: boolean }>("GET", `/api/packages/catalog?${new URLSearchParams({ q, type, page: String(page) })}`),
+  changePackage: (name: string, action: "install" | "remove") => req<PackageOperation>("POST", "/api/packages", { name, action }),
+  reloadPackages: () => req<{ deferred: number }>("POST", "/api/packages/reload"),
   health: () => req<Health>("GET", "/api/health"),
   mcp: () => req<{ mcpServers: Record<string, unknown> }>("GET", "/api/mcp"),
   saveMcp: (config: unknown) => req<{ ok: true }>("PUT", "/api/mcp", config),

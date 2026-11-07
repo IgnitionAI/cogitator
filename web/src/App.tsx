@@ -1,3 +1,4 @@
+import Extensions from "./screens/Extensions";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { api, openEvents } from "./api";
 import type { Health } from "./types";
@@ -23,6 +24,7 @@ const NAV = [
   { id: "workspaces", icon: "folder", label: "common.workspaces" },
   { id: "agents", icon: "bot", label: "common.agents" },
   { id: "providers", icon: "plug", label: "common.providers" },
+  { id: "extensions", icon: "plug", label: "extensions.title" },
   { id: "cron", icon: "clock", label: "common.cron" },
   { id: "settings", icon: "settings", label: "common.settings" },
 ] as const satisfies ReadonlyArray<{ id: string; icon: IconName; label: TranslationKey }>;
@@ -105,6 +107,8 @@ export default function App() {
         return <Agents />;
       case "providers":
         return <Providers />;
+      case "extensions":
+        return <Extensions />;
       case "cron":
         return <Cron />;
       case "settings":

@@ -1,5 +1,11 @@
 # Firetower deployment readiness
 
+## Subagent extension installed in the service profile — 2026-11-07
+
+The owner reported that an actual model reply had only file and shell tools when asked to launch five subagents. The controller's `/var/lib/cogitator/.pi/agent` had neither package settings nor extensions: the laptop installation did not carry over to Firetower. Installed `npm:@gotgenes/pi-subagents@25.0.5` as the `cogitator` OS user with that exact `PI_CODING_AGENT_DIR`, using the isolated runtime's pi command.
+
+An ephemeral SDK session on the deployed runtime loaded the profile with zero extension errors and registered `subagent`, `get_subagent_result`, and `steer_subagent`, without sending a model prompt. The existing conversation was non-streaming and had no child agents before restarting Cogitator to reload its processes. All three monitored services are active; the public anonymous agents endpoint returns 401 after startup (one transient 502 was observed during startup). No credentials or history were changed. Five real child model runs were not executed as part of this installation verification.
+
 ## Owner-authorized OpenAI connection completed — 2026-11-07
 
 The owner completed OpenAI authorization in their browser. The provider returned to the fixed loopback callback on the owner's computer, where no callback server was listening because Cogitator runs on Firetower. The existing supported manual-return flow was completed in Cogitator after verifying that the callback state matched the pending attempt; the authorization code was not written to project files or documentation.

@@ -71,6 +71,18 @@ npx @ignitionai/cogitator
 
 Logs the URL, then waits. Ctrl+C stops it. After a global npm install you can also run `cogitator`. Optional flags: `cogitator --auth-required`, and `cogitator auth init|recover|mode|setup-key` for single-owner login. New protected installations use **email and password**; add `--mfa` to `auth init` only when an authenticator is wanted. Each installation has its own owner; there is no shared registration service. Override bind with `COGITATOR_PORT` / `COGITATOR_URL` if 5320 is taken.
 
+### Subagent tools
+
+The **Extensions** tab browses the live pi.dev/packages catalog, searches and filters packages, and installs or removes them in the server’s pi profile. Installation progress survives navigation within the UI; idle chat processes are recycled, while active conversations and background subagents stay intact. Use the reload button after busy work finishes. Packages run with the server account’s permissions.
+
+The subagent panel reads pi's child session journals; launching children requires the separate `@gotgenes/pi-subagents` extension in the **same pi profile and OS account as Cogitator**:
+
+```sh
+pi install npm:@gotgenes/pi-subagents@25.0.5
+```
+
+If Cogitator uses `COGITATOR_PI_AGENT_DIR`, set `PI_CODING_AGENT_DIR` to that same directory for this install. Installing on your laptop does not install the extension on a remote server. Restart Cogitator when its conversations and background tasks are idle to load the extension into existing conversations. The agent should then have `subagent`, `get_subagent_result`, and `steer_subagent`.
+
 ### Local loopback only
 
 The default app is a **trusted service on 127.0.0.1**, not a secured remote product. Do not put it behind a public proxy.

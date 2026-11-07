@@ -869,3 +869,13 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
   .provider-row { grid-template-columns: minmax(0, 1fr) auto; }
   .provider-actions { grid-column: 1 / -1; }
 }
+
+.extensions-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 16px; margin: 18px 0 28px; }
+.extension-card { border: 1px solid var(--border, #34363b); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.extension-card h3 { margin: 0; overflow-wrap: anywhere; }
+.extension-card p { margin: 0; overflow-wrap: anywhere; }
+.extension-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: auto; padding-top: 12px; }
+.extensions-search { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 20px 0; }
+.extensions-search input { flex: 1 1 240px; min-width: 0; }
+.extensions-search select { width: auto; }
+.extension-status { padding: 16px; border: 1px solid var(--border, #34363b); border-radius: 8px; margin: 16px 0; overflow-wrap: anywhere; }

@@ -444,3 +444,7 @@ export interface ScheduleWrite {
   catchup?: boolean;
   enabled?: boolean;
 }
+
+export interface PackageCard { name: string; description: string; types: string[] }
+export interface PackageOperation { name: string; action: "install" | "remove"; status: "running" | "done" | "error"; error?: string; deferred?: number }
+export interface PackageState { installed: Array<{ name: string; source: string; version: string; removable: boolean }>; operation: PackageOperation | null }

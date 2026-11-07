@@ -185,6 +185,12 @@ export class PiPool {
     return this.handles.size;
   }
 
+  /** Reload only idle processes. Busy parents and async children remain intact. */
+  async refreshExtensions(): Promise<number> {
+    for (const handle of [...this.handles.values()]) await this.evictIdle(handle);
+    return this.handles.size;
+  }
+
   isLive(convId: string): boolean {
     const h = this.handles.get(convId);
     return Boolean(h && !h.dead);

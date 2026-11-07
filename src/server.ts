@@ -1,3 +1,4 @@
+import { catalog, installedPackages, PackageManager } from "./packages.js";
 import { changeConfiguration, dismissConfiguration, ConfigurationError, recoverConfigurations } from "./classic-configuration.js";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -333,7 +334,28 @@ function requireAgent(deps: Deps, ctx: Ctx): AgentPreset | null {
 /** Registry pi : providers, skills, MCP user-level. */
 function registryRoutes(deps: Deps): Route[] {
   const { paths } = deps;
+  const packages = new PackageManager(paths, () => deps.pool.refreshExtensions());
   return [
+    ["GET", "/api/packages", (ctx) => {
+      sendJson(ctx.res, 200, { installed: installedPackages(paths), operation: packages.operation });
+    }],
+    ["GET", "/api/packages/catalog", async (ctx) => {
+      const page = Math.max(1, Math.min(1000, Number(ctx.query.get("page")) || 1));
+      try { sendJson(ctx.res, 200, await catalog(ctx.query.get("q") ?? "", ctx.query.get("type") ?? "extension", Math.floor(page))); }
+      catch (error) { sendJson(ctx.res, 502, { error: (error as Error).message }); }
+    }],
+    ["POST", "/api/packages", (ctx) => {
+      const body = ctx.body as { name?: unknown; action?: unknown } | null;
+      if (!body || typeof body.name !== "string" || !["install", "remove"].includes(String(body.action))) return sendJson(ctx.res, 400, { error: "Package et action requis." });
+      try { ctx.check(); sendJson(ctx.res, 202, packages.start(body.name, body.action as "install" | "remove")); }
+      catch (error) { sendJson(ctx.res, 409, { error: (error as Error).message }); }
+    }],
+    ["POST", "/api/packages/reload", async (ctx) => {
+      ctx.check();
+      const deferred = await deps.pool.refreshExtensions();
+      if (packages.operation) packages.operation.deferred = deferred;
+      sendJson(ctx.res, 200, { deferred });
+    }],
     ["GET", "/api/providers", async (ctx) => {
       sendJson(ctx.res, 200, { providers: await listProviders(paths) });
     }],

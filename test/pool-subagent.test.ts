@@ -111,3 +111,16 @@ test("pool : waitForSettled attend la fin du subagent async, pas le premier agen
   assert.equal(done, true);
   await pool.dispose();
 });
+
+test("extension refresh recycles idle sessions but preserves active parents and children", async () => {
+  const clients: FakeClient[] = [];
+  const pool = new PiPool({ factory: () => { const c = new FakeClient(); clients.push(c); return c; } });
+  for (const id of ["idle", "busy", "child"]) await pool.ensure(id, { cwd: "/tmp", args: [] });
+  clients[1]!.state.isStreaming = true;
+  clients[2]!.emit(detachedEnd());
+  assert.equal(await pool.refreshExtensions(), 2);
+  assert.equal(clients[0]!.stopped, true);
+  assert.equal(clients[1]!.stopped, false);
+  assert.equal(clients[2]!.stopped, false);
+  await pool.dispose();
+});

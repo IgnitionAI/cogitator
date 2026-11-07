@@ -6,6 +6,8 @@ After the owner reported HTTP 503 following login, the onboarding-only Caddy cat
 
 Provider setup was simplified: searchable catalog with configured providers first, explicit API-key/account actions, inline errors with retry/cancel, masked key entry with Enter submission, and Ollama/custom endpoint templates. Local availability is read immediately from the explicit pi configuration used by login and RPC, without shelling out to another installation or caching stale results. OAuth prompts support out-of-band cancellation; completed/abandoned login sessions expire. Credential files and backups are owner-readable only. “Configured” means local credentials are available, not that a provider has accepted a billable model request.
 
+Release **526119d** is active on Firetower. The macOS build passed; the full suite before the final device-ID addition passed **384 / 396 with 12 skips**, and all **33 focused tests** passed again after that addition, locally and on the exact Linux release. Live HTTPS checks returned anonymous 401 / owner 200 for the provider catalog. Starting and canceling API-key and ChatGPT OAuth flows produced the expected secret/manual-code prompts and OAuth authorization link inside the running service, without submitting any provider credential. The owner’s Chrome UI shows both OpenAI methods. Disposable local browser checks covered masked key entry with Enter, immediate status, OAuth selection/cancel, an Ollama template and 390 px layouts in French/English. No remote provider account/token exchange or paid model acceptance is claimed.
+
 The broader Durable/worker/restore acceptance and nightly backups remain unfinished. This UI correction does not certify those gates.
 
 ## Simple owner login deployed — 2026-11-07

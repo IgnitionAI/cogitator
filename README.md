@@ -91,6 +91,8 @@ The default app is a **trusted service on 127.0.0.1**, not a secured remote prod
 
 ## Updating
 
+See the [changelog](https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md) for user-facing changes and upgrade requirements. Entries marked **Unreleased** are not yet published on npm. The changelog ships with the pi package so pi can show release notes after an update.
+
 After `pi update --extensions`, run `/cogitator` again. The command asks the running server for its version (`GET /api/health`) and compares it with the version it just installed:
 
 - **equal or newer server** — it is reused, nothing is stopped;

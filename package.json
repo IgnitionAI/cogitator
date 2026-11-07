@@ -29,7 +29,8 @@
     "dist/src",
     "dist/extensions",
     "web/dist",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "build": "npm run typecheck && vite build web && tsc",
@@ -46,7 +47,8 @@
     "extensions": [
       "./dist/extensions/index.js"
     ],
-    "image": "https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/web/public/icon.png"
+    "image": "https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/web/public/icon.png",
+    "changelogPath": "./CHANGELOG.md"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

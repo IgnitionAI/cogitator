@@ -2,6 +2,8 @@
 
 ## Current baseline — 2026-11-07
 
+Deployment update: after explicit owner authorization, release **126bb51** was installed on Firetower with its own Node 26.13.0 runtime, a protected systemd service, separate controller/worker accounts and a tested rootless daemon. Public HTTPS is **onboarding-only**; application/agent routes remain locked. Linux build and 381 tests passed (six skipped); the rootless container fixture passed separately. A cold encrypted bootstrap backup is in Drive and service health monitoring is scheduled; nightly backup/restore qualification and human MFA enrollment are not complete. Bun 1.4.4 failed the actual `better-sqlite3` probe, so Node remains the runtime. See [installed checkpoint and evidence boundaries](../firetower-readiness.md).
+
 Package on `dev`: **@ignitionai/cogitator 0.5.2** (`package.json`). Catalog SQLite `user_version` is **10** (`src/db.ts` `openDb`). Node engine is `>=22.19.0`. The local branch integrates `origin/dev` through `daf3d37`, preserving the local GitHub-import and subagent-panel work. This is not a new published release.
 
 What exists in `src/` (application code, not docs):

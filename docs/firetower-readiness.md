@@ -1,5 +1,23 @@
 # Firetower deployment readiness
 
+## Installed onboarding checkpoint — 2026-11-07
+
+The owner explicitly requested installation after selecting/delegating the operating defaults. The existing root SSH alias was verified to target the same host as the development alias; no sudo workaround or Docker-based privilege escalation was used.
+
+- Release **`126bb51`** is installed under `/opt/cogitator/releases/126bb51`, with a `current` symlink, root-owned code and a separate **Node 26.13.0** runtime. The existing host Node/pi and rootful Docker were preserved.
+- New dedicated accounts: `cogitator` (controller) and `cogitator-worker`. Their state directories are private. The controller is not in the Docker group and cannot modify the installed release; the worker cannot read controller authentication state.
+- A separate **rootless Docker daemon** is active for the worker account, with seccomp and systemd cgroups. Aggregate user-manager limits are **5 GiB RAM, 4 CPU equivalents and 768 processes**. The adversarial container fixture passed **2/2** against that daemon. This does not establish immutable lifecycle/runtime integration, storage quotas or full P2/P3 acceptance.
+- **`cogitator.service` is enabled and active**, with native owner authentication required, a 2 GiB memory limit, no additional capabilities and loopback-only port 5320. Owner initialization succeeded with generated credentials stored only in the private off-host deployment bundle. Human authenticator enrollment is pending; no MFA device was enrolled on the owner's behalf.
+- Caddy was validated and gracefully reloaded with a separate **onboarding-only** site. Existing site definitions were retained, with a private pre-change backup. Live HTTPS and the real browser owner-login screen passed. `/api/status` and auth status return 200, foreign-Origin auth mutations return 403, and all application/agent routes remain **503**. No unrestricted remote classic execution was exposed.
+- On the exact Linux/Node release: install and build passed; **387 tests: 381 passed, six skipped, zero failed**. The skips cover Docker access from the intentionally unprivileged controller, host-pi discovery, the platform-specific PTY journey and three opt-in real-pi cases. The rootless container fixture was run separately as the worker.
+- **Bun 1.4.4** was installed separately and tested. Opening the project's `better-sqlite3` database fails with `ERR_DLOPEN_FAILED` and Bun's explicit unsupported-package message ([upstream tracking](https://github.com/oven-sh/bun/issues/4290)). Node remains the service runtime; this is not a claim that Bun is generally slower or unsuitable.
+- A **cold, encrypted bootstrap backup** was uploaded to the private Drive destination and read back as not shared. Transfer SHA-256, decryption round trip and auth/catalog SQLite integrity passed. The age identity was retained off-host, never uploaded to Drive or persisted on Firetower. This is an initial-state backup, not a full recovery-epoch restore drill. **Nightly transfer/retention is not active**; an uninstalled onboarding backup helper remains a draft and must not interrupt human MFA enrollment.
+- The ACTIVE Codex heartbeat **Surveiller Cogitator sur Firetower** checks service and HTTPS health every 15 minutes. It is read-only and does not resume deployment or run agents. It relies on the local Codex/SSH host being available; actual incident delivery and continuous external monitoring remain unproven.
+
+The exact origin, credential file, age identity, backup IDs/checksums, active automation ID and current limits are in the private deployment bundle. **Remaining:** human MFA enrollment, #47/#17 integration/recovery, #18/#19 drain/backup/restore, and #20 application enablement/capacity/reboot/soak. The public application gate must stay closed until those prerequisites are met.
+
+The readiness observations below are the earlier checkpoint, retained for chronology; the installed state above supersedes their missing-runtime/rootless/admin-access findings.
+
 Checkpoint: 2026-11-07. The owner selected **Firetower** for the VPS work. This is a readiness record, not a completed deployment or approval to change existing services.
 
 ## Observed on the target

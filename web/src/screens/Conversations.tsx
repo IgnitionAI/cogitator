@@ -237,7 +237,7 @@ export default function Conversations({ initialOpenId, onConsumeInitial }: {
     <>
       <PageHead
         title={t("chat.conversations")}
-        sub={`${t(conversations.length === 1 ? "chat.session" : "chat.sessions", { count: formatNumber(conversations.length) })} · ${t(conversations.filter((c) => c.status === "active").length === 1 ? "chat.activeSession" : "chat.activeSessions", { count: formatNumber(conversations.filter((c) => c.status === "active").length) })}`}
+        sub={`${t(conversations.length === 1 ? "chat.session" : "chat.sessions", { count: formatNumber(conversations.length) })} · ${t(conversations.filter((c) => c.streaming === true).length === 1 ? "chat.activeSession" : "chat.activeSessions", { count: formatNumber(conversations.filter((c) => c.streaming === true).length) })}`}
         actions={
           <button type="button" className="btn btn-primary" onClick={() => setShowNew(true)}>
             <Icon name="plus" /> {t("chat.new")}
@@ -270,7 +270,11 @@ export default function Conversations({ initialOpenId, onConsumeInitial }: {
                   <span>{c.workspace_dir ? c.workspace_dir.split("/").pop() : t("chat.free")}</span>
                 </span>
               </button>
-              <Badge color={statusColor(c.status)}>{statusLabel(c.status)}</Badge>
+              {c.streaming ? (
+                <span className="chat-state is-running" role="status"><Icon name="activity" size={14} />{statusLabel("running")}</span>
+              ) : (
+                <Badge color={statusColor(c.status === "active" ? "idle" : c.status)}>{statusLabel(c.status === "active" ? "idle" : c.status)}</Badge>
+              )}
               <IconBtn
                 name="trash"
                 label={t("chat.deleteTitle", { title: c.title || t("chat.untitledLower") })}

@@ -386,3 +386,23 @@ test("external top-level navigation can open only the public login shell, never 
     assert.equal(f.spawns(), 0);
   } finally { await f.close(); }
 });
+
+
+test("conversation list distinguishes a loaded session from work in progress", async () => {
+  const f = await fixture();
+  try {
+    const { browser } = await authenticated(f);
+    const conv = createConversation(f.db, { workspaceId: null, agentId: null, spawn: { provider: "synthetic", model: "synthetic" } });
+    f.db.prepare("UPDATE conversation SET status = 'active' WHERE id = ?").run(conv.id);
+    for (const streaming of [false, true, false]) {
+      f.pool.isStreaming = async (id) => id === conv.id && streaming;
+      const response = await httpCall(f.port, "/api/conversations", "GET", undefined, { cookie: browser.cookie() });
+      assert.equal(response.status, 200);
+      const rows = response.data.conversations as Array<{ id: string; status: string; streaming: boolean }>;
+      const row = rows.find((entry) => entry.id === conv.id)!;
+      assert.equal(row.status, "active");
+      assert.equal(row.streaming, streaming);
+    }
+    assert.equal(f.spawns(), 0);
+  } finally { await f.close(); }
+});

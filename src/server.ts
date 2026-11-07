@@ -891,10 +891,15 @@ function ticketPrompt(card: BoardCard, extra?: string): string {
 function conversationRoutes(deps: Deps): Route[] {
   const { db, pool } = deps;
   return [
-    ["GET", "/api/conversations", (ctx) => {
+    ["GET", "/api/conversations", async (ctx) => {
       const workspaceId = ctx.query.get("workspace_id") ?? undefined;
       const agentId = ctx.query.get("agent_id") ?? undefined;
-      sendJson(ctx.res, 200, { conversations: listConversations(db, workspaceId, agentId) });
+      const conversations = await Promise.all(listConversations(db, workspaceId, agentId).map(async (conv) => {
+        const runtime = deps.compose(conv);
+        return { ...conv, streaming: runtime.kind === "classic" ? await pool.isStreaming(conv.id) : runtime.isLive(conv) };
+      }));
+      ctx.check();
+      sendJson(ctx.res, 200, { conversations });
     }],
     ["POST", "/api/conversations", async (ctx) => {
       const b = parseBody(ctx.res, conversationCreateSchema, ctx.body);

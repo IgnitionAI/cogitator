@@ -4,6 +4,10 @@ User-facing changes to Cogitator. GitHub development updates and npm releases ar
 
 ## [0.5.2] - Unreleased
 
+### Fixed
+
+- **Conversation status:** show “Running” only while work is in progress, with the same orange indicator in the list and conversation. Loaded idle sessions show “Ready”; the counter follows actual work.
+
 ### Added
 
 - **Shared browsers:** persistent Chromium profiles, explicit agent access, live interactive view and human takeover. Classic Pi conversations gain a browser tool; runtime installation and site-specific login acceptance are documented.

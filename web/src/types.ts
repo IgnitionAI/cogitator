@@ -88,6 +88,7 @@ export interface PendingConfiguration {
 }
 
 export interface Conversation {
+  streaming?: boolean;
   runtime_kind?: "classic" | "durable";
   pending_configuration?: PendingConfiguration | null;
   available_thinking_levels?: ThinkingLevel[];

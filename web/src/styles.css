@@ -894,3 +894,5 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 
 .running-version { display: block; margin-bottom: 8px; }
 .footer-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.setup-skill-list { max-height: 240px; overflow: auto; }

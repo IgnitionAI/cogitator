@@ -30,6 +30,7 @@ async function req<T>(method: string, url: string, body?: unknown, signal?: Abor
 }
 
 export const api = {
+  setupContext: (workspaceId: string) => req<{ ready: boolean; error?: string; tools: string[]; agents: Array<{id: string; name: string; slug: string; description: string}>; skills: Array<{name: string; description: string; path: string}> }>("GET", `/api/setup-context?workspace_id=${encodeURIComponent(workspaceId)}`),
   appUpdates: () => req<{ current: string; latest: string; status: "current" | "available" | "ahead" | "unknown" }>("GET", "/api/app-updates"),
   subagentTranscript: (conversationId: string, id: string, signal?: AbortSignal) => req<{ subagent: import("./types").SubagentView; entries: import("./types").HistoryEntry[]; truncated: boolean }>("GET", `/api/conversations/${encodeURIComponent(conversationId)}/subagents/${encodeURIComponent(id)}`, undefined, signal),
   githubConnection: () => req<GitHubConnectionState>("GET", "/api/github/connection"),
@@ -55,6 +56,7 @@ export const api = {
   cancelProviderLogin: (id: string) => req<{ ok: true }>("DELETE", `/api/provider-logins/${id}`),
 
   skills: () => req<{ skills: SkillRef[] }>("GET", "/api/skills"),
+  uploadSkills: (files: Array<{ path: string; content: string }>) => req<{ imported: string[]; skipped: string[]; dest: string }>("POST", "/api/skills/upload", { files }),
   importSkills: (source: string, overwrite?: boolean) =>
     req<{ imported: string[]; skipped: string[]; dest: string }>("POST", "/api/skills/import", { source, overwrite }),
 

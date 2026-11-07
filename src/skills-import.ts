@@ -1,9 +1,9 @@
 import { checkRequestAuthorization } from "./request-authorization.js";
 import { AuthError } from "./native-auth.js";
 import { execFile } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync, realpathSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 
 export interface ImportResult {
   imported: string[];
@@ -57,12 +57,16 @@ export function importFromDir(srcDir: string, destRoot: string, overwrite = fals
   for (const dir of skills) {
     const name = sanitizeSkillName(basename(dir));
     const target = join(destRoot, name);
+    if (existsSync(target) && realpathSync(target) === realpathSync(dir)) { result.skipped.push(name); continue; }
+    if (resolve(target).startsWith(realpathSync(dir) + sep)) throw new Error("La destination ne peut pas être à l’intérieur du skill source.");
     if (existsSync(target) && !overwrite) {
       result.skipped.push(name);
       continue;
     }
-    rmSync(target, { recursive: true, force: true });
-    cpSync(dir, target, { recursive: true });
+    const stage = mkdtempSync(join(destRoot, ".import-"));
+    cpSync(dir, stage, { recursive: true });
+    if (existsSync(target)) renameSync(target, `${stage}.previous-${name}`);
+    renameSync(stage, target);
     result.imported.push(name);
   }
   if (skills.length === 0) result.error = `aucun SKILL.md trouvé sous ${srcDir}`;

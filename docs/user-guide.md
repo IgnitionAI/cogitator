@@ -36,6 +36,8 @@ Open the project to inspect its files, activity and board. Ask for project setup
 
 **Chef de Projet** reads the project's GitHub Issues board. Cards represent issues, with status/priority labels and dependencies. GitHub remains the source of truth; these operations change real issues.
 
+Project initialization first checks the bundled MCP connection and shows the existing agent/skill inventory. The Majordome receives this context and must inspect relevant skills before proposing new resources. MCP tools may be discovered through pi’s `tool_search`/`codemode`, not exposed as top-level tool names.
+
 A useful loop:
 
 1. Describe an outcome and acceptance criteria.
@@ -66,6 +68,8 @@ Ask **Architecte de Skills** to design a procedure with a clear purpose, trigger
 > Create a skill called review-api-change. It should compare an API change against existing clients, identify compatibility risks and produce a short review with evidence. Add a worked example and validate discovery.
 
 The architect writes `SKILL.md` and optional references/scripts, normally under the server account's `~/.agents/skills`. It checks the frontmatter and discovery. You can import existing skills through Cogitator's skill tools, select skills in agent settings, or invoke `/skill:name` in a message.
+
+In **Agents → Import skills**, choose **Folder on this computer** to upload a folder to the server, including on a VPS. `SKILL.md`, references and scripts are retained; hidden files and node_modules are excluded. The limit is 500 files / 6 MB, and existing skills are preserved. **Folder on the server** takes an absolute server path; GitHub remains a separate option.
 
 A skill describes a method; it does not grant missing tools, credentials or filesystem access. With an explicit nonempty skill selection, the preset requests that selection rather than merging every globally discovered skill.
 

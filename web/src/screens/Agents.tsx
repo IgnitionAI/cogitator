@@ -125,6 +125,8 @@ function ImportSkillsModal(props: { onClose: () => void }) {
   const toast = useToast();
   const [actionError, setActionError] = useState<string | null>(null);
   const [source, setSource] = useState("");
+  const [mode, setMode] = useState<"github" | "server" | "computer">("github");
+  const [files, setFiles] = useState<File[]>([]);
   const [overwrite, setOverwrite] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ imported: string[]; skipped: string[] } | null>(null);
@@ -135,7 +137,13 @@ function ImportSkillsModal(props: { onClose: () => void }) {
     setBusy(true);
     setResult(null);
     try {
-      const r = await api.importSkills(source.trim(), overwrite);
+      if (mode === "computer" && (files.length > 500 || files.reduce((n, f) => n + f.size, 0) > 6 * 1024 * 1024)) throw new Error(translate("skillsUpload.limit"));
+      const r = mode === "computer" ? await api.uploadSkills(await Promise.all(files.map(file => new Promise<{ path: string; content: string }>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error(translate("skillsUpload.readFailed")));
+        reader.onload = () => resolve({ path: file.webkitRelativePath, content: String(reader.result).split(",")[1] ?? "" });
+        reader.readAsDataURL(file);
+      })))) : await api.importSkills(source.trim(), overwrite);
       setResult(r);
       toast(translate("screens.importResult", { imported: formatNumber(r.imported.length), skipped: formatNumber(r.skipped.length) }));
     } catch (e) {
@@ -149,13 +157,24 @@ function ImportSkillsModal(props: { onClose: () => void }) {
     <Modal title={translate("screens.importSkills")} onClose={() => { if (!busy) props.onClose(); }}>
       <fieldset className="form-fields" disabled={busy}>
       <ErrorText error={actionError} />
-      <Field label={translate("screens.source")} hint={translate("screens.sourceHint")}>
-        <input value={source} onChange={(e) => setSource(e.target.value)} placeholder="IgnitionAI/skills" />
+      <Field label={translate("screens.source")}>
+        <select value={mode} onChange={e => { setMode(e.target.value as typeof mode); setResult(null); setActionError(null); }}>
+          <option value="github">{translate("skillsUpload.github")}</option>
+          <option value="computer">{translate("skillsUpload.computer")}</option>
+          <option value="server">{translate("skillsUpload.server")}</option>
+        </select>
       </Field>
-      <label style={{ display: "flex", gap: 8, marginBottom: 14, fontSize: 13 }}>
+      {mode === "computer" ? <Field label={translate("skillsUpload.choose")} hint={translate("skillsUpload.hint")}>
+        <input type="file" multiple {...{ webkitdirectory: "", directory: "" }} onChange={e => setFiles(Array.from(e.target.files ?? []).filter(f => !f.webkitRelativePath.split("/").some(p => p.startsWith(".") || p === "node_modules")))} />
+        <p role="status">{translate("skillsUpload.selected", { count: files.length })}</p>
+      </Field> : <Field label={translate("screens.source")} hint={translate(mode === "server" ? "skillsUpload.serverHint" : "skillsUpload.githubHint")}>
+
+        <input value={source} onChange={(e) => setSource(e.target.value)} placeholder={mode === "server" ? "/srv/skills" : "IgnitionAI/skills"} />
+      </Field>}
+      {mode !== "computer" && <label style={{ display: "flex", gap: 8, marginBottom: 14, fontSize: 13 }}>
         <input type="checkbox" style={{ width: "auto" }} checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} />
         {translate("screens.overwrite")}
-      </label>
+      </label>}
       {result ? (
         <div className="checks" style={{ marginBottom: 12 }}>
           {result.imported.map((s) => <div key={s} style={{ color: "var(--success)" }}>✓ {s}</div>)}
@@ -163,8 +182,8 @@ function ImportSkillsModal(props: { onClose: () => void }) {
         </div>
       ) : null}
       <div className="toolbar">
-        <button className="btn btn-primary" disabled={!source.trim() || busy} onClick={() => void run()}>
-          {busy ? translate("screens.importing") : translate("screens.importDestination")}
+        <button className="btn btn-primary" disabled={(mode === "computer" ? !files.length : !source.trim()) || busy} onClick={() => void run()}>
+          {busy ? translate("screens.importing") : translate("skillsUpload.import")}
         </button>
         <button type="button" className="btn" disabled={busy} onClick={props.onClose}>{translate("screens.cancel")}</button>
       </div>

@@ -1,3 +1,4 @@
+import { currentMcpServers, resourceInstructions, runtimeIntegration } from "./project-setup.js";
 import { githubEnv, githubConfigured } from "./github-login.js";
 import { checkRequestAuthorization } from "./request-authorization.js";
 import { reconcileConfiguration } from "./classic-configuration.js";
@@ -20,7 +21,7 @@ export interface SpawnerOptions {
 }
 
 /** Identité d'environnement : l'agent sait qu'il tourne dans le web UI, pas dans le TUI pi. */
-const ENVIRONMENT_NOTICE = "Environnement : tu t'exécutes dans Cogitator, un panneau de contrôle web pour pi. L'utilisateur interagit depuis un navigateur : ne lui demande jamais de changer de mode, d'appuyer sur une touche ou d'utiliser le TUI pi — tu as déjà accès complet aux outils, agis directement.";
+const ENVIRONMENT_NOTICE = "Environnement : tu t'exécutes dans Cogitator, un panneau de contrôle web pour pi. L'utilisateur interagit depuis un navigateur : ne lui demande jamais de changer de mode, d'appuyer sur une touche ou d'utiliser le TUI pi — vérifie tes outils réellement disponibles et signale les capacités manquantes avant toute action qui en dépend.";
 
 export interface Spawner {
   /** Spawn paresseux : (re)démarre le process pi de la conversation si besoin (I3 : tout passe par le pool). */
@@ -48,7 +49,7 @@ export function makeSpawner(opts: SpawnerOptions): Spawner {
           throw new Error("conversation durable : aucun processus pi classic (runtime.ts)");
         }
         const spawn = JSON.parse(conv.spawn_args || "{}") as SpawnConfig;
-        const mcpEnv = encodeMcpEnv(spawn.mcpServers ?? []);
+        const mcpEnv = encodeMcpEnv(currentMcpServers(spawn.mcpServers ?? []));
         const env: Record<string, string> = {
           ...(githubConfigured(paths) ? { GH_CONFIG_DIR: githubEnv(paths).GH_CONFIG_DIR!, GH_TOKEN: "", GITHUB_TOKEN: "", GH_ENTERPRISE_TOKEN: "", GITHUB_ENTERPRISE_TOKEN: "" } : {}),
           COGITATOR_HOME: paths.home,
@@ -62,7 +63,7 @@ export function makeSpawner(opts: SpawnerOptions): Spawner {
         const result = await pool.ensure(conv.id, {
           cwd: conv.workspace_dir ?? homedir(),
           // Host presentation capability: also available to legacy sessions, without rewriting their snapshot.
-          args: buildArgs({ ...spawn, uiInstructions: `${spawn.uiInstructions ?? UI_INSTRUCTIONS}\n\n${UI_PRESENTATION_POLICY}\n\n${ENVIRONMENT_NOTICE}` }, tmpDir, conv.id),
+          args: ["--extension", runtimeIntegration().extension, ...buildArgs({ ...spawn, uiInstructions: `${spawn.uiInstructions ?? UI_INSTRUCTIONS}\n\n${UI_PRESENTATION_POLICY}\n\n${ENVIRONMENT_NOTICE}\n\n${resourceInstructions(db, paths, conv.workspace_dir ?? paths.home)}` }, tmpDir, conv.id)],
           resumeSessionFile: conv.session_file,
           initialize: client => reconcileConfiguration(db, pool, conv.id, client),
           env,

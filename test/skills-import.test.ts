@@ -16,6 +16,14 @@ function makeSkill(root: string, name: string, desc = "Un skill de test"): strin
   return dir;
 }
 
+test("local skill import cannot destroy itself when overwrite is selected", () => {
+  const root = join(home, "same-source");
+  makeSkill(root, "keep-me");
+  const result = importFromDir(join(root, "keep-me"), root, true);
+  assert.deepEqual(result.skipped, ["keep-me"]);
+  assert.ok(existsSync(join(root, "keep-me", "SKILL.md")));
+});
+
 test("scanSkillDirs : détecte SKILL.md à la racine et profondeur 2, ignore node_modules", () => {
   const repo = join(home, "repo-a");
   makeSkill(repo, "skill-root");

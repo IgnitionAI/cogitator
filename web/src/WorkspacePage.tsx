@@ -1,3 +1,4 @@
+import { ProjectSetup } from "./ProjectSetup";
 import { t, formatDate, formatNumber, localizeText, statusLabel, thinkingLabel } from "./i18n";
 import type { workspaceMessages } from "./locales/workspace";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
@@ -27,6 +28,7 @@ export default function WorkspacePage(props: {
   onOpenConversation: (id: string) => void;
 }) {
   const toast = useToast();
+  const [showSetup, setShowSetup] = useState(false);
   const { workspace } = props;
   const [tab, setTab] = useState<string>("board");
   const [activity, setActivity] = useState<{ files: FileChange[]; totals: { additions: number; deletions: number } } | null>(null);
@@ -146,24 +148,12 @@ export default function WorkspacePage(props: {
         <button
           className="btn btn-sm"
           title={t("workspace.initHelp")}
-          onClick={() => {
-            const majordome = props.agents.find((a) => a.slug === "majordome");
-            if (!majordome) {
-              toast(t("workspace.majordomoMissing"), true);
-              return;
-            }
-            api.createConversation({
-              workspace_id: workspace.id,
-              agent_id: majordome.id,
-              prompt: t("workspace.initPrompt"),
-            })
-              .then((r) => props.onOpenConversation(r.conversation.id))
-              .catch((e: Error) => toast(t("workspace.error", { detail: localizeText(e.message) }), true));
-          }}
+          onClick={() => setShowSetup(true)}
         >
           <Icon name="spark" size={14} /> {t("workspace.init")}
         </button>
       </div>
+      {showSetup && <ProjectSetup workspaceId={workspace.id} onClose={() => setShowSetup(false)} onOpen={id => { setShowSetup(false); props.onOpenConversation(id); }} />}
       <div className="ws-tabs" role="tablist" aria-label={t("workspace.workspace")}>
         {TABS.map((item) => (
           <button

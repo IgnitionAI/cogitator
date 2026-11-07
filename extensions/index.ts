@@ -63,10 +63,9 @@ export default function (pi: ExtensionAPI) {
 
   // ADR-002 : les serveurs MCP du preset voyagent via env (COGITATOR_MCP) et sont
   // enregistrés ici ; le support MCP builtin de pi les connecte au démarrage de session.
-  pi.on("session_start", () => {
+  {
     const registrations = decodeMcpEnv(process.env[MCP_ENV_VAR]);
-    if (!registrations) return;
-    for (const { name, config } of registrations) {
+    for (const { name, config } of registrations ?? []) {
       try {
         // shape mcpServers validée à l'encodage ; le type exact de pi est plus étroit
         pi.registerMcpServer(name, config as Parameters<typeof pi.registerMcpServer>[1]);
@@ -74,7 +73,7 @@ export default function (pi: ExtensionAPI) {
         console.warn(`[cogitator] registerMcpServer ${name}:`, err instanceof Error ? err.message : err);
       }
     }
-  });
+  }
 
   pi.registerCommand("cogitator", {
     description: "Start the local Cogitator web panel if needed, then open it in the browser",

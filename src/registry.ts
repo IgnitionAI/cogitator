@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { readJson, atomicWriteJson } from "./json-files.js";
 import { piAiProviders, piCodingAgent } from "./host-pi.js";
 import { fileCredentialStore } from "./provider-login.js";
@@ -251,7 +251,7 @@ export function deleteProvider(paths: Paths, id: string): void {
 
 // ---------- Skills (scan) ----------
 
-export function listSkills(paths: Paths): SkillRef[] {
+export function listSkills(paths: Paths, cwd = paths.home): SkillRef[] {
   const out: SkillRef[] = [];
   for (const dir of paths.skillsDirs) {
     if (!existsSync(dir)) continue;
@@ -271,7 +271,12 @@ export function listSkills(paths: Paths): SkillRef[] {
       });
     }
   }
-  return out.sort((a, b) => a.name.localeCompare(b.name));
+  const merged = new Map(out.map(s => [s.path, s]));
+  for (const skill of piCodingAgent.loadSkills({ cwd, agentDir: paths.piAgentDir, skillPaths: [...paths.skillsDirs, join(cwd, ".agents/skills"), join(cwd, ".pi/skills")], includeDefaults: false }).skills) {
+    const path = dirname(skill.filePath);
+    merged.set(path, { name: skill.name, description: skill.description, path, descriptionTooLong: skill.description.length > SKILL_DESCRIPTION_MAX });
+  }
+  return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ---------- MCP user-level ----------

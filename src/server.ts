@@ -1,3 +1,5 @@
+import { resourceInventory, probeCogitatorTools } from "./project-setup.js";
+import { importSkillUpload } from "./skills-upload.js";
 import { appUpdateStatus } from "./app-updates.js";
 import { GitHubLogin, githubEnv, githubConfigured } from "./github-login.js";
 import { catalog, installedPackages, packageUpdates, PackageManager } from "./packages.js";
@@ -425,8 +427,24 @@ function registryRoutes(deps: Deps): Route[] {
       if (!deps.logins.cancel(ctx.params.id!)) return sendJson(ctx.res, 404, { error: "login session not found" });
       sendJson(ctx.res, 200, { ok: true });
     }],
+    ["GET", "/api/setup-context", async (ctx) => {
+      const workspaceId = ctx.query.get("workspace_id");
+      const workspace = workspaceId ? getWorkspace(deps.db, workspaceId) : null;
+      if (workspaceId && !workspace) return sendJson(ctx.res, 404, { error: "Workspace introuvable" });
+      const inventory = resourceInventory(deps.db, paths, workspace?.dir ?? paths.home);
+      try { sendJson(ctx.res, 200, { ...inventory, tools: await probeCogitatorTools(paths), ready: true }); }
+      catch (error) { sendJson(ctx.res, 200, { ...inventory, tools: [], ready: false, error: (error as Error).message }); }
+    }],
     ["GET", "/api/skills", (ctx) => {
       sendJson(ctx.res, 200, { skills: listSkills(paths) });
+    }],
+    ["POST", "/api/skills/upload", (ctx) => {
+      ctx.check();
+      const dest = paths.skillsDirs[0] ?? join(paths.piAgentDir, "skills");
+      try {
+        const result = importSkillUpload((ctx.body as { files?: unknown })?.files, dest);
+        sendJson(ctx.res, 200, { ...result, dest });
+      } catch (error) { sendJson(ctx.res, 400, { error: (error as Error).message }); }
     }],
     ["POST", "/api/skills/import", async (ctx) => {
       const b = parseBody(ctx.res, skillImportSchema, ctx.body);

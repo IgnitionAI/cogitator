@@ -51,9 +51,13 @@ Puis au **Chef de Projet** :
 
 Lance ensuite un agent depuis un ticket, suis sa conversation et relis les modifications. Demande des preuves de validation avant de considérer le travail terminé. Les cartes du board sont de vraies **GitHub Issues** : les actions changent le dépôt GitHub.
 
+Avant de lancer l’initialisation, une fenêtre vérifie le MCP et affiche les agents et skills existants. Le Majordome reçoit cet inventaire ; il doit lire les skills pertinents, proposer leur réutilisation et signaler les manques avant toute création.
+
 Quand une méthode revient souvent, demande à l’**Architecte de Skills** :
 
 > Crée un skill pour relire les changements d’API : vérification de compatibilité, exemples et critères de validation. Confirme son chemin et explique comment le tester.
+
+Dans **Agents → Importer des compétences**, choisis **Dossier de cet ordinateur** pour envoyer un dossier vers Cogitator, même sur VPS. Un dossier peut contenir plusieurs skills avec leurs références et scripts (500 fichiers, 6 Mo maximum ; fichiers cachés et node_modules exclus). Les skills déjà présents sont conservés. **Dossier sur le serveur** accepte un chemin de la machine distante ; GitHub reste disponible.
 
 Le skill est écrit sur la machine qui héberge Cogitator, normalement dans `~/.agents/skills`. Tu peux le sélectionner dans un agent ou l’invoquer avec `/skill:nom`. Un skill ne donne pas automatiquement des permissions ou des outils supplémentaires.
 

@@ -96,8 +96,8 @@ export const workspaceMessages = {
     "en": "Majordomo not found"
   },
   "workspace.initPrompt": {
-    "fr": "Initialise ce projet : analyse le dépôt et propose-moi le plan de configuration (conventions, protections git, tableau initial, agents).",
-    "en": "Initialize this project: analyze the repository and propose a setup plan (conventions, Git safeguards, initial board, agents)."
+    "fr": "Initialise ce projet en réutilisant nos ressources : commence par inventorier les agents et skills existants via les outils Cogitator. Lis les SKILL.md pertinents. Analyse ensuite le dépôt. Présente les agents et skills retenus, les manques réels, les fichiers à modifier et les validations prévues. Le Majordome coordonne, le Chef de Projet prépare le backlog et l’Architecte intervient seulement pour les skills manquants. Ne crée aucun doublon. Attends mon accord avant les modifications.",
+    "en": "Initialize this project using our existing resources: inventory agents and skills through Cogitator tools first, then read the relevant SKILL.md files and inspect the repository. Propose the selected agents and skills, actual gaps, files to change and validation steps. The Majordome coordinates, the Project Manager prepares the backlog and the Skills Architect fills only missing skills. Avoid duplicates and wait for my approval before changes."
   },
   "workspace.noChanges": {
     "fr": "Aucune modification enregistrée sur ce projet.",

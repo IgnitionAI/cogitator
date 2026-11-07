@@ -1,6 +1,6 @@
 # Native owner authentication
 
-Status: **implemented, independently re-reviewed and verified for the bounded local increment**. See the [evidence and limits](native-auth-verification.md). This is not approval to expose Cogitator publicly. Authentication does not isolate agent execution; the worker-isolation and remaining remote/Durable gates in [Plan 0002](context/plans/active/0002-secure-vps-durable.md) are still open. No Firetower or Authelia administration is part of this procedure.
+Status: **implemented for single-owner installations**, with protected HTTPS access also exercised on the project VPS. See the [deployment guide](vps.md) and [verification history](firetower-readiness.md). Authentication protects browser access; it does not isolate agent execution. Worker isolation and complete remote/Durable recovery qualification remain separate work.
 
 ## Supported boundary
 
@@ -33,7 +33,7 @@ The commands below require **this native-auth-capable build**, not the previousl
    # Equivalent startup guard: COGITATOR_AUTH_REQUIRED=1 cogitator
    ```
 
-6. Open the configured HTTPS origin through your already-controlled TLS terminator. Do not expose it publicly before the separate remote-isolation/deployment gates pass. Select English or French before signing in if needed.
+6. Open the configured HTTPS origin through your already-controlled TLS terminator. Use the [single-owner VPS deployment procedure](vps.md) for remote access and understand its execution-permission boundary. Select English or French before signing in if needed.
 7. Sign in with the owner email and password. In the default mode, this opens the application directly.
 8. **Only with MFA enabled:** enter the CLI setup key and confirm the password, add the displayed manual TOTP secret to your authenticator, save recovery codes, verify a code, then sign out and sign in again with password and MFA. Enrollment and earlier restricted sessions never become full MFA sessions merely because enrollment completed.
 
@@ -79,7 +79,7 @@ Stop and verify every instance, then run:
 cogitator auth recover
 ```
 
-Confirm the precondition and enter a new password twice. Recovery uses the library's password-reset APIs without mail delivery, clears factor/enrollment state, revokes **all owner sessions and pending challenges**, and issues a fresh setup key. It preserves replay reservations and both the owner identity and protected-mode requirement. Start the controller and repeat enrollment followed by a fresh password/MFA sign-in.
+Confirm the precondition and enter a new password twice. Recovery uses the library's password-reset APIs without mail delivery, clears factor/enrollment state, revokes **all owner sessions and pending challenges**, and issues a fresh setup key only when MFA is required. It preserves replay reservations and both the owner identity and protected-mode requirement. Start the controller and sign in again; repeat authenticator enrollment only when MFA is enabled.
 
 Recovery is maintenance-gated, not one atomic library transaction. An interruption leaves durable maintenance state and prevents serving partially reset credentials. Retry recovery with the server stopped. Interrupted first initialization may instead require rerunning the original `auth init` command with the same origin and owner identifier; once an owner configuration is committed, use recovery.
 

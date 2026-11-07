@@ -47,7 +47,7 @@
     "extensions": [
       "./dist/extensions/index.js"
     ],
-    "image": "https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/web/public/icon.png",
+    "image": "https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/docs/images/bots.jpg",
     "changelogPath": "./CHANGELOG.md"
   },
   "peerDependencies": {

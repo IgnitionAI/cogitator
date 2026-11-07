@@ -1,3 +1,4 @@
+import { appUpdateStatus } from "./app-updates.js";
 import { GitHubLogin, githubEnv, githubConfigured } from "./github-login.js";
 import { catalog, installedPackages, packageUpdates, PackageManager } from "./packages.js";
 import { changeConfiguration, dismissConfiguration, ConfigurationError, recoverConfigurations } from "./classic-configuration.js";
@@ -346,6 +347,10 @@ function registryRoutes(deps: Deps): Route[] {
     }],
     ["DELETE", "/api/github/connection", (ctx) => {
       ctx.check(); deps.githubLogin.cancel(); sendJson(ctx.res, 200, { ok: true });
+    }],
+    ["GET", "/api/app-updates", async (ctx) => {
+      try { sendJson(ctx.res, 200, await appUpdateStatus()); }
+      catch { sendJson(ctx.res, 502, { error: "Release check unavailable" }); }
     }],
     ["GET", "/api/packages", (ctx) => {
       sendJson(ctx.res, 200, { installed: installedPackages(paths), operation: packages.operation });

@@ -891,3 +891,6 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 .news-list article { border-left: 3px solid var(--accent); padding: 4px 0 4px 16px; }
 .news-list h3 { margin: 0 0 6px; font-size: 16px; }
 .news-list p { margin: 0; color: var(--muted); line-height: 1.5; }
+
+.running-version { display: block; margin-bottom: 8px; }
+.footer-actions { display: flex; flex-wrap: wrap; gap: 6px; }

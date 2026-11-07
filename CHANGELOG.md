@@ -6,6 +6,9 @@ User-facing changes to Cogitator. GitHub development updates and npm releases ar
 
 ### Added
 
+- **Cogitator updates:** sidebar release check compares the running version with npm and explains pi/VPS update steps without downgrading newer source deployments.
+- **Documentation:** illustrated onboarding, English/French working guides and a dedicated single-owner HTTPS VPS guide.
+
 - **What’s new:** a short bilingual changelog is available from the sidebar footer.
 - **Extensions catalog:** browse pi packages, search and filter by type, install or uninstall packages, check for updates, update individual npm packages, and reload extensions from the web interface without interrupting active agents.
 - **Subagent conversations:** click a subagent to inspect its instructions, messages, tool calls and results in a read-only dialog. The journal refreshes automatically without interrupting the parent conversation or moving your reading position.

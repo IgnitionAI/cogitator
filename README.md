@@ -1,132 +1,128 @@
 <div align="center">
-
-<img src="https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/web/public/icon.png" width="120" alt="Cogitator — nebula gear logo" />
+<img src="https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/web/public/icon.png" width="100" alt="Cogitator logo" />
 
 # Cogitator
 
-**A web control panel for [pi](https://pi.dev)** — composable agents, workspaces, GitHub-native kanban, and scheduled tasks.
+**Your pi agents, in a browser. On your computer or your own VPS.**
 
+[![npm](https://img.shields.io/npm/v/@ignitionai/cogitator)](https://www.npmjs.com/package/@ignitionai/cogitator)
+[![pi package](https://img.shields.io/badge/pi-package-5e6ad2)](https://pi.dev/packages/@ignitionai/cogitator)
 [![GitHub](https://img.shields.io/badge/GitHub-IgnitionAI%2Fcogitator-5e6ad2?logo=github)](https://github.com/IgnitionAI/cogitator)
-[![npm version](https://img.shields.io/npm/v/@ignitionai/cogitator)](https://www.npmjs.com/package/@ignitionai/cogitator)
-[![pi package](https://img.shields.io/badge/pi-package-5e6ad2)](https://pi.dev/packages)
-[![license](https://img.shields.io/npm/l/@ignitionai/cogitator)](#license)
 
+[Getting started](#get-started) · [User guide](https://github.com/IgnitionAI/cogitator/blob/dev/docs/user-guide.md) · [Guide français](https://github.com/IgnitionAI/cogitator/blob/dev/docs/guide-fr.md) · [VPS deployment](https://github.com/IgnitionAI/cogitator/blob/dev/docs/vps.md) · [Changelog](https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md)
 </div>
 
-Cogitator lets you orchestrate pi processes from your browser: compose agents from a provider, model, thinking level, skills, MCP servers, and subagents; manage project workspaces; and dispatch work through a kanban board backed by **GitHub Issues**. Track the work through modified files, diffs, and a chronological activity feed.
+Cogitator is a **pi package and web UI**, not a separate hosted AI service. Connect your model providers, open a bot, and work through conversations, projects, skills and subagents. Your installation keeps its own data and credentials. The interface is available in **English and French**, including on mobile.
 
-The entire application interface is available in **English and French**. Use the **Language / Langue** selector in the sidebar (inside the menu on mobile). The first visit follows the browser’s supported language preference, falling back to English; your choice is remembered locally and updates open screens without losing drafts. Dates and numbers follow the selected language, without changing the scheduling timezone.
+> **Release status:** this README describes the current `dev` build, including the upcoming **0.5.2** features. The published npm version is shown in the badge above. Features marked in the [unreleased changelog](https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md) require the current source build until publication. Updating from npm does not install unreleased code.
 
-User content, agent responses, editable agent presets, code, files, and technical identifiers are preserved as authored. Cogitator’s controls and diagnostic explanations are translated; external diagnostic details remain available in their original form. The documentation is in English.
+![Cogitator bots: Majordome, Project Manager and Skills Architect](https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/docs/images/bots.jpg)
 
-## Prerequisites
+## Get started
 
-- **Node.js ≥ 22.19.0**
-- [pi](https://pi.dev), installed with one of the two official methods from pi.dev:
-
-```sh
-curl -fsSL https://pi.dev/install.sh | sh
-```
-
-or
-
-```sh
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent
-```
-
-## Install the pi extension
-
-Cogitator ships as a [pi package](https://pi.dev/packages). `pi install` **does not start the app**. It only registers an extension: a `/cogitator` slash command, loaded the next time you open pi. The extension itself stays idle until you run that command (it must not spawn a server just because pi started).
-
-Once the [prerequisites](#prerequisites) are in place:
+Install **Node.js 22.19.0 or newer** and [pi](https://pi.dev). Then:
 
 ```sh
 pi install npm:@ignitionai/cogitator
+pi
 ```
 
-Confirm with `pi list`. Then, **inside a pi session**, type:
+Inside pi, type:
 
 ```text
 /cogitator
 ```
 
-What that does:
+Cogitator opens in your browser at `http://127.0.0.1:5320`. The command starts the server in the background if necessary; simply installing the package does not start anything. Closing pi leaves the server running, including scheduled tasks. If pi was already open when you installed Cogitator, run `/reload` first.
 
-1. Looks for a Cogitator server already answering on `http://127.0.0.1:5320`.
-2. If none is up, starts `cogitator` in the **background** (detached). Closing pi does not stop it — scheduled tasks keep running.
-3. Opens the control panel in your default browser.
-4. Prints the URL in pi. Default: `http://127.0.0.1:5320`.
+1. Open **Providers** and connect the provider you want to use. Cogitator login and provider login are separate.
+2. Open **Bots → Majordome → Talk**. Choose an available model if your provider has no access to the initial default.
+3. Ask for something concrete: “Create a code-review agent for this project. Show me its settings before using it.”
+4. Open **Workspaces** to import a GitHub repository or register a server folder.
+5. Add optional tools through **Extensions**, then reload them.
 
-State lives in `~/.cogitator` (SQLite catalog). Conversation transcripts stay in pi’s own JSONL files. Later: `pi update --extensions` to refresh, `pi remove npm:@ignitionai/cogitator` to uninstall the package (this does not delete `~/.cogitator`).
+You can also run `npx @ignitionai/cogitator` in the foreground. Ctrl+C then stops that server. For source development: `npm ci`, `npm run build`, `node dist/src/cli.js`.
 
-If pi reports **Cogitator unavailable**: something else is bound to port 5320, or an older/incompatible Cogitator is still running. Stop that process and run `/cogitator` again. Auth-required instances also refuse a plain loopback probe until owner login is in place.
+## Meet your team
 
-### Run the server yourself
+| Bot | What it does | Try asking |
+| --- | --- | --- |
+| **Majordome** | Operates Cogitator through its built-in MCP tools: agents, workspaces, conversations and schedules. | “Inspect my project and propose its initial setup.” |
+| **Chef de Projet / Project Manager** | Plans work through GitHub Issues, tracks priorities and dependencies, assigns work to agents. | “Read the board, identify blockers and propose the next three tasks.” |
+| **Architecte de Skills / Skills Architect** | Creates reusable `SKILL.md` procedures with references and validation. | “Create a skill for reviewing API changes, with an example and acceptance criteria.” |
 
-Same process, foreground, no pi session:
+These are editable agent presets, not separate subscriptions. Select their provider, model, reasoning level, instructions, skills and MCP servers in **Agents**. The Project Manager can use additional workflow skills when they are installed; those third-party skills are not bundled automatically. See the [working guide](https://github.com/IgnitionAI/cogitator/blob/dev/docs/user-guide.md).
+
+## Work with pi in clicks
+
+- **Conversations:** streaming responses, tool results, code, images, files and diffs. Change the model without discarding history once the current turn finishes.
+- **Projects:** import GitHub repositories, connect a private GitHub account, inspect project files, use a GitHub Issues board and start agent work from a ticket.
+- **Subagents:** install `@gotgenes/pi-subagents` from Extensions to enable delegation. Click a child in the Subagents panel to read its conversation in a large dialog, with live progress and expandable tools. The parent keeps working.
+- **Extensions:** browse the pi catalog, install packages, check their versions, update individually and reload idle conversations. Active parents and background children keep running.
+- **Skills:** import reusable procedures, attach them to agents or invoke `/skill:name` in a message. Ask the Skills Architect to create a missing procedure.
+- **Schedules:** repeat a task with cron, inspect run history and review its outcome. The server must remain running; model usage is billed by your provider.
+- **MCP:** the bundled stdio MCP server lets agents operate Cogitator. Agent presets can also use other MCP servers; **Settings** exposes global MCP configuration.
+
+![Extension installation, version checks and reload](https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/docs/images/extensions.jpg)
+
+## Your VPS, your owner login
+
+The current build supports a **single-owner installation on a remote Unix VPS**, behind HTTPS, protected by **email and password**. The email is the username/login identifier; no mail service is required. MFA is optional. Each person installs their own Cogitator: there is no public signup or shared multi-user service.
+
+The server stays bound to `127.0.0.1`; Caddy or another trusted reverse proxy terminates HTTPS. Initialize authentication offline, then require it at every startup:
 
 ```sh
-npx @ignitionai/cogitator
+cogitator auth init --origin https://cogitator.example.org --email owner@example.org
+cogitator --auth-required
 ```
 
-Logs the URL, then waits. Ctrl+C stops it. After a global npm install you can also run `cogitator`. Optional flags: `cogitator --auth-required`, and `cogitator auth init|recover|mode|setup-key` for single-owner login. New protected installations use **email and password**; add `--mfa` to `auth init` only when an authenticator is wanted. Each installation has its own owner; there is no shared registration service. Override bind with `COGITATOR_PORT` / `COGITATOR_URL` if 5320 is taken.
+Use an auth-capable build and the same dedicated OS account/data directory for both commands. Password entry is interactive and hidden. Do not proxy an unprotected default local instance to the internet.
 
-### Subagent tools
+Follow the [VPS guide](https://github.com/IgnitionAI/cogitator/blob/dev/docs/vps.md) for source installation, systemd, HTTPS, directories, health checks, maintenance and rollback. Native login protects browser access; agents still run with the server account’s permissions. Worker isolation, automatic recovery and backup/restore qualification remain separate work—not a promise of a sandboxed multi-tenant service.
 
-The **Extensions** tab browses the live pi.dev/packages catalog, searches and filters packages, and installs, updates or removes them in the server’s pi profile. Use **Check updates** to compare installed npm versions with the registry, then **Update** on the package you want. **Reload extensions** is always available. Installation progress survives navigation within the UI; idle chat processes are recycled, while active conversations and background subagents stay intact. Use the reload button after busy work finishes. Packages run with the server account’s permissions.
+## Updates and what’s new
 
-The subagent panel reads pi's child session journals; launching children requires the separate `@gotgenes/pi-subagents` extension in the **same pi profile and OS account as Cogitator**:
+The sidebar footer groups **Language → running version → Updates → What’s new**.
+
+**Updates** checks the running Cogitator version against npm and shows the appropriate update instructions. It distinguishes a newer development deployment from the published npm release; it never suggests a downgrade. **What’s new** gives a short overview, with a link to the full changelog.
+
+![Cogitator release check and update guidance](https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/docs/images/updates.jpg)
+
+For a pi installation, when a newer release is published:
 
 ```sh
-pi install npm:@gotgenes/pi-subagents@25.0.5
+pi update --extensions
 ```
 
-If Cogitator uses `COGITATOR_PI_AGENT_DIR`, set `PI_CODING_AGENT_DIR` to that same directory for this install. Installing on your laptop does not install the extension on a remote server. Restart Cogitator when its conversations and background tasks are idle to load the extension into existing conversations. The agent should then have `subagent`, `get_subagent_result`, and `steer_subagent`.
+Wait for active agents to finish, then run `/reload` and `/cogitator` inside pi. An explicitly pinned source must be changed to the desired version. `/cogitator` can restart an older server only after verifying its process identity; it will not terminate an unrelated listener.
 
-### Local loopback only
+For a **systemd/VPS deployment**, update the server’s release and restart its service after work finishes; a laptop’s pi update does not deploy the VPS. See [updating and rollback](https://github.com/IgnitionAI/cogitator/blob/dev/docs/vps.md#updating-and-rollback). The footer currently **checks and guides**; it does not self-install or restart Cogitator. The separate Extensions screen does install/update pi packages.
 
-The default app is a **trusted service on 127.0.0.1**, not a secured remote product. Do not put it behind a public proxy.
+## Data and troubleshooting
 
-[Native single-owner login and MFA](https://github.com/IgnitionAI/cogitator/blob/dev/docs/native-auth.md) has passed independent code re-reviews and bounded local verification (Node 22/26, real local HTTPS/browser journeys). Login is **not** isolation of agent execution. Public remote operation, autonomous recovery, and the remaining Durable work are not approved. See the [evidence and remaining gates](https://github.com/IgnitionAI/cogitator/blob/dev/docs/native-auth-verification.md).
+Default application data is in `~/.cogitator`; provider credentials, installed packages and conversation journals use the configured pi profile. On a VPS these are **server directories**, not your laptop’s files. `COGITATOR_HOME` and `COGITATOR_PI_AGENT_DIR` select explicit homes. Uninstalling the pi package does not delete your application data.
 
-## Updating
+| Symptom | What to check |
+| --- | --- |
+| Provider connection appears stuck | Complete the provider’s device/browser flow. For a remote OAuth callback, follow the return-URL instructions in Cogitator; `127.0.0.1` in your laptop browser is not the VPS. |
+| Unsupported model | Select a model supported by the connected provider, then apply it. A saved credential alone is not proof that every model is available. |
+| No subagent tools | Install the subagent extension in the server’s pi profile and reload after active work finishes. |
+| Private clone fails | Connect GitHub in Workspaces; check organization/SSO access and that `gh` is installed on the server. |
+| Workspace outside enrolled roots | Configure the dedicated project root for the server. See the VPS guide. |
+| UI shows old code after deployment | Refresh the browser. Reconnecting a conversation does not replace the loaded web bundle. |
+| Wrong password / lost MFA | Use offline owner recovery with the server stopped. There is no email password reset. |
 
-See the [changelog](https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md) for user-facing changes and upgrade requirements. Entries marked **Unreleased** are not yet published on npm. The changelog ships with the pi package so pi can show release notes after an update.
-
-After `pi update --extensions`, run `/cogitator` again. The command asks the running server for its version (`GET /api/health`) and compares it with the version it just installed:
-
-- **equal or newer server** — it is reused, nothing is stopped;
-- **older server** — it is stopped (`SIGTERM`) and restarted, so the panel runs the code you just installed;
-- **nothing listening** — the server is started as usual.
-
-A restart only happens when the server's identity is certain. Every server writes `~/.cogitator/server.pid` (JSON `{ pid, version, port, startedAt }`, mode `0600`) once it listens, and removes it on shutdown. To stop an older server, that file must designate exactly the process answering: same pid (still alive), same version, same port. Otherwise **nothing is killed** and `/cogitator` reports `Cogitator unavailable: check the server/auth state and stop incompatible previous instances.` That is the case for a server started before this pidfile existed, and for any non-Cogitator listener on the port. Stop it manually — `Ctrl+C` for a foreground `cogitator`, `kill <pid>` for the detached server started by `/cogitator` — then run `/cogitator` again.
-
-## Features
-
-- **Composable agents** — each preset combines a provider, model, thinking level, explicit skill set, MCP servers, scope prompt, and subagents. These become native pi flags when the process starts (`--model id:thinking`, `--no-skills --skill …`, `--append-system-prompt`).
-- **Three built-in agents** — Majordome (the default operator), Chef de Projet (project management, board dispatch, and the `to-tickets`/`use-delegate` methods), and Architecte de Skills (`SKILL.md` authoring). Includes their skills and the Cogitator MCP server with 28 tools.
-- **Project workspaces** — a dedicated page for each directory, with a board, file activity (+/−), chronological feed, read-only file tree, team overview, project manager chat, and one-click project setup.
-- **GitHub-native kanban** — each card is a GitHub issue, with `status:`/`priority:` labels, native blocking relationships, and writes through `gh`. No synchronization layer: GitHub remains the single source of truth.
-- **Agent dispatch** — use “Lancer l’agent” (launch agent) on a ticket to start a conversation in its workspace, link the card to its activity, and move it to in progress.
-- **Conversations** — SSE streaming with reconnection recovery, copyable code, structured tool output and diffs, pasted images, history, and skills invoked with `/skill:name`.
-- **Live model settings** — change provider, model and reasoning in a classic chat or for an individual group member, without losing history. Changes wait for the current response to finish. Apply to the conversation only, or explicitly also save the bot's defaults for future conversations; existing sibling chats stay unchanged. Durable missions keep their frozen configuration. A pending change interrupted by a controller restart requires an explicit retry.
-- **Automatic interactive UI** — agents choose between text, forms, choices, checklists, and tables as needed, in both standalone and workspace conversations. Responses are submitted explicitly and saved in pi JSONL transcripts. Generated HTML and JavaScript are never executed. See the [contract and limitations](https://github.com/IgnitionAI/cogitator/blob/dev/docs/chat-generative-ui.md).
-- **Scheduled tasks** — cron scheduling with concurrent-run protection, catch-up behavior, run history, and notifications.
-- **Providers and skills** — connect provider accounts (OAuth/device code) or paste API keys directly from **Providers**, search the catalog and add custom endpoints (including Ollama). Availability uses the same pi credential/model files as conversations, without making a model request; the first message verifies provider acceptance. Writes are atomic with backups. Import skills from GitHub, local directories, or npm commands.
-
-## Architecture
-
-Specifications live in [`docs/`](https://github.com/IgnitionAI/cogitator/tree/dev/docs): [domain model](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/domain-model.md), [blueprint](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/blueprint.md), [API contract](https://github.com/IgnitionAI/cogitator/blob/dev/docs/architecture/api-contract.md), and [architecture decisions](https://github.com/IgnitionAI/cogitator/tree/dev/docs/context/decisions/). They cover apply-on-spawn configuration, MCP registration through `registerMcpServer`, and the GitHub-backed board's single-writer model. The project uses strict TypeScript, Zod validation at boundaries, and a regression test suite.
+## Architecture and development
 
 ```text
-Browser (React) → REST + SSE → Node server → pool of `pi --mode rpc` processes
-                                  ↕ SQLite in ~/.cogitator + native pi files
+Browser → REST + SSE → Node controller → pi RPC conversations and subagents
+                          ↕
+                SQLite + native pi files
+Agents → bundled stdio MCP → Cogitator operations
 ```
+
+Node is the supported runtime; Bun cannot currently replace it for this application's `better-sqlite3` usage. The repository uses TypeScript, React and a regression suite (`npm test`, `npm run build`). See [architecture](https://github.com/IgnitionAI/cogitator/tree/dev/docs/architecture), [authentication](https://github.com/IgnitionAI/cogitator/blob/dev/docs/native-auth.md), [interactive responses](https://github.com/IgnitionAI/cogitator/blob/dev/docs/chat-generative-ui.md), and [deployment evidence](https://github.com/IgnitionAI/cogitator/blob/dev/docs/firetower-readiness.md).
 
 ## License
 
 MIT — © Salim Laimeche
-
-### Connect GitHub for private projects
-
-In **Workspaces → Add workspace**, choose **Connect GitHub**, open GitHub and enter the displayed code. Approve access in your own browser; Cogitator detects completion automatically. Then import your repository. The server needs GitHub CLI (`gh`). Organizations may require separate approval or SSO authorization. The connection is stored in Cogitator’s private data directory and shared with project imports, classic agents and the GitHub board.

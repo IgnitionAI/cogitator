@@ -1,3 +1,4 @@
+import { AppUpdates } from "./AppUpdates";
 import { WhatsNew } from "./WhatsNew";
 import Extensions from "./screens/Extensions";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
@@ -34,6 +35,7 @@ type ScreenId = (typeof NAV)[number]["id"];
 
 export default function App() {
   useLocale();
+  const [showUpdates, setShowUpdates] = useState(false);
   const [showNews, setShowNews] = useState(false);
   const [screen, setScreen] = useState<ScreenId>("bots");
   const [health, setHealth] = useState<Health | null>(null);
@@ -151,8 +153,11 @@ export default function App() {
         </nav>
         <div className="foot">
           <LanguagePicker />
-          <span>{health ? `v${health.version} · pi ${health.pi_version ?? "?"}` : "…"}</span>
+          <span className="running-version">{health ? `v${health.version} · pi ${health.pi_version ?? "?"}` : "…"}</span>
+          <div className="footer-actions">
+          <button type="button" className="btn btn-sm" onClick={() => { setNavOpen(false); setShowUpdates(true); }}>{t("updates.title")}</button>
           <button type="button" className="btn btn-sm" onClick={() => { setNavOpen(false); setShowNews(true); }}>{t("news.title")}</button>
+          </div>
         </div>
       </aside>
       <main id="main" className="main" tabIndex={-1} inert={navOpen}>
@@ -165,6 +170,7 @@ export default function App() {
           />
         ) : screenNode}
       </main>
+      {showUpdates && <AppUpdates onClose={() => setShowUpdates(false)} />}
       {showNews && <WhatsNew onClose={() => setShowNews(false)} />}
     </div>
   );

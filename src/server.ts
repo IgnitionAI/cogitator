@@ -1514,6 +1514,7 @@ export function createApp(opts: AppOptions): Server {
   const app = opts.server ?? createServer();
   if (opts.auth) { app.requestTimeout = 30_000; app.headersTimeout = 10_000; app.maxHeadersCount = 100; }
   app.once("close", () => {
+    deps.logins.dispose();
     stopReap.stop();
     unsubscribePool();
     void durable.dispose();

@@ -120,3 +120,23 @@ test("ChatGPT OAuth receives a stable per-installation device ID across controll
     assert.equal(statSync(join(one.home, "provider-device.json")).mode & 0o777, 0o600);
   } finally { rmSync(one.home, { recursive: true }); rmSync(two.home, { recursive: true }); }
 });
+
+
+test("controller disposal cancels every pending OAuth flow and releases login resources", async () => {
+  const { home, paths } = fixture();
+  const signals: AbortSignal[] = [];
+  const logins = new ProviderLogins(paths, {
+    async login(_id, _type, interaction) {
+      signals.push(interaction.signal!);
+      await interaction.prompt({ type: "manual_code", message: "Paste callback" });
+      return { type: "api_key", key: "fixture" };
+    },
+  });
+  try {
+    const first = logins.start("one", "oauth"); const second = logins.start("two", "oauth");
+    await tick(); logins.dispose(); await tick();
+    assert.equal(logins.has(first.id), false); assert.equal(logins.has(second.id), false);
+    assert.equal(signals.length, 2); assert.ok(signals.every(signal => signal.aborted));
+    logins.dispose();
+  } finally { rmSync(home, { recursive: true }); }
+});

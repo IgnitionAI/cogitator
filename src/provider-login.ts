@@ -178,6 +178,10 @@ export class ProviderLogins {
     return true;
   }
 
+  dispose(): void {
+    for (const id of this.sessions.keys()) this.cancel(id);
+  }
+
   cancel(id: string): boolean {
     const session = this.sessions.get(id);
     if (!session) return false;

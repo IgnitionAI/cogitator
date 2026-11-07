@@ -16,6 +16,7 @@ function chatHarness() {
   let cursor = 0;
   let effects: Array<() => void> = [];
   let sends = 0;
+  let serverWorking = true;
   let historyEntries: HistoryEntry[] | null = null;
   let onEvent!: (event: SseEvent) => void;
   let resolveSend!: () => void;
@@ -56,6 +57,7 @@ function chatHarness() {
       if (name === "react") return react;
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (name === "../api") return { openEvents: (_url: string, listener: typeof onEvent) => { onEvent = listener; return () => {}; }, api: {
+        conversation: () => Promise.resolve({ live: true, streaming: serverWorking }),
         history: () => historyEntries === null ? Promise.reject(new Error("offline")) : Promise.resolve({ entries: historyEntries }),
         conversationFiles: () => Promise.resolve({ files: [] }),
         skills: () => Promise.resolve({ skills: [] }),
@@ -104,7 +106,7 @@ function chatHarness() {
     const timeline = (transcript.props.children as unknown[])[4] as Node[];
     return Array.from(timeline, (node) => find(node, (child) => typeof child.props.text === "string")?.props.text);
   };
-  return { change, enter, textarea, sendButton, render, find, attach, scrollEffect, loadHistory, historySucceeds, emit, messages, sends: () => sends, resolve: () => resolveSend(), reject: () => rejectSend(new Error("offline")) };
+  return { setServerWorking: (value: boolean) => { serverWorking = value; }, change, enter, textarea, sendButton, render, find, attach, scrollEffect, loadHistory, historySucceeds, emit, messages, sends: () => sends, resolve: () => resolveSend(), reject: () => rejectSend(new Error("offline")) };
 }
 
 const settle = async () => { await Promise.resolve(); await Promise.resolve(); };
@@ -322,4 +324,19 @@ test("missing provider is actionable in chat, preserves the draft and blocks Ent
   chat.enter();
   assert.equal(chat.sends(), 0);
   assert.equal(chat.find(chat.render(), node => node.type === "textarea")?.props.value, "Brouillon à conserver");
+});
+
+
+test("response end does not report ready while the server is still working", async () => {
+  const chat = chatHarness();
+  chat.loadHistory();
+  chat.emit({ type: "agent_start" });
+  chat.emit({ type: "agent_end" });
+  await settle();
+  const working = () => Boolean(chat.find(chat.render(), node => typeof node.props.className === "string" && node.props.className.includes("chat-state is-running")));
+  assert.equal(working(), true);
+  chat.setServerWorking(false);
+  chat.emit({ type: "agent_settled" });
+  await settle();
+  assert.equal(working(), false);
 });

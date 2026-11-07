@@ -208,7 +208,17 @@ export default function Conversations({ initialOpenId, onConsumeInitial }: {
   const [ready, setReady] = useState(false);
 
   const refresh = useCallback(() => {
-    api.conversations().then((r) => { setConversations(r.conversations); setError(null); }).catch((e: Error) => setError(e.message)).finally(() => setReady(true));
+    api.conversations().then(async (r) => {
+      // Older servers expose work state only on the detail endpoint. This lets
+      // the UI update without restarting conversations already in progress.
+      const rows = await Promise.all(r.conversations.map(async (c) => {
+        if (typeof c.streaming === "boolean") return c;
+        if (c.status !== "active") return { ...c, streaming: false };
+        const detail = await api.conversation(c.id);
+        return { ...c, streaming: detail.streaming };
+      }));
+      setConversations(rows); setError(null);
+    }).catch((e: Error) => setError(e.message)).finally(() => setReady(true));
   }, []);
 
   useEffect(() => {
@@ -377,7 +387,10 @@ export function ChatView(props: {
     setter(next);
   };
 
-  useEffect(() => setSessionStatus(conversation.status), [conversation.status]);
+  useEffect(() => {
+    setSessionStatus(conversation.status);
+    if (typeof conversation.streaming === "boolean") setRunning(conversation.streaming);
+  }, [conversation]);
 
   const updateInput = (value: string | ((prev: string) => string)) => {
     draftRevision.current += 1;
@@ -436,9 +449,14 @@ export function ChatView(props: {
         setTimeline((prev) => applyEvent(prev, ev, streamRef.current).map((item) => item.key === undefined ? { ...item, key: ++nextChatItemKey } : item));
         if (ev.type === "agent_start" || ev.type === "turn_start" || ev.type === "message_update") setRunning(true);
         if (ev.type === "message_update" && ev.assistantMessageEvent?.type === "text_start") setStreaming(true);
-        if (ev.type === "agent_end") {
+        if (ev.type === "agent_end" || ev.type === "agent_settled") {
           setStreaming(false);
-          setRunning(false);
+          // A response can end before extension hooks or background subagents.
+          // Use the same work-state snapshot as the conversation list.
+          const revision = eventRevision.current;
+          api.conversation(conversation.id).then((r) => {
+            if (revision === eventRevision.current) setRunning(r.live && r.streaming === true);
+          }).catch(() => undefined);
           loadHistory();
         }
       },

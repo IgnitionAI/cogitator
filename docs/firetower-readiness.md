@@ -1,5 +1,9 @@
 # Firetower deployment readiness
 
+## Live conversation status UI hotfix — 2026-11-07
+
+The running backend remains **f0a55cc**. Its static UI was rebuilt from that base with the conversation status changes from **1faa1b6** and a compatibility fallback to the existing conversation detail endpoint. Assets were added before atomically replacing index.html; the previous index is retained under `/opt/cogitator/ui-hotfixes/status-20261107/index.previous.html`. No service restart or agent interruption was performed. Browser verification on the public HTTPS site showed 16 sessions, 5 conversations in progress, orange “En cours” indicators and “Prête” for idle sessions. All three monitored services remained active. The shared-browser backend release is still pending; this hotfix does not activate it. A second static update (`status-v2-20261107`) synchronizes the open thread with the same server work state and rechecks it on `agent_end`/`agent_settled`, avoiding a premature Ready label. The reported RECETTE FINALE conversation was verified live: the server reports streaming and both UI views show En cours. This confirms display consistency, not successful completion of that user workflow.
+
 ## Existing resources and local skill folders — 2026-11-07
 
 Release **f0a55cc** adds a project preparation dialog with a live MCP probe and existing agent/skill inventory. Classic sessions explicitly load the bundled extension and receive resource reuse guidance; bundled MCP paths follow the active release. Skill import now distinguishes GitHub, a browser-selected computer folder, and a server directory. Uploaded references/scripts are preserved; existing skills are skipped. Server-directory self-import cannot erase its source.

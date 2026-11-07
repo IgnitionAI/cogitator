@@ -1,5 +1,11 @@
 # Firetower deployment readiness
 
+## Extensions catalog deployed — 2026-11-07
+
+Release **8d74518** adds an authenticated Extensions screen backed by the live pi.dev/packages catalogue: search, package-type filters, pagination, installed packages, install/remove progress and idle-session reload. Operations invoke native pi with the controller’s explicit profile, pin registry-resolved versions, serialize package changes and preserve busy parents/async children. Busy sessions require the displayed reload action once their work finishes. The catalog currently parses the official HTML cards; a site markup change may require adapting the parser.
+
+Validation: builds passed on macOS and the exact Linux release; **17 focused tests** cover parsing, canonical redirects, input validation, profile isolation, version pinning, operation serialization, active-child preservation and bilingual UI. A real installation/removal cycle of `@gotgenes/pi-subagents` passed in a separate temporary controller profile; the owner’s existing package remained installed. Actual Chrome verification confirmed the new navigation item, live search results and installed status. All monitored services are active; anonymous `/api/packages` returns 401. No model requests were made for this feature verification.
+
 ## Subagent extension installed in the service profile — 2026-11-07
 
 The owner reported that an actual model reply had only file and shell tools when asked to launch five subagents. The controller's `/var/lib/cogitator/.pi/agent` had neither package settings nor extensions: the laptop installation did not carry over to Firetower. Installed `npm:@gotgenes/pi-subagents@25.0.5` as the `cogitator` OS user with that exact `PI_CODING_AGENT_DIR`, using the isolated runtime's pi command.

@@ -124,3 +124,7 @@ Browser (React) → REST + SSE → Node server → pool of `pi --mode rpc` proce
 ## License
 
 MIT — © Salim Laimeche
+
+### Connect GitHub for private projects
+
+In **Workspaces → Add workspace**, choose **Connect GitHub**, open GitHub and enter the displayed code. Approve access in your own browser; Cogitator detects completion automatically. Then import your repository. The server needs GitHub CLI (`gh`). Organizations may require separate approval or SSO authorization. The connection is stored in Cogitator’s private data directory and shared with project imports, classic agents and the GitHub board.

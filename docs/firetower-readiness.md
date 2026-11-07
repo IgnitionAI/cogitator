@@ -1,5 +1,11 @@
 # Firetower deployment readiness
 
+## GitHub browser connection — 2026-11-07
+
+Release **7580ef7** adds Connect GitHub to project import, using the native GitHub CLI device flow (compatible with Firetower gh 2.46). The authenticated UI displays a short-lived code and the fixed github.com/login/device link, polls completion, and supports cancellation/expiry. Credentials stay in the installation’s private `github` directory (directory 0700; configuration files 0600), with no token returned by the API. Connected GitHub imports use HTTPS and the gh credential helper; classic agents and board operations share this profile. Existing ambient authentication remains the fallback before a Cogitator connection exists.
+
+Validation: builds and 46 focused login/git-import/i18n tests passed on macOS and Linux. The actual Firetower CLI obtained a device code in a temporary profile and was cancelled before authorization, with no credentials stored. The deployed UI then started the owner’s login and displayed the code/link successfully. Anonymous connection API returns 401. **Owner authorization is pending; private clone and authenticated board use are not yet verified.** No authorization code or token is retained in documentation.
+
 ## Simplified project import — 2026-11-07
 
 Release **f1c5010** defaults the add-workspace dialog to GitHub: one repository link, automatic name, an Import action, and collapsed optional naming/private-repository guidance. The server-folder alternative remains available. The actual Chrome dialog was verified and the owner’s repository URL restored without submitting an import. Build and 11 focused workspace/i18n tests passed locally and on Linux.

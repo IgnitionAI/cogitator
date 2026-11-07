@@ -134,3 +134,40 @@ Responses to interactive components use the same `POST /messages`: a `cogitator-
 | Method | Route | Description |
 |---|---|---|
 | GET | `/api/health` | `{ ok, version, pi_version, sessions_active, db }` — private in protected mode; use minimal `/api/status` for public liveness |
+
+## Durable recovery attention (bounded #45 increment)
+
+`GET /api/conversations/:id/mission` returns `{ mission }`. The existing
+`mission_state` conversation SSE event carries that same mission projection.
+`mission.attentionCases` is an array derived from authoritative approval documents,
+ordered by stable case ID. Each item has:
+
+- `version: 1`, `revision: 1`, `id`, `reasonCode` (`effect_outcome_unknown` or
+  `action_denied`), `reason`, and `evidenceAt` (epoch milliseconds).
+- `effect`: exact `operation`, `target`, `artifactDigest`, `argumentDigest`.
+- For uncertain effects: `intentKey` (also the receipt identity), retained
+  `receipt`, `grantId`, `taskId`, and the grant's `pendingActionId` when known.
+  For denials: `pendingActionId`; no task or grant is invented.
+- `unknowns`, `ownerTask`, and `continuationConditions` explaining the evidence
+  needed and the separate authorization decision. IDs/revisions remain stable
+  across reads and ordinary restart while their immutable source facts remain.
+
+At reopen, committed intents without an observed receipt become `unknown` before
+SDK resume or queue drain. Reading status alone does not classify a healthy
+in-flight intent, persist budget changes, or acquire admission/workspace claims.
+An unknown effect or durable refusal makes the mission `needs_attention` and
+blocks new submissions/drain/protected effects. Already accepted or queued
+request IDs remain idempotent. Initial and expired approvals retain
+`waiting_approval`; a fresh grant never reconciles an older uncertain intent.
+Observed receipts and consumed uses are retained. Duplicate observed intents
+return their recorded outcome only for the exact operation/target/digests.
+
+This increment has **no resolution, authorization reopening or renewal API** and
+no client `success` input. Cases intentionally remain blocked pending a later
+explicit owner workflow with authoritative evidence. New messages/grants cannot
+clear them. In the Durable messages branch, `NeedsAttentionError` returns HTTP
+409 with `{ error: string, code: "needs_attention" }`, after rechecking the
+request's authorization. Other errors retain their existing handlers. Read
+`GET /mission` for the structured cause. No new screen or panel behavior is
+implemented. Worker reconciliation, autonomous server recovery/admission,
+stop/cancel, real toolchain and production isolation remain separate work.

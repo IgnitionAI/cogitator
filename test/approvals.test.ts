@@ -21,6 +21,10 @@ import {
   type ApprovalsDoc,
 } from "../src/durable/approvals.js";
 
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { Tx } from "@earendil-works/pi-durable";
+import { runProtectedEffect, type EffectGatewayApi } from "../src/durable/effect-gateway.js";
+
 const NOW = Date.parse("2026-10-12T10:00:00Z");
 const LATER = NOW + 60_000;
 
@@ -163,10 +167,114 @@ test("receipt : issue observée enregistrée, inconnue jamais relabellée", () =
     assert.equal(observed.receipt.status, "observed");
     assert.equal(observed.receipt.observed?.reference, "run-123");
   }
-  // Issue inconnue conservée comme telle (réconciliation owner requise).
+  // An observed fact cannot be overwritten or downgraded.
+  const immutable = structuredClone(doc.receipts[0]);
+  recordObservedReceipt(doc, "intent-1", { outcome: "different" }, LATER + 1);
   markReceiptUnknown(doc, "intent-1", "connecteur injoignable", LATER + 1);
-  assert.equal(doc.receipts[0]!.status, "unknown");
-  assert.match(doc.receipts[0]!.unknownReason!, /injoignable/);
+  assert.deepEqual(doc.receipts[0], immutable);
+  // An uncertain intent remains uncertain and its use remains consumed.
+  const uncertain = emptyDoc();
+  approve(uncertain);
+  consumeGrantForEffect(uncertain, { ...ACTION, intentKey: "unknown", taskId: 43 }, NOW);
+  markReceiptUnknown(uncertain, "unknown", "connecteur injoignable", LATER);
+  assert.equal(uncertain.receipts[0]!.status, "unknown");
+  assert.equal(recordObservedReceipt(uncertain, "unknown", { outcome: "guessed" }, LATER + 1).ok, false);
+  assert.equal(uncertain.grants[0]!.remainingUses, 0);
   // Receipt sans intent associé : refusé (pas d'issue orpheline).
   assert.equal(recordObservedReceipt(doc, "intent-inconnu", { outcome: "x" }, NOW).ok, false);
+});
+
+
+test("unresolved effect and durable denial block fresh grants without consuming uses", () => {
+  const doc = emptyDoc();
+  approve(doc);
+  consumeGrantForEffect(doc, { ...ACTION, intentKey: "old", taskId: 1 }, NOW);
+  markReceiptUnknown(doc, "old", "external outcome unknown", LATER);
+  approve(doc);
+  const before = structuredClone(doc);
+  assert.equal(consumeGrantForEffect(doc, { ...ACTION, intentKey: "new", taskId: 2 }, NOW).kind, "rejected");
+  assert.deepEqual(doc, before);
+  assert.equal(consumeGrantForEffect(doc, { ...ACTION, target: "other", intentKey: "old", taskId: 3 }, NOW).kind, "rejected");
+  assert.deepEqual(doc, before);
+  const denied = emptyDoc();
+  const action = createPendingAction(denied, ACTION, NOW);
+  decidePendingAction(denied, action.id, "denied", NOW);
+  denied.grants.push({ ...before.grants[1]!, remainingUses: 1 });
+  assert.equal(consumeGrantForEffect(denied, { ...ACTION, intentKey: "new", taskId: 2 }, NOW).kind, "rejected");
+  assert.equal(denied.grants[0]!.remainingUses, 1);
+});
+
+
+test("gateway: observed dedup, uncertain effects and denial never create approval loops", async () => {
+  const doc = emptyDoc();
+  const action = { ...ACTION, expiresAt: Date.now() + 60_000 };
+  const grant = createPendingAction(doc, action, Date.now());
+  decidePendingAction(doc, grant.id, "approved", Date.now());
+  const api: EffectGatewayApi = {
+    taskId: 1, conversationId: "fixture",
+    commit: async (change) => change({ doc: async () => doc } as unknown as Tx),
+  };
+  let calls = 0;
+  const perform = async () => { calls++; return { outcome: "observed", reference: "external-1" }; };
+  await runProtectedEffect(api, BACKGROUND_CONTEXT, action, "observed", perform);
+  assert.equal((await runProtectedEffect(api, BACKGROUND_CONTEXT, action, "observed", perform)).kind, "duplicate");
+  assert.equal(calls, 1);
+  const fresh = createPendingAction(doc, action, Date.now());
+  decidePendingAction(doc, fresh.id, "approved", Date.now());
+  await assert.rejects(runProtectedEffect(api, BACKGROUND_CONTEXT, action, "uncertain", async () => {
+    calls++;
+    throw new Error("failed after external effect");
+  }), /failed after external effect/);
+  const another = createPendingAction(doc, action, Date.now());
+  decidePendingAction(doc, another.id, "approved", Date.now());
+  const before = structuredClone(doc);
+  await assert.rejects(runProtectedEffect(api, BACKGROUND_CONTEXT, action, "replacement", perform), /réconcil/);
+  await assert.rejects(runProtectedEffect(api, BACKGROUND_CONTEXT, action, "uncertain", perform), /réconcil/);
+  await assert.rejects(runProtectedEffect(api, BACKGROUND_CONTEXT, { ...action, target: "other" }, "observed", perform), /scope mismatch/);
+  assert.deepEqual(doc, before);
+  assert.equal(calls, 2);
+  assert.equal((await runProtectedEffect(api, BACKGROUND_CONTEXT, action, "observed", perform)).kind, "duplicate");
+  const denied = createPendingAction(doc, { ...action, target: "refused" }, Date.now());
+  decidePendingAction(doc, denied.id, "denied", Date.now());
+  const denialBefore = structuredClone(doc);
+  await assert.rejects(runProtectedEffect(api, BACKGROUND_CONTEXT, { ...action, target: "refused" }, "denied", perform));
+  assert.deepEqual(doc, denialBefore);
+});
+
+test("gateway: receipt persistence failure preserves unknown, denial alone blocks new scopes", async () => {
+  const doc = emptyDoc();
+  const action = { ...ACTION, expiresAt: Date.now() + 60_000 };
+  const pending = createPendingAction(doc, action, Date.now());
+  decidePendingAction(doc, pending.id, "approved", Date.now());
+  let commits = 0;
+  const api: EffectGatewayApi = {
+    taskId: 1, conversationId: "fixture",
+    commit: async (change) => {
+      commits++;
+      if (commits === 2) throw new Error("receipt commit unavailable");
+      return change({ doc: async () => doc } as unknown as Tx);
+    },
+  };
+  let calls = 0;
+  await assert.rejects(runProtectedEffect(api, BACKGROUND_CONTEXT, action, "write-failure", async () => {
+    calls++;
+    return { outcome: "effect happened" };
+  }), /receipt commit unavailable/);
+  assert.equal(calls, 1);
+  assert.equal(doc.receipts[0]!.status, "unknown");
+  assert.equal(doc.grants[0]!.remainingUses, 0);
+
+  const deniedDoc = emptyDoc();
+  const refused = createPendingAction(deniedDoc, action, Date.now());
+  decidePendingAction(deniedDoc, refused.id, "denied", Date.now());
+  const denialApi: EffectGatewayApi = {
+    ...api, commit: async (change) => change({ doc: async () => deniedDoc } as unknown as Tx),
+  };
+  const before = structuredClone(deniedDoc);
+  await assert.rejects(runProtectedEffect(denialApi, BACKGROUND_CONTEXT, { ...action, target: "new-scope" }, "new", async () => {
+    calls++;
+    return { outcome: "must not happen" };
+  }), /action_denied/);
+  assert.deepEqual(deniedDoc, before, "no new approval request even for a new scope");
+  assert.equal(calls, 1);
 });

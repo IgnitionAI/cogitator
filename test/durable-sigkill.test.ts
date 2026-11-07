@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const DRIVER = join(import.meta.dirname, "fixtures", "durable-driver.ts");
-const SIGKILL_SCENARIOS = ["generation", "edit", "worker"] as const;
+const SIGKILL_SCENARIOS = ["generation", "edit", "worker", "effect", "intent"] as const;
 
 function runPhase(scope: string, phase: "seed" | "reopen", scenario: string, witness: string, timeoutMs = 45_000): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -69,7 +69,7 @@ async function stopLeftoverWorker(scope: string): Promise<void> {
 }
 
 for (const scenario of SIGKILL_SCENARIOS) {
-  test(`SIGKILL mid-${scenario === "generation" ? "generation" : "tool"} / reopen : reprise depuis checkpoints`, { timeout: 120_000 }, async () => {
+  test(`SIGKILL ${scenario} / reopen : reprise ou blocage depuis checkpoints`, { timeout: 120_000 }, async () => {
     const scope = mkdtempSync(join(tmpdir(), `cog-durable-${scenario}-`));
     try {
       const boundary = await runPhase(scope, "seed", scenario, "{}");

@@ -107,7 +107,7 @@ test("message UI classic est persisté dans queue_item puis livré", async () =>
   assert.equal(ack.ok, true);
   const lane = db.prepare("SELECT id FROM lane WHERE conversation_id = ?").get(conversation.id) as { id: string };
   const items = listItems(db, lane.id);
-  assert.deepEqual(items.map((i) => [i.body, i.status, i.from_agent_id]), [["bonjour file", "done", null]]);
+  assert.deepEqual(items.map((i) => [i.body, i.status, i.from_agent_id, i.hop]), [["bonjour file", "done", null, 0]]);
   assert.equal(clients.at(-1)!.prompts.includes("bonjour file"), true);
 });
 

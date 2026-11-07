@@ -305,7 +305,26 @@ export interface MissionBudgetView {
   binding?: { kind: string; limit: number; used: number; nextAction: string };
 }
 
+export interface MissionAttentionCase {
+  version: 1;
+  revision: 1;
+  id: string;
+  reasonCode: "effect_outcome_unknown" | "action_denied";
+  reason: string;
+  effect: { operation: string; target: string; artifactDigest: string; argumentDigest: string };
+  intentKey?: string;
+  receipt?: EffectReceiptView;
+  grantId?: string;
+  taskId?: number;
+  pendingActionId?: string;
+  evidenceAt: number;
+  unknowns: string[];
+  ownerTask: string;
+  continuationConditions: string[];
+}
+
 export interface MissionStatusView {
+  attentionCases: MissionAttentionCase[];
   state: "idle" | "running" | "queued" | "waiting_approval" | "budget_paused" | "needs_attention";
   reason?: string;
   queueLength: number;

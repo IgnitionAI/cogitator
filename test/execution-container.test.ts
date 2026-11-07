@@ -18,6 +18,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { daemonFixtureSource, fixtureRootsFromEnv } from "./helpers/docker-fixture-paths.js";
 
 const { buildWorkerContainerSpec, dockerRunArgs } = await import("../src/execution/container.js");
 
@@ -35,13 +37,17 @@ function ensureImage(): boolean {
   return pull.status === 0;
 }
 
-const home = mkdtempSync(join(tmpdir(), "cog-exec-ct-"));
+const fixtureRoots = fixtureRootsFromEnv(process.env);
+const home = mkdtempSync(join(fixtureRoots?.controller ?? tmpdir(), "cog-exec-ct-"));
 test.after(() => rmSync(home, { recursive: true, force: true }));
 
 // Script malveillant exécuté dans le conteneur : chaque tentative d'attaque
 // imprime un marqueur ; le harnais de test les interprète.
 const MALICIOUS = [
   "set -u",
+  // Une mauvaise correspondance de stockage est un échec explicite.
+  '[ "$(cat /workspace/code.txt 2>/dev/null)" = "$FIXTURE_SENTINEL" ] || { echo "ERROR:fixture-sentinel"; exit 1; }',
+  "echo 'OK:fixture-sentinel'",
   // 1. fichiers du plan de contrôle invisibles (non montés)
   "for p in /host/etc/passwd /var/run/docker.sock /run/secrets/provider.key /state/runtime.sqlite; do",
   "  [ -e \"$p\" ] && echo \"LEAK:$p\" || echo \"OK:absent:$p\"",
@@ -54,20 +60,27 @@ const MALICIOUS = [
   "(touch /evil.txt 2>/dev/null && echo 'LEAK:rootfs') || echo 'OK:rootfs'",
   // 5. écriture hors workspace : même nom dans /tmp seul (tmpfs) — le /workspace est le seul montage persistant
   "touch /workspace/.scratch/write-test && echo 'OK:scratch-write' || echo 'LEAK:scratch'",
-  "touch /workspace/pwned-by-fixture && echo 'OK:workspace-write' || echo 'LEAK:workspace'",
+  'printf "%s" "$FIXTURE_SENTINEL" > /workspace/pwned-by-fixture && echo "OK:workspace-write" || echo "LEAK:workspace"',
   // 6. aucun secret dans l'environnement
   "env | grep -iE 'token|secret|key|aws_|github_' && echo 'LEAK:env' || echo 'OK:env'",
   // 7. l'utilisateur n'est pas root
   "[ \"$(id -u)\" = '0' ] && echo 'LEAK:root-user' || echo 'OK:user'",
 ].join("\n");
 
-test("fixture malveillante : confinement P2 dans un conteneur local", { skip: !dockerAvailable() || !ensureImage(), timeout: 120_000 }, () => {
+test("fixture malveillante : confinement P2 dans un conteneur Docker", { skip: !fixtureRoots && (!dockerAvailable() || !ensureImage()), timeout: 120_000 }, (t) => {
+  if (fixtureRoots) {
+    assert.ok(dockerAvailable(), "daemon Docker configuré indisponible");
+    assert.ok(ensureImage(), "image de fixture indisponible");
+  }
   const enrolledRoot = join(home, "enrolled");
   const workspace = join(enrolledRoot, "ws");
   mkdirSync(workspace, { recursive: true });
   // le worker tourne en uid 65534 (nobody) : rendre le volume enrôlé accessible
   chmodSync(workspace, 0o777);
-  writeFileSync(join(workspace, "code.txt"), "projet");
+  const sentinel = randomUUID();
+  writeFileSync(join(workspace, "code.txt"), sentinel);
+  // Le chmod après création reste effectif avec umask 0077 pour l'UID 65534.
+  chmodSync(join(workspace, "code.txt"), 0o644);
   // fichiers « plan de contrôle » sur l'hôte : ne doivent JAMAIS être montés
   writeFileSync(join(home, "provider.key"), "SECRET-PROVIDER");
   const stateDir = join(home, "state");
@@ -81,14 +94,20 @@ test("fixture malveillante : confinement P2 dans un conteneur local", { skip: !d
       name: `cogitator-p2-fixture-${process.pid}`,
       command: ["sh", "-c", MALICIOUS],
       workspaceMount: { source: workspace, target: "/workspace" },
-      env: { PLAIN_VAR: "ok" },
+      env: { PLAIN_VAR: "ok", FIXTURE_SENTINEL: sentinel },
     },
     { remote: true, enrolledRoots: [enrolledRoot] },
   );
   assert.ok("spec" in built, "error" in built ? built.error : "spec attendue");
   assert.equal(built.spec.network, "none");
 
-  const args = dockerRunArgs(built.spec);
+  const dockerSpec = {
+    ...built.spec,
+    mounts: built.spec.mounts.map((mount) => ({
+      ...mount, source: daemonFixtureSource(mount.source, fixtureRoots),
+    })),
+  };
+  const args = dockerRunArgs(dockerSpec);
   const run = spawnSync("docker", args, { timeout: 90_000, encoding: "utf8" });
   const out = `${run.stdout}\n${run.stderr}`;
   assert.equal(run.status, 0, `fixture échouée:\n${out}`);
@@ -96,12 +115,14 @@ test("fixture malveillante : confinement P2 dans un conteneur local", { skip: !d
   for (const p of ["/host/etc/passwd", "/var/run/docker.sock", "/run/secrets/provider.key", "/state/runtime.sqlite"]) {
     assert.ok(out.includes(`OK:absent:${p}`), `fichier visible: ${p}\n${out}`);
   }
-  for (const marker of ["OK:metadata", "OK:dns", "OK:rootfs", "OK:scratch-write", "OK:workspace-write", "OK:env", "OK:user"]) {
+  for (const marker of ["OK:fixture-sentinel", "OK:metadata", "OK:dns", "OK:rootfs", "OK:scratch-write", "OK:workspace-write", "OK:env", "OK:user"]) {
     assert.ok(out.includes(marker), `marqueur manquant: ${marker}\n${out}`);
   }
   assert.ok(!out.includes("LEAK:"), `fuite détectée:\n${out}`);
   // la fixture a bien écrit dans le workspace enrôlé (visible côté hôte)
   assert.ok(existsSync(join(workspace, "pwned-by-fixture")), "écriture workspace non persistée");
+  assert.equal(execFileSync("cat", [join(workspace, "pwned-by-fixture")], { encoding: "utf8" }), sentinel);
+  t.diagnostic(`sentinelle worker et écriture contrôleur vérifiées\n${out}`);
   // le fichier hôte cible, jamais monté, est intact
   const hostTarget = join(home, "evil-host-target.txt");
   assert.equal(existsSync(hostTarget), true);

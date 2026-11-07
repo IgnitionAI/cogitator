@@ -38,6 +38,8 @@ const faux = fauxProvider(
 // depuis son checkpoint n'a pas besoin d'un nouvel appel d'outil du modèle).
 if (scenario === "generation") {
   faux.setResponses([fauxAssistantMessage(seed ? "partial ".repeat(1000) : "recovered")]);
+} else if (scenario === "effect" || scenario === "intent") {
+  faux.setResponses(seed ? [fauxAssistantMessage(fauxToolCall("fixture_effect", {}), { stopReason: "toolUse" })] : [fauxAssistantMessage("must not resume")]);
 } else if (scenario === "worker") {
   faux.setResponses(
     seed
@@ -54,7 +56,14 @@ if (scenario === "generation") {
 
 const models = createModels();
 models.setProvider(faux.provider);
-const extension = makeFixtureExtension({ scope: scope!, crash: seed });
+const extension = makeFixtureExtension({
+  scope: scope!, crash: seed,
+  effectScenario: scenario === "effect" || scenario === "intent" ? scenario : undefined,
+  beforeCrash: async () => {
+    await runtime.setBudgetPolicy({ missionCalls: 0 });
+    assert.equal((await runtime.submit("replacement queued before crash", "queued")).queued, true);
+  },
+});
 const registry = createRegistry();
 registry.install(extension);
 
@@ -69,7 +78,15 @@ const runtime = await DurableMissionRuntime.open({
   toolchain: { commands: ["node"], mcpServers: [] },
 });
 
+const effectAction = {
+  operation: "fixture.external", target: "local-counter", artifactDigest: digest("artifact"), argumentDigest: digest("{}"),
+  consequence: "simulated", expiresAt: Date.now() + 60_000, allowedUses: 1,
+};
 if (phase === "seed") {
+  if (scenario === "effect" || scenario === "intent") {
+    const action = await runtime.requestPendingAction(effectAction);
+    await runtime.decideApproval(action.id, "approved");
+  }
   if (scenario === "generation") {
     const streaming = Promise.withResolvers<void>();
     const detach = await runtime.onCommitted((events) => {
@@ -121,6 +138,39 @@ if (scenario === "generation") {
   assert.equal(await readFile(join(workspace, "fixture.txt"), "utf8"), "after\n");
   await runtime.close();
   process.send?.({ recovered: "edit" });
+} else if (scenario === "effect" || scenario === "intent") {
+  const status = await runtime.missionStatus();
+  assert.equal(status.state, "needs_attention");
+  assert.equal(status.attentionCases.length, 1);
+  const item = status.attentionCases[0]!;
+  assert.equal(item.id, "effect:crashed-intent");
+  assert.equal(item.reasonCode, "effect_outcome_unknown");
+  assert.equal(item.intentKey, "crashed-intent");
+  assert.equal(item.receipt?.status, "unknown");
+  assert.equal(item.effect.operation, effectAction.operation);
+  assert.equal(item.effect.target, effectAction.target);
+  assert.equal(item.effect.artifactDigest, effectAction.artifactDigest);
+  assert.equal(item.effect.argumentDigest, effectAction.argumentDigest);
+  assert(item.taskId && item.grantId && item.pendingActionId && item.evidenceAt);
+  assert(item.unknowns.length && item.ownerTask && item.continuationConditions.length);
+  assert.equal((await runtime.submit("tool", "tool")).duplicate, true);
+  assert.equal((await runtime.submit("queued", "queued")).duplicate, true);
+  await assert.rejects(runtime.submit("new input", "new"), /réconcil/);
+  const fresh = await runtime.requestPendingAction(effectAction);
+  await runtime.decideApproval(fresh.id, "approved");
+  await runtime.setBudgetPolicy({ missionCalls: 100 });
+  await runtime.tryDrainQueue();
+  await delay(100);
+  await assert.rejects(runtime.waitForIdle(), /réconcil/);
+  assert.equal(faux.state.callCount, 0, "no effective SDK resume or replacement drain");
+  assert.equal((await runtime.approvalsView()).grants[0]!.remainingUses, 0);
+  assert.equal((await runtime.approvalsView()).grants[1]!.remainingUses, 1);
+  assert.equal((await runtime.missionStatus()).queueLength, 1);
+  assert.deepEqual((await runtime.missionStatus()).attentionCases, status.attentionCases);
+  const calls = await readFile(join(scope!, "external.calls"), "utf8").catch(() => "");
+  assert.equal(calls, scenario === "effect" ? "effect\n" : "");
+  await runtime.close();
+  process.send?.({ recovered: scenario });
 } else {
   // worker : orphelin vivant → observation/arrêt → disposition → reprise.
   assert.equal(runtime.recovery.needsAttention, true, "orphelin vivant : readiness fausse");

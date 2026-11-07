@@ -55,7 +55,7 @@ class FakeClient {
   async prompt(text: string) {
     if (this.failOnPrompt) throw new Error("boom simulé");
     this.prompts.push(text);
-    // émet un cycle complet terminé par agent_settled (attendu par waitForSettled)
+    // émet un cycle complet terminé par agent_settled (LaneDispatcher.waitUntilSettled)
     for (const l of this.listeners) l({ type: "agent_start" });
     for (const l of this.listeners) l({ type: "message_update" });
     for (const l of this.listeners) l({ type: "agent_settled" });

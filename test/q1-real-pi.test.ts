@@ -122,9 +122,13 @@ test("reapOrphanOwnedPi filet de sécurité si un rpc marqué survit", { timeout
   const dir = mkdtempSync(join(tmpdir(), "cog-reap-net-"));
   const home = piHome(dir);
   const driver = join(import.meta.dirname, "fixtures", "real-pi-orphan-driver.ts");
+  // Repli volontaire sans setpriv (wrapper + watchdog) : sans cela le pdeathsig tuerait le
+  // rpc à la mort de l'hôte et le filet reap n'aurait rien à ramasser. COGITATOR_PI_NO_SETPRIV
+  // est la seule variable réellement lue par src/pi-child.ts (l'ancienne
+  // COGITATOR_FORCE_WATCHDOG n'était plus lue par personne).
   const child = fork(driver, [home, pi!.cli, pi!.pkg], {
     execArgv: ["--import", "tsx"],
-    env: { ...process.env, HOME: home, COGITATOR_FORCE_WATCHDOG: "1", PATH: pi!.bin ? `${dirname(pi!.bin)}:${process.env.PATH ?? ""}` : process.env.PATH },
+    env: { ...process.env, HOME: home, COGITATOR_PI_NO_SETPRIV: "1", PATH: pi!.bin ? `${dirname(pi!.bin)}:${process.env.PATH ?? ""}` : process.env.PATH },
     silent: true,
   });
   const msg = await new Promise<{ pid: number; rpcPid: number }>((resolve, reject) => {

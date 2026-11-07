@@ -156,6 +156,7 @@ CREATE TABLE IF NOT EXISTS queue_item (
   lane_id TEXT NOT NULL REFERENCES lane(id) ON DELETE CASCADE,
   seq INTEGER NOT NULL,
   body TEXT NOT NULL,
+  images TEXT,
   from_agent_id TEXT REFERENCES agent_preset(id) ON DELETE SET NULL,
   chain_id TEXT,
   hop INTEGER NOT NULL DEFAULT 0,
@@ -171,6 +172,20 @@ CREATE TABLE IF NOT EXISTS queue_item (
 );
 CREATE INDEX IF NOT EXISTS idx_queue_item_lane_status ON queue_item(lane_id, status, seq);
 `;
+
+// v9 → v10 : les images d'un message sont persistées avec l'item (#31) — la Map mémoire du
+// LaneDispatcher ne survivait pas au redémarrage, le tour repartait sans images.
+const MIGRATE_V9_TO_V10 = `ALTER TABLE queue_item ADD COLUMN images TEXT;`;
+
+/**
+ * Applique v10. Une base neuve crée déjà `queue_item.images` (CREATE TABLE de MIGRATE_V8_TO_V9),
+ * donc l'ALTER n'est exécuté que si la colonne manque (base v9 existante).
+ */
+function migrateV9ToV10(db: Db): void {
+  const columns = db.prepare("PRAGMA table_info(queue_item)").all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === "images")) db.exec(MIGRATE_V9_TO_V10);
+  db.pragma("user_version = 10");
+}
 
 export type Db = Database.Database;
 
@@ -188,8 +203,8 @@ export function openDb(dbPath: string): { db: Db; version: number } {
     db.exec(MIGRATE_V6_TO_V7);
     db.exec("ALTER TABLE conversation ADD COLUMN pending_configuration TEXT");
     db.exec(MIGRATE_V8_TO_V9);
-    db.pragma("user_version = 9");
-    return { db, version: 9 };
+    migrateV9ToV10(db);
+    return { db, version: 10 };
   }
   if (version < 2) {
     // FK OFF pendant la migration (pratique SQLite standard ; les parents peuvent être créés plus tard)
@@ -226,5 +241,6 @@ export function openDb(dbPath: string): { db: Db; version: number } {
     db.exec(MIGRATE_V8_TO_V9);
     db.pragma("user_version = 9");
   }
-  return { db, version: 9 };
+  if (version < 10) migrateV9ToV10(db);
+  return { db, version: 10 };
 }

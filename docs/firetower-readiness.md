@@ -1,5 +1,11 @@
 # Firetower deployment readiness
 
+## Simplified project import — 2026-11-07
+
+Release **f1c5010** defaults the add-workspace dialog to GitHub: one repository link, automatic name, an Import action, and collapsed optional naming/private-repository guidance. The server-folder alternative remains available. The actual Chrome dialog was verified and the owner’s repository URL restored without submitting an import. Build and 11 focused workspace/i18n tests passed locally and on Linux.
+
+Firetower had no enrolled workspace roots, causing imports to fail before git ran. Created the private controller-owned `/var/lib/cogitator/projects` directory and added exactly that path to `COGITATOR_ENROLLED_ROOTS`, preserving a private backup of the service environment. The existing confinement checks remain intact. Controller enrollment validation accepts this directory; services are active and anonymous workspaces requests return 401. Access to the private IgnitionRAG repository and its actual clone have not been tested.
+
 ## Extensions catalog deployed — 2026-11-07
 
 Release **8d74518** adds an authenticated Extensions screen backed by the live pi.dev/packages catalogue: search, package-type filters, pagination, installed packages, install/remove progress and idle-session reload. Operations invoke native pi with the controller’s explicit profile, pin registry-resolved versions, serialize package changes and preserve busy parents/async children. Busy sessions require the displayed reload action once their work finishes. The catalog currently parses the official HTML cards; a site markup change may require adapting the parser.

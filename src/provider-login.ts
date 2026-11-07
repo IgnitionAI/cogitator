@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { piAiProviders } from "./host-pi.js";
 import type { AuthEvent, AuthPrompt, AuthType, Credential, CredentialStore } from "@earendil-works/pi-ai";
@@ -79,9 +79,22 @@ export class ProviderLogins {
   private readonly sessions = new Map<string, Session>();
 
   private readonly models;
+  private deviceId?: string;
+  private readonly deviceFile: string;
 
   constructor(paths: Paths, models?: Pick<ReturnType<typeof piAiProviders.builtinModels>, "login">) {
+    this.deviceFile = join(paths.home, "provider-device.json");
     this.models = models ?? piAiProviders.builtinModels({ credentials: fileCredentialStore(paths.piAuthJson) });
+  }
+
+  private getDeviceId(): string {
+    if (this.deviceId) return this.deviceId;
+    const saved = readJson<{ id?: string }>(this.deviceFile, {});
+    if (typeof saved.id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(saved.id)) return this.deviceId = saved.id;
+    const id = randomUUID();
+    mkdirSync(dirname(this.deviceFile), { recursive: true, mode: 0o700 });
+    atomicWriteJson(this.deviceFile, { id }, 0o600);
+    return this.deviceId = id;
   }
 
   start(providerId: string, type: AuthType): { id: string } {
@@ -131,7 +144,7 @@ export class ProviderLogins {
         emit({ type: "prompt", prompt: publicPrompt(prompt) });
         if (signals.some((signal) => signal.aborted)) onAbort();
       }),
-    }, { agentName: "Cogitator" }).then(() => emit({ type: "done" }), (error: unknown) => {
+    }, { agentName: "Cogitator", getDeviceId: () => this.getDeviceId() }).then(() => emit({ type: "done" }), (error: unknown) => {
       if (abort.signal.aborted) return;
       emit({ type: "error", message: error instanceof Error ? error.message : "login failed" });
     });

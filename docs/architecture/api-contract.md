@@ -32,7 +32,7 @@ Protected local stdio MCP uses a private owner-only Unix HTTP socket with the sa
 | PUT | `/api/providers/:id` | Update (merge, preserving unknown fields) |
 | DELETE | `/api/providers/:id` | Delete + remove the key from `auth.json` |
 | POST | `/api/providers/:id/login` | Start a `/login`-style session (`{ type: "api_key" \| "oauth" }`) → `{ id }` |
-| GET | `/api/provider-logins/:id/events` | SSE: `prompt`, `auth_url`, `device_code`, `info`, `progress`, `done`, `error` |
+| GET | `/api/provider-logins/:id/events` | SSE: `prompt`, `prompt_clear`, `auth_url`, `device_code`, `info`, `progress`, `done`, `error` |
 | POST | `/api/provider-logins/:id/reply` | Answer the current prompt (`{ value }`) |
 | DELETE | `/api/provider-logins/:id` | Cancel the login session |
 | GET | `/api/skills` | Discovered skills (union of pi locations): name, description, path |

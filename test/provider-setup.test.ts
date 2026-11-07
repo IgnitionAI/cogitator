@@ -97,3 +97,26 @@ test("canceling a pending OAuth prompt aborts the provider and removes its login
     assert.equal(signal?.aborted, true); assert.equal(logins.has(id), false); assert.equal(logins.reply(id, "later"), false);
   } finally { rmSync(home, { recursive: true }); }
 });
+
+
+test("ChatGPT OAuth receives a stable per-installation device ID across controller restarts", async () => {
+  const one = fixture(); const two = fixture();
+  const seen: string[] = [];
+  const models = {
+    async login(_id: string, _type: unknown, _interaction: unknown, options?: { getDeviceId?: () => string }) {
+      assert.ok(options?.getDeviceId);
+      seen.push(options.getDeviceId());
+      assert.equal(options.getDeviceId(), seen.at(-1));
+      return { type: "api_key" as const, key: "fixture" };
+    },
+  };
+  try {
+    for (const paths of [one.paths, one.paths, two.paths]) {
+      const logins = new ProviderLogins(paths, models);
+      const { id } = logins.start("openai", "oauth"); await tick(); logins.cancel(id);
+    }
+    assert.match(seen[0]!, /^[0-9a-f-]{36}$/);
+    assert.equal(seen[0], seen[1]); assert.notEqual(seen[0], seen[2]);
+    assert.equal(statSync(join(one.home, "provider-device.json")).mode & 0o777, 0o600);
+  } finally { rmSync(one.home, { recursive: true }); rmSync(two.home, { recursive: true }); }
+});

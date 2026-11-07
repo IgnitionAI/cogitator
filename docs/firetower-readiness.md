@@ -1,5 +1,11 @@
 # Firetower deployment readiness
 
+## Illustrated guides and sidebar release check — 2026-11-07
+
+Release **3dbd9f5** adds the sidebar Updates dialog next to What’s new. It checks npm metadata and distinguishes available/current/ahead/unknown versions; it provides pi and system-service instructions, not automatic controller replacement. The README now links illustrated English/French working guides and a single-owner HTTPS VPS recipe. Screenshots use an isolated demo profile without owner data.
+
+Build and 15 focused tests passed locally and on Linux. Activation occurred after the idle guard reported no streaming conversation. All three services remained active, public status returned 200 and anonymous release-check access returned 401. The authenticated Chrome dialog showed running 0.5.2 versus npm 0.5.1, correctly declining a downgrade. GitHub documentation was pushed and fetched back; no npm release was published.
+
 ## Extension updates and short release notes — 2026-11-07
 
 Release **c20ebbf** adds explicit update checks, per-package npm updates, an always-visible extension reload action, and a short bilingual What’s new dialog. Installed manifests determine versions; unknown/prerelease comparisons report unavailable rather than up to date. Native pi installation replaces a pinned source with the newer exact version while preserving package resource filters. Reload recycles idle handles and defers busy parents/children.

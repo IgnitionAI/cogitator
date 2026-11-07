@@ -150,9 +150,10 @@ function originOf(dir: string): Promise<string | null> {
  * préexistant » pour que l'appelant ne supprime que le premier (S3) ; `cloned` distingue
  * la reprise d'un clone frais.
  */
-export async function cloneRepo(url: string, dest: string): Promise<{ dir: string; cloned: boolean; created: boolean } | { error: string }> {
-  const source = url.trim();
-  if (!isValidGitSource(source)) return { error: `URL git invalide: ${redactCredentials(source)}` };
+export async function cloneRepo(url: string, dest: string, connectionEnv?: NodeJS.ProcessEnv): Promise<{ dir: string; cloned: boolean; created: boolean } | { error: string }> {
+  const github = connectionEnv ? parseGitHubSource(url.trim()) : null;
+  const source = github ? `https://github.com/${github.owner}/${github.repo}.git` : url.trim();
+  if (!isValidGitSource(url.trim())) return { error: `URL git invalide: ${redactCredentials(source)}` };
   const preExisting = existsSync(dest);
   if (preExisting) {
     if (await isGitWorkTree(dest)) {
@@ -169,8 +170,8 @@ export async function cloneRepo(url: string, dest: string): Promise<{ dir: strin
     await new Promise<void>((resolvePromise, reject) => {
       execFile(
         "git",
-        ["clone", "--quiet", "--", source, dest],
-        { timeout: CLONE_TIMEOUT_MS, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
+        [...(github ? ["-c", "credential.https://github.com.helper=", "-c", "credential.https://github.com.helper=!gh auth git-credential"] : []), "clone", "--quiet", ...(github ? ["--config", "credential.https://github.com.helper=", "--config", "credential.https://github.com.helper=!gh auth git-credential"] : []), "--", source, dest],
+        { timeout: CLONE_TIMEOUT_MS, env: { ...(connectionEnv ?? process.env), GIT_TERMINAL_PROMPT: "0" } },
         (err, _stdout, stderr) => (err ? reject(new Error(gitErrorDetail(stderr) || gitErrorDetail(err.message))) : resolvePromise()),
       );
     });

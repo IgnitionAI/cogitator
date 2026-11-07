@@ -1,3 +1,4 @@
+import { githubEnv, githubConfigured } from "./github-login.js";
 import { checkRequestAuthorization } from "./request-authorization.js";
 import { reconcileConfiguration } from "./classic-configuration.js";
 import { mkdirSync } from "node:fs";
@@ -49,6 +50,7 @@ export function makeSpawner(opts: SpawnerOptions): Spawner {
         const spawn = JSON.parse(conv.spawn_args || "{}") as SpawnConfig;
         const mcpEnv = encodeMcpEnv(spawn.mcpServers ?? []);
         const env: Record<string, string> = {
+          ...(githubConfigured(paths) ? { GH_CONFIG_DIR: githubEnv(paths).GH_CONFIG_DIR!, GH_TOKEN: "", GITHUB_TOKEN: "", GH_ENTERPRISE_TOKEN: "", GITHUB_ENTERPRISE_TOKEN: "" } : {}),
           COGITATOR_HOME: paths.home,
           PI_CODING_AGENT_DIR: paths.piAgentDir,
           COGITATOR_CONVERSATION_ID: conv.id,

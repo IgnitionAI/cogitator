@@ -448,3 +448,5 @@ export interface ScheduleWrite {
 export interface PackageCard { name: string; description: string; types: string[] }
 export interface PackageOperation { name: string; action: "install" | "remove"; status: "running" | "done" | "error"; error?: string; deferred?: number }
 export interface PackageState { installed: Array<{ name: string; source: string; version: string; removable: boolean }>; operation: PackageOperation | null }
+
+export interface GitHubConnectionState { available: boolean; connected: boolean; login?: string; status: "idle" | "starting" | "waiting" | "done" | "error"; code?: string; error?: string }

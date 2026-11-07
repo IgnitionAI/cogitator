@@ -1,3 +1,4 @@
+import { GitHubConnection } from "../GitHubConnection";
 import { t as translate, formatNumber } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
@@ -261,6 +262,7 @@ function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) 
             <input autoFocus placeholder={translate("screens.gitPlaceholder")} value={gitUrl} onChange={(e) => { setGitUrl(e.target.value); setActionError(null); }} />
           </Field>
           <p className="muted">{translate("screens.gitSimpleHint")}</p>
+          <GitHubConnection />
         </>
       ) : (
         <>

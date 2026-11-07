@@ -1,3 +1,5 @@
+import { githubConfigured, githubEnv } from "./github-login.js";
+import { getPaths } from "./paths.js";
 import { checkRequestAuthorization } from "./request-authorization.js";
 import { execFile } from "node:child_process";
 import { join } from "node:path";
@@ -90,7 +92,7 @@ interface GhResult {
 function gh(wsDir: string, args: string[], timeoutMs = GH_TIMEOUT_MS): Promise<GhResult> {
   checkRequestAuthorization();
   return new Promise((resolve) => {
-    execFile("gh", args, { cwd: wsDir, timeout: timeoutMs, maxBuffer: GH_MAX_BUFFER }, (err, stdout, stderr) => {
+    execFile("gh", args, { cwd: wsDir, timeout: timeoutMs, maxBuffer: GH_MAX_BUFFER, env: githubConfigured(getPaths()) ? githubEnv(getPaths()) : process.env }, (err, stdout, stderr) => {
       resolve({ ok: !err, stdout: String(stdout), stderr: String(stderr).trim() });
     });
   });

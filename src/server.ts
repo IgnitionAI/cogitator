@@ -1,3 +1,4 @@
+import { GitHubLogin, githubEnv, githubConfigured } from "./github-login.js";
 import { catalog, installedPackages, PackageManager } from "./packages.js";
 import { changeConfiguration, dismissConfiguration, ConfigurationError, recoverConfigurations } from "./classic-configuration.js";
 import { execFile } from "node:child_process";
@@ -274,6 +275,7 @@ interface Deps {
   sseSubs: Map<string, Set<SseSend>>;
   groupSubs: Map<string, Set<SseSend>>;
   logins: ProviderLogins;
+  githubLogin: GitHubLogin;
   /** Point de composition explicite unique des runtimes (I3 amendé, Plan 0002 §6). */
   compose: (conv: ConversationRow) => ConversationRuntime;
   durable: DurableRuntimeManager;
@@ -336,6 +338,15 @@ function registryRoutes(deps: Deps): Route[] {
   const { paths } = deps;
   const packages = new PackageManager(paths, () => deps.pool.refreshExtensions());
   return [
+    ["GET", "/api/github/connection", async (ctx) => {
+      sendJson(ctx.res, 200, await deps.githubLogin.state());
+    }],
+    ["POST", "/api/github/connection", (ctx) => {
+      ctx.check(); sendJson(ctx.res, 202, deps.githubLogin.start());
+    }],
+    ["DELETE", "/api/github/connection", (ctx) => {
+      ctx.check(); deps.githubLogin.cancel(); sendJson(ctx.res, 200, { ok: true });
+    }],
     ["GET", "/api/packages", (ctx) => {
       sendJson(ctx.res, 200, { installed: installedPackages(paths), operation: packages.operation });
     }],
@@ -526,7 +537,7 @@ function workspaceRoutes(deps: Deps): Route[] {
             return sendJson(ctx.res, 400, { error: `racine de clone hors des racines enrôlées: ${root}` });
           }
         }
-        const result = await cloneRepo(target.source, target.dest);
+        const result = await cloneRepo(target.source, target.dest, githubConfigured(deps.paths) ? githubEnv(deps.paths) : undefined);
         if ("error" in result) return sendJson(ctx.res, 400, { error: result.error });
         // D4 : tout échec après le clone (autorisation révoquée pendant les 25 s, ou refus
         // d'enrôlement) doit laisser le disque propre — sans jamais supprimer un dossier
@@ -1508,6 +1519,7 @@ export function createApp(opts: AppOptions): Server {
     sseSubs,
     groupSubs,
     logins: new ProviderLogins(paths),
+    githubLogin: new GitHubLogin(paths, () => pool.refreshExtensions()),
     spawner,
     compose,
     durable,
@@ -1537,6 +1549,7 @@ export function createApp(opts: AppOptions): Server {
   if (opts.auth) { app.requestTimeout = 30_000; app.headersTimeout = 10_000; app.maxHeadersCount = 100; }
   app.once("close", () => {
     deps.logins.dispose();
+    deps.githubLogin.cancel();
     stopReap.stop();
     unsubscribePool();
     void durable.dispose();

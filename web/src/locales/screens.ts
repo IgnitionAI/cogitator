@@ -1,4 +1,15 @@
 export const screensMessages = {
+  "github.connected": {"fr": "GitHub connecté · {login}", "en": "GitHub connected · {login}"},
+  "github.privateHint": {"fr": "Dépôt privé ? Connecte ton compte GitHub.", "en": "Private repository? Connect your GitHub account."},
+  "github.enterCode": {"fr": "Saisis ce code sur GitHub :", "en": "Enter this code on GitHub:"},
+  "github.open": {"fr": "Ouvrir GitHub", "en": "Open GitHub"},
+  "github.waiting": {"fr": "En attente de ton autorisation sur GitHub… La connexion sera détectée automatiquement.", "en": "Waiting for your authorization on GitHub… Connection will be detected automatically."},
+  "github.starting": {"fr": "Connexion en cours…", "en": "Connecting…"},
+  "github.connect": {"fr": "Connecter GitHub", "en": "Connect GitHub"},
+  "github.unavailable": {"fr": "GitHub CLI doit être installé sur ce serveur.", "en": "GitHub CLI must be installed on this server."},
+  "github.expired": {"fr": "Le code a expiré. Relance la connexion.", "en": "The code expired. Start connecting again."},
+  "github.loginFailed": {"fr": "Connexion non terminée. Réessaie et vérifie l’autorisation sur GitHub.", "en": "Connection did not complete. Retry and check the authorization on GitHub."},
+
   "screens.gitPlaceholder": { fr: "https://github.com/owner/repo", en: "https://github.com/owner/repo" },
   "screens.gitSimpleHint": {"fr": "Colle le lien du dépôt. Le nom du projet est automatique.", "en": "Paste the repository link. The project name is automatic."},
   "screens.importOptions": {"fr": "Options", "en": "Options"},
@@ -957,8 +968,8 @@ export const screensMessages = {
     "en": "Repository link"
   },
   "screens.gitHint": {
-    "fr": "Dépôt privé ? Un accès GitHub doit être configuré sur le serveur. Les liens HTTPS, SSH et owner/repo sont acceptés.",
-    "en": "Private repository? GitHub access must be configured on the server. HTTPS, SSH and owner/repo links are supported."
+    "fr": "Les liens HTTPS, SSH et owner/repo sont acceptés. Pour un dépôt d’organisation, celle-ci doit autoriser ton accès GitHub.",
+    "en": "HTTPS, SSH and owner/repo links are supported. Organization repositories require the organization to authorize your GitHub access."
   },
   "screens.cloning": {
     "fr": "Clonage…",

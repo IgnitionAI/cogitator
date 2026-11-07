@@ -17,7 +17,20 @@ export function parseCatalog(html: string): { packages: PackageCard[]; hasNext: 
   return { packages, hasNext: /(?:aria-label="Next|>Next|>Suivant)/i.test(html) };
 }
 async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(15_000), redirect: "error" });
+  const origin = new URL(url).origin;
+  let res: Response | undefined;
+  const signal = AbortSignal.timeout(15_000);
+  for (let redirect = 0; redirect < 4; redirect++) {
+    res = await fetch(url, { signal, redirect: "manual" });
+    if (![301, 302, 303, 307, 308].includes(res.status)) break;
+    const location = res.headers.get("location");
+    await res.body?.cancel();
+    if (!location) throw new Error("Redirection du catalogue invalide.");
+    const target = new URL(location, url);
+    if (target.origin !== origin) throw new Error("Redirection externe du catalogue refusée.");
+    url = target.href;
+  }
+  if (!res) throw new Error("Catalogue indisponible.");
   if (!res.ok) throw new Error(`Catalogue indisponible (HTTP ${res.status}).`);
   const body = await res.text();
   if (body.length > 3_000_000) throw new Error("Réponse du catalogue trop volumineuse.");
@@ -25,9 +38,9 @@ async function fetchText(url: string): Promise<string> {
 }
 export async function catalog(query: string, type: string, page: number) {
   const url = new URL("https://pi.dev/packages");
-  url.searchParams.set("name", query.slice(0, 100));
+  if (query) url.searchParams.set("name", query.slice(0, 100));
   if (["extension", "skill", "theme", "prompt"].includes(type)) url.searchParams.set("type", type);
-  url.searchParams.set("page", String(page));
+  if (page > 1) url.searchParams.set("page", String(page));
   const html = await fetchText(url.href);
   const result = parseCatalog(html);
   // Pagination links retain the active search and filters.

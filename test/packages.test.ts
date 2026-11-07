@@ -56,3 +56,14 @@ test("installation validates registry metadata, pins the resolved version and us
     assert.equal(rejected.status, "error"); assert.equal(calls.length, 1);
   } finally { globalThis.fetch = original; }
 });
+
+test("catalog follows only same-origin canonical redirects and preserves pagination", async () => {
+  const { catalog } = await import("../src/packages.js");
+  const original = globalThis.fetch; let calls = 0;
+  try {
+    globalThis.fetch = async () => ++calls === 1 ? new Response(null, { status: 302, headers: { location: "/packages?type=extension" } }) : new Response('<form class="packages-action-bar"></form><a href="/packages?type=extension&amp;page=2">2</a>');
+    assert.equal((await catalog("", "extension", 1)).hasNext, true);
+    globalThis.fetch = async () => new Response(null, { status: 302, headers: { location: "http://127.0.0.1/private" } });
+    await assert.rejects(() => catalog("", "extension", 1), /externe/);
+  } finally { globalThis.fetch = original; }
+});

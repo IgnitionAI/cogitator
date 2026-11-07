@@ -879,3 +879,6 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 .extensions-search input { flex: 1 1 240px; min-width: 0; }
 .extensions-search select { width: auto; }
 .extension-status { padding: 16px; border: 1px solid var(--border, #34363b); border-radius: 8px; margin: 16px 0; overflow-wrap: anywhere; }
+.workspace-import-options { margin: 16px 0 24px; }
+.workspace-import-options summary { cursor: pointer; color: var(--muted); padding: 4px 0; }
+.workspace-import-options[open] summary { margin-bottom: 16px; }

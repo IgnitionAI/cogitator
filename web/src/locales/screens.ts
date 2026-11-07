@@ -1,4 +1,10 @@
 export const screensMessages = {
+  "screens.gitPlaceholder": { fr: "https://github.com/owner/repo", en: "https://github.com/owner/repo" },
+  "screens.gitSimpleHint": {"fr": "Colle le lien du dépôt. Le nom du projet est automatique.", "en": "Paste the repository link. The project name is automatic."},
+  "screens.importOptions": {"fr": "Options", "en": "Options"},
+  "screens.importProject": {"fr": "Importer", "en": "Import"},
+  "screens.importStorageError": {"fr": "L’import n’est pas encore configuré sur ce serveur. Le dossier des projets doit être autorisé dans la configuration de Cogitator.", "en": "Import is not configured on this server yet. Allow the projects folder in the Cogitator configuration."},
+
   "extensions.source": { fr: "pi.dev/packages", en: "pi.dev/packages" },
   "extensions.prompts": { fr: "Prompts", en: "Prompts" },
   "extensions.title": {"fr": "Extensions", "en": "Extensions"},
@@ -923,8 +929,8 @@ export const screensMessages = {
     "en": "Select a folder, then open it to browse its subfolders."
   },
   "screens.optionalName": {
-    "fr": "Nom (optionnel, nom du dossier par défaut)",
-    "en": "Name (optional, defaults to folder name)"
+    "fr": "Nom du projet",
+    "en": "Project name"
   },
   "screens.openFolder": {
     "fr": "Ouvrir le dossier sélectionné",
@@ -935,8 +941,8 @@ export const screensMessages = {
     "en": "Adding…"
   },
   "screens.sourceLocal": {
-    "fr": "Dossier local",
-    "en": "Local folder"
+    "fr": "Dossier sur le serveur",
+    "en": "Folder on the server"
   },
   "screens.sourceGroupLabel": {
     "fr": "Source du projet",
@@ -947,12 +953,12 @@ export const screensMessages = {
     "en": "GitHub repository"
   },
   "screens.gitUrl": {
-    "fr": "Dépôt (owner/repo, URL https ou ssh, ou chemin git local)",
-    "en": "Repository (owner/repo, https or ssh URL, or local git path)"
+    "fr": "Lien du dépôt",
+    "en": "Repository link"
   },
   "screens.gitHint": {
-    "fr": "Le dépôt est cloné sur le serveur (dossier projets de Cogitator) puis ajouté comme espace de travail. Pour un dépôt privé, le clonage utilise les identifiants git déjà configurés sur la machine ; Cogitator ne stocke aucun jeton d’accès.",
-    "en": "The repository is cloned on the server (Cogitator projects folder) and added as a workspace. For a private repository, cloning uses the git credentials already configured on this machine; Cogitator stores no access token."
+    "fr": "Dépôt privé ? Un accès GitHub doit être configuré sur le serveur. Les liens HTTPS, SSH et owner/repo sont acceptés.",
+    "en": "Private repository? GitHub access must be configured on the server. HTTPS, SSH and owner/repo links are supported."
   },
   "screens.cloning": {
     "fr": "Clonage…",

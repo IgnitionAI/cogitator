@@ -186,7 +186,7 @@ export default function Workspaces({ onOpenWorkspace }: { onOpenWorkspace?: (w: 
           workspaceName={workspaces.find((w) => w.id === boardFor)?.name ?? ""}
           agents={agents}
           onClose={() => setBoardFor(null)}
-         
+
         />
       ) : null}
       {treeFor ? (
@@ -203,7 +203,7 @@ export default function Workspaces({ onOpenWorkspace }: { onOpenWorkspace?: (w: 
 
 function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) {
   const [actionError, setActionError] = useState<string | null>(null);
-  const [mode, setMode] = useState<"local" | "github">("local");
+  const [mode, setMode] = useState<"local" | "github">("github");
   const github = mode === "github";
   // Une erreur d'un mode ne doit pas s'afficher dans l'autre.
   const switchMode = (next: "local" | "github") => { setActionError(null); setMode(next); };
@@ -224,7 +224,7 @@ function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) 
       .catch((e: Error) => setBrowseError(e.message)).finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { if (mode === "local" && !browse) load(); }, [mode]);
 
   const add = async () => {
     if ((!github && (!selected || loading || browseError)) || (github && !gitUrl.trim()) || busy) return;
@@ -244,22 +244,23 @@ function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) 
 
   return (
     <Modal title={translate("screens.addWorkspace")} onClose={() => { if (!busy) props.onClose(); }}>
+      <form onSubmit={(event) => { event.preventDefault(); void add(); }}>
       <fieldset className="form-fields" disabled={busy}>
-      <ErrorText error={actionError} />
+
       <div className="toolbar" role="group" aria-label={translate("screens.sourceGroupLabel")}>
-        <button type="button" className={mode === "local" ? "btn btn-sm btn-primary" : "btn btn-sm"} aria-pressed={mode === "local"} onClick={() => switchMode("local")}>
-          <Icon name="folder" size={14} /> {translate("screens.sourceLocal")}{mode === "local" ? <> <Icon name="check" size={14} /></> : null}
-        </button>
         <button type="button" className={mode === "github" ? "btn btn-sm btn-primary" : "btn btn-sm"} aria-pressed={mode === "github"} onClick={() => switchMode("github")}>
           <Icon name="download" size={14} /> {translate("screens.sourceGithub")}{mode === "github" ? <> <Icon name="check" size={14} /></> : null}
+        </button>
+        <button type="button" className={mode === "local" ? "btn btn-sm btn-primary" : "btn btn-sm"} aria-pressed={mode === "local"} onClick={() => switchMode("local")}>
+          <Icon name="folder" size={14} /> {translate("screens.sourceLocal")}{mode === "local" ? <> <Icon name="check" size={14} /></> : null}
         </button>
       </div>
       {github ? (
         <>
           <Field label={translate("screens.gitUrl")}>
-            <input value={gitUrl} onChange={(e) => setGitUrl(e.target.value)} />
+            <input autoFocus placeholder={translate("screens.gitPlaceholder")} value={gitUrl} onChange={(e) => { setGitUrl(e.target.value); setActionError(null); }} />
           </Field>
-          <p className="muted">{translate("screens.gitHint")}</p>
+          <p className="muted">{translate("screens.gitSimpleHint")}</p>
         </>
       ) : (
         <>
@@ -297,25 +298,31 @@ function AddWorkspaceModal(props: { onClose: () => void; onAdded: () => void }) 
       <p className="muted">{translate("screens.browseHint")}</p>
         </>
       )}
-      <Field label={translate("screens.optionalName")}>
-        <input value={name} onChange={(e) => setName(e.target.value)} />
-      </Field>
+      <details className="workspace-import-options">
+        <summary>{translate("screens.importOptions")}</summary>
+        <Field label={translate("screens.optionalName")}>
+          <input placeholder={github ? gitUrl.replace(/\/$/, "").split("/").pop()?.replace(/\.git$/, "") : undefined} value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        {github && <p className="muted">{translate("screens.gitHint")}</p>}
+      </details>
+      <ErrorText error={actionError?.startsWith("racine de clone hors") ? translate("screens.importStorageError") : actionError} />
       <div className="toolbar">
         {github ? null : (
-          <button className="btn" disabled={!selected || loading} onClick={() => selected && load(selected)}>{translate("screens.openFolder")}</button>
+          <button type="button" className="btn" disabled={!selected || loading} onClick={() => selected && load(selected)}>{translate("screens.openFolder")}</button>
         )}
         <button
           className="btn btn-primary"
           disabled={github ? !gitUrl.trim() || busy : !selected || busy || loading || !!browseError}
-          onClick={() => void add()}
+          type="submit"
         >
           {busy ? translate(github ? "screens.cloning" : "screens.adding")
-            : github ? translate("screens.addWorkspace")
+            : github ? translate("screens.importProject")
             : translate("screens.addNamed", { name: selected ? (selected.split("/").pop() || "/") : "" })}
         </button>
         <button type="button" className="btn" disabled={busy} onClick={props.onClose}>{translate("screens.cancel")}</button>
       </div>
       </fieldset>
+      </form>
       {busy ? <p role="status" className="muted">{translate("screens.pending")}</p> : null}
     </Modal>
   );

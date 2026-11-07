@@ -1,4 +1,5 @@
 const ICONS = {
+  monitor: <><rect x="3" y="3" width="18" height="13" rx="2"/><path d="M12 16v5M8 21h8"/></>,
   chat: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></>,
   folder: <><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.6 3.9A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z" /></>,
   bot: <><rect x="6" y="8" width="12" height="10" rx="3" /><path d="M12 8V5" /><circle cx="9" cy="13" r=".6" fill="currentColor" stroke="none" /><circle cx="15" cy="13" r=".6" fill="currentColor" stroke="none" /><path d="M8 20v-2M16 20v-2" /></>,

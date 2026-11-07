@@ -110,3 +110,7 @@ For local pi installs, update published packages and run `/reload`, then `/cogit
 On a remote protected installation, sign in with the owner email and password. Email is an identifier, not an email delivery service. MFA is optional. Signing out closes that browser's access but does not stop running agents. Lost credentials require [offline owner recovery](native-auth.md#offline-owner-recovery), not an email reset.
 
 Back up the application data and pi profile coherently. Provider keys, GitHub credentials, auth databases and transcripts are private. Authentication protects access to the panel; agents still act with the server account's capabilities. See [deployment boundaries](vps.md) before exposing an installation.
+
+## Shared browsers
+
+Create a profile in **Browsers**, select the allowed agents, and open a page. **Take control** blocks agent input and inspection while you sign in. **Return control to agents** lets them use the same session. Conversations also have a **Browsers** button. Closing the view keeps the browser running; stopping it retains its profile. Website reauthentication and verification may still be required. See [installation, usage and limitations](browsers.md).

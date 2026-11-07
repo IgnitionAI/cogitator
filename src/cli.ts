@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { closeSharedBrowser } from "./browser-http.js";
 import { EventEmitter } from "node:events";
 import { createServer, type Server } from "node:http";
 import { piCliPath, piCodingAgent } from "./host-pi.js";
@@ -77,6 +78,7 @@ async function start(explicit: boolean): Promise<void> {
       if (stopping) return;
       stopping = true;
       clearInterval(sweeper); cron.stop();
+      await closeSharedBrowser(server);
       privateServer?.closeAllConnections(); server.closeAllConnections();
       await Promise.all([close(server), ...(privateServer ? [close(privateServer)] : [])]);
       removeServerIdentity(paths.home, process.pid);

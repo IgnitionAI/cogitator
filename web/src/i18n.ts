@@ -1,3 +1,4 @@
+import { browserMessages } from "./locales/browser";
 import { useSyncExternalStore } from "react";
 import { authMessages } from "./locales/auth";
 import { commonMessages } from "./locales/common";
@@ -8,7 +9,7 @@ import { diagnosticMessages } from "./locales/diagnostics";
 
 export type Locale = "en" | "fr";
 export const LOCALE_STORAGE_KEY = "cogitator.locale";
-export const messages = { ...authMessages, ...commonMessages, ...screensMessages, ...workspaceMessages, ...chatMessages, ...diagnosticMessages };
+export const messages = { ...browserMessages, ...authMessages, ...commonMessages, ...screensMessages, ...workspaceMessages, ...chatMessages, ...diagnosticMessages };
 export type TranslationKey = keyof typeof messages;
 type Values = Record<string, string | number>;
 

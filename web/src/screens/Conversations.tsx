@@ -1,3 +1,4 @@
+import Browsers from "../BrowserPanel";
 import { QueueRecovery, appendRecoveredMessage, type QueueFailure } from "../QueueRecovery";
 import { ConnectProviderModal } from "./Providers";
 import { LiveConfiguration } from "../ModelConfiguration";
@@ -333,6 +334,7 @@ export function ChatView(props: {
   const [openThinking, setOpenThinking] = useState<Set<number>>(new Set());
   const [filesPanel, setFilesPanel] = useState(false);
   const [subsPanel, setSubsPanel] = useState(false);
+  const [browserPanel, setBrowserPanel] = useState(false);
   const [subagentCount, setSubagentCount] = useState(0);
   const [files, setFiles] = useState<FileChange[]>([]);
   const [diffFor, setDiffFor] = useState<{ path: string } | null>(null);
@@ -558,6 +560,8 @@ export function ChatView(props: {
         >
           <Icon name="users" /> {t("chat.subagents")}{subagentCount > 0 ? ` (${formatNumber(subagentCount)})` : ""}
         </button>
+        <button className="btn btn-sm" onClick={()=>setBrowserPanel(true)}>{t("browser.title")}</button>
+        {browserPanel && <Modal wide title={t("browser.title")} onClose={()=>setBrowserPanel(false)}><Browsers compact /></Modal>}
         {busy || running || sessionStatus === "running" ? (
           <button type="button" className="btn btn-sm btn-danger" onClick={() => api.stopConversation(conversation.id).catch((e: Error) => toast(e.message, true))}>
             <Icon name="stop" /> {t("chat.stop")}

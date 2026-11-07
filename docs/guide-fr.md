@@ -108,3 +108,7 @@ Près de **Langue**, de la version et de **Nouveautés**, ouvre **Mises à jour*
 Pour une installation pi, lorsqu’une version plus récente est publiée : `pi update --extensions`, puis `/reload` et `/cogitator` dans pi, une fois les agents au repos. Une version épinglée doit être changée explicitement.
 
 Pour un VPS géré par systemd, l’administrateur déploie la nouvelle version sur le VPS et redémarre son service. Mettre pi à jour sur ton ordinateur ne met pas le serveur à jour. Actualise ensuite la page. **Nouveautés** donne le résumé simple ; le changelog détaille les versions publiées et celles encore à venir.
+
+## Navigateur partagé
+
+Dans **Navigateurs**, crée un profil (Marketing, Développement…), attribue les agents autorisés, puis ouvre une page. **Prendre la main** bloque les actions et lectures des agents pendant que tu te connectes. **Rendre la main aux agents** leur redonne accès à la même session. Le bouton **Navigateurs** est aussi disponible dans chaque conversation. Fermer la vue conserve le navigateur ; **Arrêter le navigateur** conserve ses connexions sur disque. Les sites peuvent demander une nouvelle connexion ou une vérification. Voir le [guide d’installation et les limites](browsers.md).

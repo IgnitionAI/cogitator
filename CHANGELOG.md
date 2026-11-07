@@ -6,6 +6,8 @@ User-facing changes to Cogitator. GitHub development updates and npm releases ar
 
 ### Added
 
+- **Shared browsers:** persistent Chromium profiles, explicit agent access, live interactive view and human takeover. Classic Pi conversations gain a browser tool; runtime installation and site-specific login acceptance are documented.
+
 - **Project preparation:** check MCP connectivity and preview existing agents/skills before initialization; provide resource inventory to conversations and load the bundled integration explicitly.
 - **Local skill folders:** import from this computer (including to a VPS) or a server path, preserving references and existing skills.
 

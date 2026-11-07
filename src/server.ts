@@ -1,3 +1,5 @@
+import { SharedBrowser } from "./shared-browser.js";
+import { browserRoutes, attachBrowserView } from "./browser-http.js";
 import { resourceInventory, probeCogitatorTools } from "./project-setup.js";
 import { importSkillUpload } from "./skills-upload.js";
 import { appUpdateStatus } from "./app-updates.js";
@@ -1561,7 +1563,9 @@ export function createApp(opts: AppOptions): Server {
     team,
   };
 
+  const browser = new SharedBrowser(paths.home, db, opts.auth?.config.origin);
   const routes: Route[] = [
+    ...browserRoutes(browser, req => privateRequests.has(req), sendJson, !!opts.auth),
     healthRoute(deps),
     ...registryRoutes(deps),
     ...agentRoutes(deps),
@@ -1580,6 +1584,7 @@ export function createApp(opts: AppOptions): Server {
   ];
 
   const app = opts.server ?? createServer();
+  attachBrowserView(app, browser, paths.home, opts.auth);
   if (opts.auth) { app.requestTimeout = 30_000; app.headersTimeout = 10_000; app.maxHeadersCount = 100; }
   app.once("close", () => {
     deps.logins.dispose();

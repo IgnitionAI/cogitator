@@ -208,3 +208,15 @@ export function openEvents(
   connect();
   return close;
 }
+
+export interface BrowserProfile { id: string; name: string; agentIds: string[]; humanControl: boolean; running: boolean }
+export interface BrowserTab { id: string; title: string; url: string }
+export const browserApi = {
+  profiles: () => req<{profiles: BrowserProfile[]; installed: boolean}>('GET','/api/browser/profiles'),
+  create: (name: string, agentIds: string[]) => req<BrowserProfile>('POST','/api/browser/profiles',{name,agentIds}),
+  update: (id: string, name: string, agentIds: string[]) => req<BrowserProfile>('PUT',`/api/browser/profiles/${id}`,{name,agentIds}),
+  tabs: (id: string) => req<{tabs: BrowserTab[]}>('GET',`/api/browser/profiles/${id}/tabs`),
+  control: (id: string, human: boolean) => req<{humanControl: boolean}>('POST',`/api/browser/profiles/${id}/control`,{human}),
+  action: (id: string, command: Record<string,unknown>) => req<{tabs: BrowserTab[]}>('POST',`/api/browser/profiles/${id}/action`,command),
+  stop: (id: string) => req('POST',`/api/browser/profiles/${id}/stop`,{}),
+};

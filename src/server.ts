@@ -47,6 +47,7 @@ import {
 import { reapOrphanOwnedPi, startPeriodicReap } from "./reap-orphans.js";
 import { composeRuntime, runtimeKindOf, type ConversationRuntime } from "./runtime.js";
 import { DurableRuntimeManager } from "./durable/manager.js";
+import { NeedsAttentionError } from "./durable/mission-runtime.js";
 import { assertDurableAdmission, durableToolchainRegistry } from "./durable/compatibility.js";
 import { readHistory, readEntries } from "./history.js";
 import { readFileChanges, readFileEvents, readFileDetail, type FileChange } from "./file-changes.js";
@@ -856,12 +857,18 @@ function conversationRoutes(deps: Deps): Route[] {
       }
       ctx.check();
       if (runtime.kind === "durable") {
-        await runtime.ensure(conv);
-        ctx.check();
-        const ack = await runtime.prompt(conv, text, b.requestId, b.images);
-        ctx.check();
-        if (text) setConversationTitle(db, conv.id, text);
-        sendJson(ctx.res, 200, ack.accepted ? { ok: true, accepted: ack.accepted } : { ok: true });
+        try {
+          await runtime.ensure(conv);
+          ctx.check();
+          const ack = await runtime.prompt(conv, text, b.requestId, b.images);
+          ctx.check();
+          if (text) setConversationTitle(db, conv.id, text);
+          sendJson(ctx.res, 200, ack.accepted ? { ok: true, accepted: ack.accepted } : { ok: true });
+        } catch (err) {
+          if (!(err instanceof NeedsAttentionError)) throw err;
+          ctx.check();
+          sendJson(ctx.res, 409, { error: err.message, code: "needs_attention" });
+        }
         return;
       }
       try {

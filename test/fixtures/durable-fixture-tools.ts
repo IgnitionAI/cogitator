@@ -14,6 +14,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
 import { createEditTool } from "@earendil-works/pi-durable/tools";
+import { appendFileSync } from "node:fs";
+import { runProtectedEffect } from "../../src/durable/effect-gateway.js";
+import { digest } from "../../src/durable/profile.js";
 import { WorkerRecords } from "../../src/durable/workers.js";
 
 export const FIXTURE_EXTENSION_NAME = "cogitator-fixture-v1";
@@ -38,6 +41,8 @@ export interface FixtureMissionToolsOptions {
   scope: string;
   /** true = l'outil atteint un point de crash et attend le SIGKILL. */
   crash: boolean;
+  effectScenario?: "effect" | "intent";
+  beforeCrash?: () => Promise<void>;
 }
 
 /** Extension fixture : edit réconcilié + worker détaché supervisé. */
@@ -107,5 +112,23 @@ export function makeFixtureExtension(opts: FixtureMissionToolsOptions) {
     },
   });
 
-  return defineExtension({ name: FIXTURE_EXTENSION_NAME, tools: [fixtureEdit, fixtureWorker] });
+  const fixtureEffect = defineTool({
+    name: "fixture_effect", description: "Count a simulated remote effect before receipt",
+    parameters: Type.Object({}), replay: "unsafe",
+    async execute(_args, api, context) {
+      await runProtectedEffect(api, context, {
+        operation: "fixture.external", target: "local-counter", artifactDigest: digest("artifact"), argumentDigest: digest("{}"),
+      }, "crashed-intent", async () => {
+        if (opts.effectScenario === "effect") appendFileSync(join(opts.scope, "external.calls"), "effect\n");
+        if (opts.crash) {
+          await opts.beforeCrash?.();
+          process.send?.({ point: "effect-before-receipt" });
+          await never();
+        }
+        return { outcome: "observed fixture" };
+      });
+      return { content: [{ type: "text", text: "external effect" }] };
+    },
+  });
+  return defineExtension({ name: FIXTURE_EXTENSION_NAME, tools: [fixtureEdit, fixtureWorker, fixtureEffect] });
 }

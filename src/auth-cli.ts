@@ -1,4 +1,4 @@
-import { initializeOwner, lockHome, recoverOwner, replaceSetupKey, reservePort } from "./auth-state.js";
+import { initializeOwner, lockHome, recoverOwner, replaceSetupKey, reservePort, setAuthenticationMode } from "./auth-state.js";
 
 import { StringDecoder } from "node:string_decoder";
 
@@ -38,12 +38,17 @@ async function ttyInput(label: string): Promise<string> {
 export async function authCommand(home: string, port: number, args: string[]): Promise<void> {
   if (process.platform === "win32") throw new Error("Protected authentication currently requires a Unix server platform.");
   const [command, ...flags] = args;
-  if (!["init", "recover", "setup-key"].includes(command ?? "")) throw new Error("Usage: cogitator auth init --origin https://host --email owner@example.org | recover | setup-key");
+  if (!["init", "recover", "setup-key", "mode"].includes(command ?? "")) throw new Error("Usage: cogitator auth init --origin https://host --email owner@example.org [--mfa] | recover | setup-key | mode password|mfa");
   const values = new Map<string, string>();
-  for (let i = 0; i < flags.length; i += 2) {
+  let mfa = false;
+  const selectedMode = command === "mode" ? flags[0] === "password" ? "password" : flags[0] === "mfa" ? "password-mfa" : null : null;
+  if (command === "mode" && (flags.length !== 1 || !selectedMode)) throw new Error("Usage: cogitator auth mode password|mfa");
+  for (let i = 0; command !== "mode" && i < flags.length;) {
     const name = flags[i]; const value = flags[i + 1];
+    if (command === "init" && name === "--mfa" && !mfa) { mfa = true; i++; continue; }
     if (command !== "init" || !name || !["--origin", "--email"].includes(name) || !value || values.has(name)) throw new Error("Invalid auth arguments; passwords and setup keys are never command-line arguments.");
     values.set(name, value);
+    i += 2;
   }
   if (command === "init" && (!values.get("--origin") || !values.get("--email"))) throw new Error("init requires --origin and --email");
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error("Authentication administration requires an interactive local TTY.");
@@ -59,15 +64,15 @@ export async function authCommand(home: string, port: number, args: string[]): P
   try {
     releasePort = await reservePort(port);
     let password = "";
-    if (command !== "setup-key") {
+    if (command === "init" || command === "recover") {
       password = await ttyInput("New owner password (12–128 characters): ");
       const confirmation = await ttyInput("Confirm password: ");
       if (password !== confirmation) throw new Error("Passwords do not match.");
     }
-    const key = command === "init" ? await initializeOwner(home, values.get("--origin")!, values.get("--email")!, password) :
-      command === "recover" ? await recoverOwner(home, password) : replaceSetupKey(home);
+    const key = command === "init" ? await initializeOwner(home, values.get("--origin")!, values.get("--email")!, password, mfa ? "password-mfa" : "password") :
+      command === "recover" ? await recoverOwner(home, password) : command === "mode" ? setAuthenticationMode(home, selectedMode!) : replaceSetupKey(home);
     password = "";
-    process.stdout.write(`Setup key (expires in 30 minutes; save privately): ${key}\nStart Cogitator, open the configured HTTPS origin, sign in, and enter this key during authenticator enrollment.\n`);
+    process.stdout.write(key ? `Setup key (expires in 30 minutes; save privately): ${key}\nStart Cogitator, open the configured HTTPS origin, sign in, and enter this key during authenticator enrollment.\n` : "Start Cogitator, open the configured HTTPS origin, and sign in with your email and password. No setup key or authenticator is required.\n");
   } finally { await releasePort?.(); unlock(); }
   } finally { process.off("SIGINT", interrupt); process.off("SIGTERM", interrupt); restoreTerminal(); }
 }

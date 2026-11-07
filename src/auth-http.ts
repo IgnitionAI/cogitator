@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 import { protectedRequired, type AuthState } from "./auth-state.js";
-import { AuthError, authMutationAuthorization, ownerSession, policy, requireApproved, requireEnrollment, selectEnrollment, sessionById, verifyEnrollment } from "./native-auth.js";
+import { AuthError, authMutationAuthorization, ownerSession, policy, requireApproved, requireEnrollment, requiresMfa, selectEnrollment, sessionById, verifyEnrollment } from "./native-auth.js";
 
 const password = z.string().min(1).max(128);
 const schemas = {
@@ -86,9 +86,11 @@ export async function authRoute(req: IncomingMessage, res: ServerResponse, state
     state.assertAvailable();
     const session = await ownerSession(state.auth, state.db, state.config, browserHeaders(req));
     state.assertAvailable();
-    if (!session) return authJson(res, 200, { mode: "protected", state: "anonymous" });
+    if (!session) return authJson(res, 200, { mode: "protected", state: "anonymous", ...(!requiresMfa(state.config) ? { mfaRequired: false } : {}) });
     const fresh = sessionById(state.db, state.config, session.id);
     if (!fresh) throw new AuthError("AUTH_REQUIRED", 401);
+    if (!requiresMfa(state.config)) return authJson(res, 200, { mode: "protected", state: "authenticated", mfaRequired: false,
+      email: fresh.email, expiresAt: new Date(fresh.expiresAt).toISOString() });
     const p = policy(state.db);
     const liveClaim = p.claimId && p.claimExpires > Date.now() && sessionById(state.db, state.config, p.claimId);
     const selected = liveClaim && p.claimId === fresh.id;
@@ -100,6 +102,7 @@ export async function authRoute(req: IncomingMessage, res: ServerResponse, state
     return;
   }
   if (req.method !== "POST" || !Object.hasOwn(schemas, path)) throw new AuthError("NOT_FOUND", 404);
+  if (!requiresMfa(state.config) && path.includes("/two-factor/")) throw new AuthError("NOT_FOUND", 404);
   const parsed = schemas[path as keyof typeof schemas].safeParse(await authBody(req));
   if (!parsed.success) throw new AuthError("INVALID_INPUT", 400);
   state.assertAvailable();

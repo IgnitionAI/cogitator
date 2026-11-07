@@ -2,6 +2,7 @@ export const authMessages = {
   'auth.title': { en: 'Owner sign-in', fr: 'Connexion propriétaire' },
   'auth.email': { en: 'Email', fr: 'E-mail' },
   'auth.password': { en: 'Current password', fr: 'Mot de passe actuel' },
+  'auth.signInPassword': { en: 'Password', fr: 'Mot de passe' },
   'auth.signIn': { en: 'Sign in', fr: 'Se connecter' },
   'auth.checking': { en: 'Checking access…', fr: 'Vérification de l’accès…' },
   'auth.retry': { en: 'Check access again', fr: 'Revérifier l’accès' },

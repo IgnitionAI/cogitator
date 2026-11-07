@@ -12,7 +12,7 @@ test("private durable bootstrap, single-owner invariant, concurrent administrati
   const home=mkdtempSync(join(AUTH_TEST_TMP,'cog-auth-state-')); const release=lockHome(home);
   try {
     assert.throws(()=>lockHome(home),/busy/);
-    const key=await initializeOwner(home,origin,email,password); assert.ok(key.length>=40);
+    const key=await initializeOwner(home,origin,email,password,"password-mfa"); assert.ok(key.length>=40);
     const p=authPaths(home);
     for(const path of [p.required,p.config,p.db]) assert.equal(lstatSync(path).mode & 0o777,0o600);
     assert.equal(lstatSync(p.directory).mode & 0o777,0o700);
@@ -22,7 +22,7 @@ test("private durable bootstrap, single-owner invariant, concurrent administrati
     assert.equal((state.db.prepare('SELECT COUNT(*) AS n FROM session').get() as {n:number}).n,0);
     assert.throws(()=>state.db.exec(`INSERT INTO user SELECT 'other',name,email||'.other',emailVerified,image,createdAt,updatedAt,twoFactorEnabled FROM user`));
     state.db.close();
-    await assert.rejects(initializeOwner(home,origin,email,password),/already exists/);
+    await assert.rejects(initializeOwner(home,origin,email,password,"password-mfa"),/already exists/);
     rmSync(p.directory,{recursive:true}); assert.equal(protectedRequired(home),true); assert.throws(()=>loadAuth(home));
     unlinkSync(p.required); symlinkSync(join(home,'missing'),p.required); assert.equal(protectedRequired(home),true); assert.throws(()=>loadAuth(home));
   } finally { release();rmSync(home,{recursive:true,force:true}); }
@@ -31,7 +31,7 @@ test("private durable bootstrap, single-owner invariant, concurrent administrati
 test("offline recovery reset/write/cleanup faults retain maintenance and are rerunnable without losing replay", async () => {
   const home=mkdtempSync(join(AUTH_TEST_TMP,'cog-auth-recovery-'));const release=lockHome(home);
   try {
-    await initializeOwner(home,origin,email,password);
+    await initializeOwner(home,origin,email,password,"password-mfa");
     const p=authPaths(home); let db=new Database(p.db);
     db.prepare('INSERT INTO authReplay VALUES (?,?)').run('synthetic-digest',Date.now()+300000);
     db.exec(`CREATE TRIGGER failPassword BEFORE UPDATE OF password ON account BEGIN SELECT RAISE(ABORT,'synthetic reset fault'); END;`); db.close();
@@ -186,7 +186,7 @@ test("owner socket UTF-8 path limit rejects before bind or bootstrap markers, wi
       assert.ok(Buffer.byteLength(paths.socket)>103);
       if(home.includes('é'))assert.ok(paths.socket.length<=103,'fixture distinguishes bytes from JS string length');
       mkdirSync(home,{mode:0o700});
-      await assert.rejects(initializeOwner(home,origin,email,password),/103 UTF-8 bytes/);
+      await assert.rejects(initializeOwner(home,origin,email,password,"password-mfa"),/103 UTF-8 bytes/);
       assert.equal(existsSync(paths.required),false);assert.equal(existsSync(paths.maintenance),false);assert.equal(existsSync(paths.directory),false);
       mkdirSync(paths.directory,{mode:0o700});
       const before=readdirSync(root,{recursive:true});

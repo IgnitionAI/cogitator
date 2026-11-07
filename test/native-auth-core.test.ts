@@ -28,7 +28,7 @@ test("real pinned library: old sessions, atomic replay/recovery and offline rese
   const unlock = lockHome(home);
   let state: ReturnType<typeof loadAuth> | undefined;
   try {
-    const key = await initializeOwner(home, origin, "owner@example.invalid", password);
+    const key = await initializeOwner(home, origin, "owner@example.invalid", password, "password-mfa");
     state = loadAuth(home);
     const { db, config, auth } = state;
     const resetRates = () => db.exec('DELETE FROM rateLimit');

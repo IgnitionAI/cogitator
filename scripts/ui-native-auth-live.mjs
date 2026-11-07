@@ -101,7 +101,7 @@ try {
   proxy.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
   await listen(proxy); origin = `https://127.0.0.1:${proxy.address().port}`;
   unlock = lockHome(home);
-  const setupKey = await initializeOwner(home, origin, email, password);
+  const setupKey = await initializeOwner(home, origin, email, password, "password-mfa");
   state = loadAuth(home);
   const paths = getPaths({ COGITATOR_HOME: home, COGITATOR_PI_AGENT_DIR: join(home, 'pi'), COGITATOR_AGENTS_DIR: join(home, 'agents'), COGITATOR_SKILLS_DIRS: join(home, 'skills') });
   const catalog = openDb(paths.db); db = catalog.db;

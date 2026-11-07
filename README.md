@@ -69,7 +69,7 @@ Same process, foreground, no pi session:
 npx @ignitionai/cogitator
 ```
 
-Logs the URL, then waits. Ctrl+C stops it. After a global npm install you can also run `cogitator`. Optional flags: `cogitator --auth-required`, and `cogitator auth init|recover|setup-key` for single-owner login. Override bind with `COGITATOR_PORT` / `COGITATOR_URL` if 5320 is taken.
+Logs the URL, then waits. Ctrl+C stops it. After a global npm install you can also run `cogitator`. Optional flags: `cogitator --auth-required`, and `cogitator auth init|recover|mode|setup-key` for single-owner login. New protected installations use **email and password**; add `--mfa` to `auth init` only when an authenticator is wanted. Each installation has its own owner; there is no shared registration service. Override bind with `COGITATOR_PORT` / `COGITATOR_URL` if 5320 is taken.
 
 ### Local loopback only
 

@@ -107,7 +107,10 @@ export async function verifyEnrollment(db: Database.Database, sessionId: string,
 export class AuthError extends Error {
   constructor(public readonly code: string, public readonly status = 403, public readonly retryAt?: string) { super(code); }
 }
-export interface AuthConfig { origin: string; secret: string; replayKey: string; ownerId: string }
+export type AuthenticationMode = "password" | "password-mfa";
+export interface AuthConfig { origin: string; secret: string; replayKey: string; ownerId: string; authentication?: AuthenticationMode }
+/** Older configurations retain their explicitly reviewed MFA boundary. */
+export const requiresMfa = (config: AuthConfig): boolean => config.authentication !== "password";
 export interface OwnerSession { id: string; email: string; expiresAt: number; approved: boolean; enrolled: boolean }
 interface Policy { ownerId: string; setupDigest: string | null; setupExpires: number; claimId: string | null; claimExpires: number }
 
@@ -150,6 +153,7 @@ export function createNativeAuth(db: Database.Database, config: AuthConfig, offl
     databaseHooks: { session: { create: { before: async (session, ctx) => {
       const eligible = session.userId === config.ownerId && !ctx?.context.session &&
         (ctx?.path === "/two-factor/verify-totp" || ctx?.path === "/two-factor/verify-backup-code");
+      const passwordLogin = !requiresMfa(config) && session.userId === config.ownerId && ctx?.path === "/sign-in/email";
       if (eligible) {
         const factor = db.prepare('SELECT verified FROM twoFactor WHERE userId = ?').get(config.ownerId) as { verified: number } | undefined;
         if (factor?.verified !== 1) throw new APIError("FORBIDDEN", { code: "MFA_REQUIRED", message: "MFA_REQUIRED" });
@@ -164,7 +168,7 @@ export function createNativeAuth(db: Database.Database, config: AuthConfig, offl
         }
       }
       return { data: { ...session, mfaApproved: eligible,
-        ...(!eligible ? { expiresAt: new Date(Math.min(new Date(session.expiresAt).getTime(), Date.now() + ENROLLMENT_MS)) } : {}) } };
+        ...(!eligible && !passwordLogin ? { expiresAt: new Date(Math.min(new Date(session.expiresAt).getTime(), Date.now() + ENROLLMENT_MS)) } : {}) } };
     } } } },
   } satisfies BetterAuthOptions;
   const auth = betterAuth(options);
@@ -200,6 +204,7 @@ export function assertOwner(db: Database.Database, config: AuthConfig): void {
   const factors = db.prepare('SELECT userId, verified FROM twoFactor').all() as { userId: string; verified: number }[];
   if (factors.length > 1 || factors.some(f => f.userId !== config.ownerId) ||
     Boolean(owners[0].twoFactorEnabled) !== Boolean(factors[0]?.verified)) throw new AuthError("AUTH_UNAVAILABLE", 503);
+  if (!requiresMfa(config) && (owners[0].twoFactorEnabled || factors.length)) throw new AuthError("AUTH_UNAVAILABLE", 503);
 }
 export function sessionById(db: Database.Database, config: AuthConfig, id: string): OwnerSession | null {
   assertOwner(db, config);
@@ -215,8 +220,9 @@ export async function ownerSession(auth: NativeLibrary, db: Database.Database, c
   const result = await auth.api.getSession({ headers, query: { disableCookieCache: true } });
   return result ? sessionById(db, config, result.session.id) : null;
 }
-export function requireApproved(session: OwnerSession | null): asserts session is OwnerSession {
+export function requireApproved(session: OwnerSession | null, config?: AuthConfig): asserts session is OwnerSession {
   if (!session) throw new AuthError("AUTH_REQUIRED", 401);
+  if (config && !requiresMfa(config)) return;
   if (!session.approved || !session.enrolled) throw new AuthError("MFA_REQUIRED", 403);
 }
 export function issueSetupKey(db: Database.Database, config: AuthConfig): string {

@@ -40,7 +40,7 @@ test("team_send avec opts.auth : HTTP public 401, ownerRequest OK", async () => 
   let socket: Awaited<ReturnType<typeof listenOwnerSocket>> | undefined;
   let server: ReturnType<typeof createApp> | undefined;
   try {
-    await initializeOwner(home, origin, email, password);
+    await initializeOwner(home, origin, email, password, "password-mfa");
     const state = loadAuth(home);
     const paths = getPaths({ COGITATOR_HOME: home, COGITATOR_PI_AGENT_DIR: join(home, "pi"), COGITATOR_AGENTS_DIR: join(home, "agents"), COGITATOR_SKILLS_DIRS: join(home, "skills") });
     mkdirSync(join(home, "pi", "agents"), { recursive: true });

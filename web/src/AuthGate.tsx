@@ -8,7 +8,7 @@ import { LanguagePicker, ToastProvider } from "./ui";
 import { t, useLocale } from "./i18n";
 import "./auth.css";
 
-export const AuthSession = createContext<{ logout: () => Promise<void> } | null>(null);
+export const AuthSession = createContext<{ logout: () => Promise<void>; mfaRequired: boolean } | null>(null);
 const allowed = (status: AuthStatus | null) => status?.mode === "local" || (status?.mode === "protected" && status.state === "authenticated");
 
 export default function AuthGate() {
@@ -90,7 +90,7 @@ export default function AuthGate() {
     } finally { logoutInFlight.current = false; setPending(false); }
   }, [check]);
 
-  if (allowed(status) && !logoutRequired) return <AuthSession.Provider value={status?.mode === "protected" ? { logout } : null}><ToastProvider><App /></ToastProvider></AuthSession.Provider>;
+  if (allowed(status) && !logoutRequired) return <AuthSession.Provider value={status?.mode === "protected" ? { logout, mfaRequired: status.mfaRequired !== false } : null}><ToastProvider><App /></ToastProvider></AuthSession.Provider>;
   return <main className="auth-shell">
     <header className="auth-header"><strong>Cogitator</strong><LanguagePicker /></header>
     <div className="auth-panel">

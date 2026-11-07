@@ -55,7 +55,7 @@ export default function AuthForms({ status, refresh, logout }: { status: Protect
     }); }}>
       <fieldset disabled={pending}>
         <Field label={t("auth.email")}><input type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
-        <Field label={t("auth.password")}><input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
+        <Field label={t("auth.signInPassword")}><input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
         <button className="btn btn-primary">{t(pending ? "auth.working" : "auth.signIn")}</button>
       </fieldset>
     </form> : null}
@@ -108,6 +108,6 @@ export default function AuthForms({ status, refresh, logout }: { status: Protect
       <button type="button" className="btn" disabled={pending} onClick={() => void run(logout)}>{t("auth.logout")}</button>
       {!verified ? <button type="button" className="btn" disabled={pending} onClick={() => void run(async () => { await refresh(); })}>{t("auth.retry")}</button> : null}
     </div> : null}
-    <p className="muted">{t("auth.recovery")}</p>
+    {status.mfaRequired !== false ? <p className="muted">{t("auth.recovery")}</p> : null}
   </>;
 }

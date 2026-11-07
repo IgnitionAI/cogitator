@@ -16,7 +16,7 @@ export default function AuthSecurity() {
     <h2 id="owner-security">{t("auth.security")}</h2>
     <p>{t("auth.logoutScope")}</p>
     <button type="button" className="btn" disabled={pending} onClick={() => void run(session.logout)}>{t("auth.logout")}</button>
-    <h3>{t("auth.replaceCodes")}</h3>
+    {session.mfaRequired ? <><h3>{t("auth.replaceCodes")}</h3>
     <AuthFailure error={error} />
     <form onSubmit={(event) => { event.preventDefault(); void run(async () => {
       setCodes([]);
@@ -29,6 +29,6 @@ export default function AuthSecurity() {
         <button className="btn" disabled={!confirmed}>{t(pending ? "auth.working" : "auth.replaceCodes")}</button>
       </fieldset>
     </form>
-    {codes.length ? <RecoveryCodes codes={codes} dismiss={() => setCodes([])} /> : null}
+    {codes.length ? <RecoveryCodes codes={codes} dismiss={() => setCodes([])} /> : null}</> : null}
   </section>;
 }

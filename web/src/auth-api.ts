@@ -4,6 +4,7 @@ export type AuthStatus = { mode: "local" } | {
   email?: string;
   expiresAt?: string;
   enrollment?: { requiresSetupKey: boolean; pending: boolean; busyUntil?: string };
+  mfaRequired?: boolean;
 };
 
 export class AuthError extends Error {
@@ -20,6 +21,7 @@ export function parseAuthStatus(value: unknown): AuthStatus {
   if (value.mode === "local") return { mode: "local" };
   if (value.mode !== "protected" || typeof value.state !== "string" || !["anonymous", "enrollment", "reauthenticate", "authenticated"].includes(value.state)) throw new AuthError("AUTH_UNAVAILABLE");
   if (value.email !== undefined && typeof value.email !== "string") throw new AuthError("AUTH_UNAVAILABLE");
+  if (value.mfaRequired !== undefined && typeof value.mfaRequired !== "boolean") throw new AuthError("AUTH_UNAVAILABLE");
   if (value.expiresAt !== undefined && !date(value.expiresAt)) throw new AuthError("AUTH_UNAVAILABLE");
   if (value.state === "authenticated" && !date(value.expiresAt)) throw new AuthError("AUTH_UNAVAILABLE");
   if (value.enrollment !== undefined) {

@@ -8,6 +8,8 @@ A local web control panel for [pi](https://pi.dev): named bots (AgentPreset), di
 
 ## Current state
 
+Authentication policy update: [ADR-014](decisions/ADR-014-simple-owner-login.md) makes email/password the default for each independently installed Cogitator, with MFA explicitly optional. It supersedes the older mandatory-MFA wording; historical verification records still describe the original MFA slice.
+
 The package baseline is **0.5.2**, catalog schema **v10**, with French/English UI, native owner authentication, bots/groups, classic persisted queues and a bounded Durable mission runtime. Local `dev` includes upstream changes through `daf3d37` and the local GitHub import/subagent panel. Production worker isolation and full VPS acceptance remain unproven. See [`current-state.md`](current-state.md).
 
 The owner approved personal public-HTTPS access and autonomous recovery through [Plan 0002](plans/active/0002-secure-vps-durable.md). [Issue #7](https://github.com/IgnitionAI/cogitator/issues/7) remains open for the full migration/release gates. [Plan 0003](plans/active/0003-native-owner-auth.md)'s login/MFA is implemented with bounded local verification; historical test counts are not the current suite count. Deployed P1 and full P2–P5 acceptance remain unproven. The owner selected Firetower and delegated the operational choices on 2026-11-07; see [readiness and selected defaults](../firetower-readiness.md). The old Authelia administrator handoff remains obsolete.

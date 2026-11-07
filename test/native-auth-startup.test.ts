@@ -36,13 +36,13 @@ test("interrupted initializing marker and completed signup resume privately; fin
   const home=mkdtempSync(join(AUTH_TEST_TMP,'cog-auth-resume-'));const release=lockHome(home);
   try {
     writeFileSync(authPaths(home).required,'initializing\n',{mode:0o600});
-    await initializeOwner(home,origin,email,password);
+    await initializeOwner(home,origin,email,password,"password-mfa");
     const p=authPaths(home);const config=JSON.parse(readFileSync(p.config,'utf8')) as {ownerId:string};const id=config.ownerId;
     maintenance(home);config.ownerId='pending';writeFileSync(p.config,JSON.stringify(config));
     assert.throws(()=>loadAuth(home));
-    await initializeOwner(home,origin,email,password);
+    await initializeOwner(home,origin,email,password,"password-mfa");
     const resumed=loadAuth(home);assert.equal(resumed.config.ownerId,id);resumed.db.close();
-    await assert.rejects(initializeOwner(home,origin,email,password),/already exists/);
+    await assert.rejects(initializeOwner(home,origin,email,password,"password-mfa"),/already exists/);
   } finally {release();rmSync(home,{recursive:true,force:true});}
 });
 
@@ -62,7 +62,7 @@ test("static login asset containment resolves symlinks and has no public SPA fal
 
 test("real protected CLI and stdio MCP use owner socket without a browser credential", {timeout:20_000},async()=>{
   const home=mkdtempSync(join(AUTH_TEST_TMP,'cog-auth-process-'));
-  const release=lockHome(home);await initializeOwner(home,origin,email,password);release();
+  const release=lockHome(home);await initializeOwner(home,origin,email,password,"password-mfa");release();
   const env={...process.env,COGITATOR_HOME:home,COGITATOR_PORT:'0',COGITATOR_PI_AGENT_DIR:join(home,'pi'),COGITATOR_AGENTS_DIR:join(home,'agents'),COGITATOR_SKILLS_DIRS:join(home,'skills')};delete env.COGITATOR_URL;
   const child=spawn(process.execPath,['--import','tsx','src/cli.ts'],{env,stdio:['ignore','pipe','pipe']});
   let mcp:ReturnType<typeof spawn>|undefined;
@@ -104,7 +104,7 @@ test("real protected CLI and stdio MCP use owner socket without a browser creden
 test("interactive init hides split-UTF8 passwords on a real local pseudo-TTY", {skip:process.platform!=='darwin',timeout:15_000},async()=>{
   const home=mkdtempSync(join(AUTH_TEST_TMP,'cog-auth-tty-'));
   const terminalPassword=`${password}-é🔐`;
-  const child=spawn('/bin/sh',['-c','cat | /usr/bin/script -q /dev/null "$@"','auth-tty-test',process.execPath,'--import','tsx','src/cli.ts','auth','init','--origin',origin,'--email',email],{env:{...process.env,COGITATOR_HOME:home,COGITATOR_PORT:'0'},stdio:['pipe','pipe','pipe']});
+  const child=spawn('/bin/sh',['-c','cat | /usr/bin/script -q /dev/null "$@"','auth-tty-test',process.execPath,'--import','tsx','src/cli.ts','auth','init','--origin',origin,'--email',email,'--mfa'],{env:{...process.env,COGITATOR_HOME:home,COGITATOR_PORT:'0'},stdio:['pipe','pipe','pipe']});
   let output='';let step=0;child.stderr.on('data',chunk=>{output+=String(chunk);});
   try {
     const code=await new Promise<number|null>((done,reject)=>{

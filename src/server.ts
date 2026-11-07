@@ -1533,8 +1533,8 @@ export function createApp(opts: AppOptions): Server {
         if (privateRequest) check = () => state.assertAvailable();
         else {
           const session = await ownerSession(state.auth, state.db, state.config, browserHeaders(req));
-          requireApproved(session);
-          check = () => { state.assertAvailable(); requireApproved(sessionById(state.db, state.config, session.id)); };
+          requireApproved(session, state.config);
+          check = () => { state.assertAvailable(); requireApproved(sessionById(state.db, state.config, session.id), state.config); };
         }
       }
       check();

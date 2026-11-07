@@ -37,10 +37,10 @@ export class Browser {
   }
   login() { return this.call("/api/auth/sign-in/email", { email, password }); }
 }
-export async function fixture() {
+export async function fixture(authentication: "password" | "password-mfa" = "password-mfa") {
   const home = mkdtempSync(join(AUTH_TEST_TMP, "cog-auth-http-"));
   const unlock = lockHome(home);
-  const key = await initializeOwner(home, origin, email, password);
+  const key = await initializeOwner(home, origin, email, password, authentication);
   const state = loadAuth(home);
   const paths = getPaths({ COGITATOR_HOME: home, COGITATOR_PI_AGENT_DIR: join(home, "pi"), COGITATOR_AGENTS_DIR: join(home, "agents"), COGITATOR_SKILLS_DIRS: join(home, "skills") });
   const { db, version } = openDb(paths.db);

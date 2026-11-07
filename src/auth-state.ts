@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { z } from "zod";
-import { assertOwner, AuthError, createNativeAuth, issueSetupKey, migrateAuth, type AuthConfig } from "./native-auth.js";
+import { assertOwner, AuthError, createNativeAuth, issueSetupKey, migrateAuth, requiresMfa, type AuthConfig, type AuthenticationMode } from "./native-auth.js";
 
 export const authPaths = (home: string) => ({ directory: join(home, "auth"), required: join(home, "auth-required"),
   maintenance: join(home, "auth-maintenance"), config: join(home, "auth", "config.json"), db: join(home, "auth", "auth.sqlite"), socket: join(home, "auth", "owner.sock") });
@@ -63,7 +63,7 @@ export async function reservePort(port: number): Promise<() => Promise<void>> {
   await new Promise<void>((done, reject) => { server.once("error", reject); server.listen(port, "127.0.0.1", done); });
   return () => new Promise<void>((done, reject) => server.close(err => err ? reject(err) : done()));
 }
-const configSchema = z.object({ origin: z.string().url(), secret: z.string().min(32), replayKey: z.string().min(32), ownerId: z.string().min(1) }).strict();
+const configSchema = z.object({ origin: z.string().url(), secret: z.string().min(32), replayKey: z.string().min(32), ownerId: z.string().min(1), authentication: z.enum(["password", "password-mfa"]).optional() }).strict();
 export function validateOrigin(origin: string): string {
   const url = new URL(origin);
   if (url.protocol !== "https:" || url.username || url.password || url.origin !== origin) throw new Error("Origin must be an exact HTTPS origin, without a path.");
@@ -95,7 +95,7 @@ export function loadAuth(home: string, allowMaintenance = false) {
 export type AuthState = ReturnType<typeof loadAuth>;
 
 /** Caller holds the data-home lock and configured port reservation. No application catalog is opened. */
-export async function initializeOwner(home: string, origin: string, email: string, password: string): Promise<string> {
+export async function initializeOwner(home: string, origin: string, email: string, password: string, authentication: AuthenticationMode = "password"): Promise<string> {
   validateOwnerSocketPath(home);
   validateOrigin(origin);
   z.email().parse(email);
@@ -115,9 +115,10 @@ export async function initializeOwner(home: string, origin: string, email: strin
     config = configSchema.parse(JSON.parse(readFileSync(p.config, "utf8")));
     if (config.ownerId !== "pending") throw new Error("Protected state already exists; use offline recovery.");
     if (config.origin !== origin) throw new Error("Resume initialization with the original HTTPS origin.");
+    if ((config.authentication ?? "password-mfa") !== authentication) throw new Error("Resume initialization with the original authentication mode.");
   } else {
     if (existsSync(p.db)) throw new Error("Missing auth secret; restore the private auth backup, never replace credentials in place.");
-    config = { origin, secret: randomBytes(48).toString("base64url"), replayKey: randomBytes(48).toString("base64url"), ownerId: "pending" };
+    config = { origin, secret: randomBytes(48).toString("base64url"), replayKey: randomBytes(48).toString("base64url"), ownerId: "pending", authentication };
     privateWrite(p.config, JSON.stringify(config), true);
   }
   if (!existsSync(p.db)) privateWrite(p.db, "", true);
@@ -143,7 +144,7 @@ export async function initializeOwner(home: string, origin: string, email: strin
     if (existsSync(`${p.config}.tmp`)) { checkPrivate(`${p.config}.tmp`); unlinkSync(`${p.config}.tmp`); }
     privateWrite(`${p.config}.tmp`, JSON.stringify(config), true);
     renameSync(`${p.config}.tmp`, p.config); syncDirectory(p.directory);
-    const key = issueSetupKey(db, config);
+    const key = requiresMfa(config) ? issueSetupKey(db, config) : "";
     assertOwner(db, config);
     finishMaintenance(home);
     return key;
@@ -170,7 +171,7 @@ export async function recoverOwner(home: string, password: string): Promise<stri
       db.exec("DELETE FROM twoFactor; DELETE FROM session; DELETE FROM verification;");
       db.prepare("UPDATE authPolicy SET claimId=NULL, claimExpires=0, setupDigest=NULL, setupExpires=0 WHERE singleton=1").run();
     }).immediate();
-    const key = issueSetupKey(db, config);
+    const key = requiresMfa(config) ? issueSetupKey(db, config) : "";
     assertOwner(db, config);
     finishMaintenance(home);
     return key;
@@ -179,10 +180,35 @@ export async function recoverOwner(home: string, password: string): Promise<stri
 export function replaceSetupKey(home: string): string {
   const state = loadAuth(home);
   try {
+    if (!requiresMfa(state.config)) throw new Error("Password-only authentication does not require a setup key.");
     if ((state.db.prepare("SELECT twoFactorEnabled FROM user WHERE id=?").get(state.config.ownerId) as { twoFactorEnabled: number }).twoFactorEnabled) throw new Error("Already enrolled; use offline recovery.");
     maintenance(home);
     state.db.exec("DELETE FROM session; DELETE FROM verification; DELETE FROM twoFactor;");
     const key = issueSetupKey(state.db, state.config);
+    finishMaintenance(home);
+    return key;
+  } finally { state.db.close(); }
+}
+
+/** Offline OS-owner operation: caller holds the home lock and reserves the HTTP port. */
+export function setAuthenticationMode(home: string, authentication: AuthenticationMode): string {
+  if (authentication !== "password" && authentication !== "password-mfa") throw new Error("Invalid authentication mode.");
+  const state = loadAuth(home, true);
+  try {
+    maintenance(home);
+    state.db.transaction(() => {
+      state.db.exec("DELETE FROM session; DELETE FROM verification; DELETE FROM twoFactor;");
+      state.db.prepare("UPDATE user SET twoFactorEnabled=0 WHERE id=?").run(state.config.ownerId);
+      state.db.prepare("UPDATE authPolicy SET setupDigest=NULL, setupExpires=0, claimId=NULL, claimExpires=0 WHERE singleton=1").run();
+    }).immediate();
+    const config = { ...state.config, authentication };
+    const p = authPaths(home);
+    const tmp = `${p.config}.tmp`;
+    if (existsSync(tmp)) { checkPrivate(tmp); unlinkSync(tmp); }
+    privateWrite(tmp, JSON.stringify(config), true);
+    renameSync(tmp, p.config); syncDirectory(p.directory);
+    const key = requiresMfa(config) ? issueSetupKey(state.db, config) : "";
+    assertOwner(state.db, config);
     finishMaintenance(home);
     return key;
   } finally { state.db.close(); }

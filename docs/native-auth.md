@@ -4,7 +4,7 @@ Status: **implemented, independently re-reviewed and verified for the bounded lo
 
 ## Supported boundary
 
-- One offline-provisioned owner, with a password and mandatory authenticator/recovery-code verification. No public signup, email reset, social login or external identity service.
+- One offline-provisioned owner per installation. **Email and password are the default** for new protected installations. Authenticator/recovery-code verification is optional through `auth init --mfa`. Existing configurations without an explicit authentication policy retain their previous MFA requirement. No public signup, email reset, social login or external identity service.
 - Node **22.19.0 or newer**. Protected mode initially requires Unix; ordinary trusted local mode remains available on Windows.
 - One controller process per data home, with TCP bound to `127.0.0.1`. A trusted TLS terminator must supply the configured canonical HTTPS origin. Cogitator does not provision that terminator or its certificate.
 - The controller OS account, its same-UID local processes and its private local MCP socket remain trusted. Future remote workers must not inherit this capability. Native login is not a sandbox.
@@ -25,7 +25,7 @@ The commands below require **this native-auth-capable build**, not the previousl
 
    Replace the example origin and login identifier. The origin must be exact HTTPS, with no trailing slash, path, username or password. Email is a login identifier; no mail service is used. For a non-default data home, set `COGITATOR_HOME` consistently on every command and the server.
 3. Confirm the stopped-server precondition. Enter a new **12–128-character password twice** through the hidden prompts.
-4. Save the CLI-issued setup key privately. It expires after **30 minutes**; only its keyed digest is retained by Cogitator.
+4. No setup key or authenticator is needed for the default password login. To opt into MFA instead, add `--mfa` to `auth init` and save its CLI-issued setup key privately (valid for **30 minutes**).
 5. Start the controller with an independent required-mode guard:
 
    ```sh
@@ -34,14 +34,25 @@ The commands below require **this native-auth-capable build**, not the previousl
    ```
 
 6. Open the configured HTTPS origin through your already-controlled TLS terminator. Do not expose it publicly before the separate remote-isolation/deployment gates pass. Select English or French before signing in if needed.
-7. Sign in with the owner password, then enter the CLI setup key and confirm the password. Add the displayed **manual TOTP secret** to an authenticator. No third-party QR service is contacted. Save the recovery codes offline.
-8. Verify an authenticator code, **sign out**, then sign in again with password and MFA. Enrollment and earlier password-only sessions never become full application sessions merely because enrollment completed.
+7. Sign in with the owner email and password. In the default mode, this opens the application directly.
+8. **Only with MFA enabled:** enter the CLI setup key and confirm the password, add the displayed manual TOTP secret to your authenticator, save recovery codes, verify a code, then sign out and sign in again with password and MFA. Enrollment and earlier restricted sessions never become full MFA sessions merely because enrollment completed.
+
+## Change the login policy
+
+With every controller instance stopped, use an interactive controller-account terminal:
+
+```sh
+cogitator auth mode password  # email + password, no setup key
+cogitator auth mode mfa       # explicitly opt into authenticator enrollment
+```
+
+This offline operation preserves the owner and password, revokes existing sessions and clears abandoned enrollment/factors. It requires a fresh sign-in and never promotes an existing enrollment cookie. The private configuration records the policy; a malformed policy fails closed. Interrupted operations retain maintenance mode and can be retried offline.
 
 Public liveness is `GET /api/status`; detailed `/api/health`, application data, files and event streams require authorization. Direct loopback HTTP is not a browser-authentication bypass. Do not disable Secure cookies to work around a missing HTTPS terminator.
 
 ## Sessions and everyday use
 
-Full sessions have a fixed **24-hour lifetime**, with no indefinite refresh. Restricted enrollment sessions last at most **10 minutes**. Password, setup and MFA endpoints are rate-limited using persistent state; behind one loopback proxy, limits are deliberately shared rather than trusting client-supplied forwarding headers.
+Password sessions and fully verified MFA sessions have a fixed **24-hour lifetime**, with no indefinite refresh. Only optional MFA enrollment sessions are restricted to **10 minutes**. Password, setup and MFA endpoints are rate-limited using persistent state; behind one loopback proxy, limits are deliberately shared rather than trusting client-supplied forwarding headers. MFA mutation routes are unavailable in password mode.
 
 - **Sign out of this browser** applies only to its current session. Other browsers stay signed in, and already-running work continues. The interface immediately hides protected content and closes its streams. If server sign-out cannot be confirmed, the view stays locked and asks for a retry; do not treat an error as successful revocation.
 - Settings → **Owner security** replaces recovery codes only after full MFA and password confirmation. Confirm the warning: replacement invalidates every previous recovery code, including when the response is lost.

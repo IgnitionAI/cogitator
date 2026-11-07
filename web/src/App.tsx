@@ -1,3 +1,4 @@
+import { WhatsNew } from "./WhatsNew";
 import Extensions from "./screens/Extensions";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { api, openEvents } from "./api";
@@ -33,6 +34,7 @@ type ScreenId = (typeof NAV)[number]["id"];
 
 export default function App() {
   useLocale();
+  const [showNews, setShowNews] = useState(false);
   const [screen, setScreen] = useState<ScreenId>("bots");
   const [health, setHealth] = useState<Health | null>(null);
   const toast = useToast();
@@ -149,7 +151,8 @@ export default function App() {
         </nav>
         <div className="foot">
           <LanguagePicker />
-          {health ? `v${health.version} · pi ${health.pi_version ?? "?"}` : "…"}
+          <span>{health ? `v${health.version} · pi ${health.pi_version ?? "?"}` : "…"}</span>
+          <button type="button" className="btn btn-sm" onClick={() => { setNavOpen(false); setShowNews(true); }}>{t("news.title")}</button>
         </div>
       </aside>
       <main id="main" className="main" tabIndex={-1} inert={navOpen}>
@@ -162,6 +165,7 @@ export default function App() {
           />
         ) : screenNode}
       </main>
+      {showNews && <WhatsNew onClose={() => setShowNews(false)} />}
     </div>
   );
 }

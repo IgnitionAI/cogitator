@@ -1,5 +1,5 @@
 import { GitHubLogin, githubEnv, githubConfigured } from "./github-login.js";
-import { catalog, installedPackages, PackageManager } from "./packages.js";
+import { catalog, installedPackages, packageUpdates, PackageManager } from "./packages.js";
 import { changeConfiguration, dismissConfiguration, ConfigurationError, recoverConfigurations } from "./classic-configuration.js";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -357,12 +357,16 @@ function registryRoutes(deps: Deps): Route[] {
     }],
     ["POST", "/api/packages", (ctx) => {
       const body = ctx.body as { name?: unknown; action?: unknown } | null;
-      if (!body || typeof body.name !== "string" || !["install", "remove"].includes(String(body.action))) return sendJson(ctx.res, 400, { error: "Package et action requis." });
-      try { ctx.check(); sendJson(ctx.res, 202, packages.start(body.name, body.action as "install" | "remove")); }
+      if (!body || typeof body.name !== "string" || !["install", "remove", "update"].includes(String(body.action))) return sendJson(ctx.res, 400, { error: "Package et action requis." });
+      try { ctx.check(); sendJson(ctx.res, 202, packages.start(body.name, body.action as "install" | "remove" | "update")); }
       catch (error) { sendJson(ctx.res, 409, { error: (error as Error).message }); }
+    }],
+    ["GET", "/api/packages/updates", async (ctx) => {
+      sendJson(ctx.res, 200, { updates: await packageUpdates(paths) });
     }],
     ["POST", "/api/packages/reload", async (ctx) => {
       ctx.check();
+      if (packages.operation?.status === "running") return sendJson(ctx.res, 409, { error: "Une installation est déjà en cours." });
       const deferred = await deps.pool.refreshExtensions();
       if (packages.operation) packages.operation.deferred = deferred;
       sendJson(ctx.res, 200, { deferred });

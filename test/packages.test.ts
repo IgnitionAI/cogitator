@@ -67,3 +67,48 @@ test("catalog follows only same-origin canonical redirects and preserves paginat
     await assert.rejects(() => catalog("", "extension", 1), /externe/);
   } finally { globalThis.fetch = original; }
 });
+
+test("updates replace a pinned npm source with the newer exact version and never downgrade", async () => {
+  const original = globalThis.fetch; const paths = fixture(); const calls: unknown[] = [];
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ name: "@gotgenes/pi-subagents", version: "25.0.6", keywords: ["pi-package"] }));
+    const manager = new PackageManager(paths, async () => 1, async (...args) => { calls.push(args); });
+    const op = manager.start("@gotgenes/pi-subagents", "update");
+    while (op.status === "running") await new Promise(r => setImmediate(r));
+    assert.equal(op.status, "done"); assert.equal(op.deferred, 1);
+    assert.deepEqual(calls, [["install", "npm:@gotgenes/pi-subagents@25.0.6", paths]]);
+    globalThis.fetch = async () => new Response(JSON.stringify({ name: "@gotgenes/pi-subagents", version: "25.0.4", keywords: ["pi-package"] }));
+    const older = manager.start("@gotgenes/pi-subagents", "update");
+    while (older.status === "running") await new Promise(r => setImmediate(r));
+    assert.equal(older.status, "done"); assert.equal(calls.length, 1);
+    const missing = manager.start("missing", "update");
+    while (missing.status === "running") await new Promise(r => setImmediate(r));
+    assert.equal(missing.status, "error"); assert.equal(calls.length, 1);
+  } finally { globalThis.fetch = original; }
+});
+test("version checks use installed manifests instead of ranges and report registry failures", async () => {
+  const { packageUpdates, newerVersion } = await import("../src/packages.js");
+  const paths = fixture();
+  mkdirSync(join(paths.piAgentDir, "npm/node_modules/other"), { recursive: true });
+  writeFileSync(join(paths.piAgentDir, "npm/node_modules/other/package.json"), JSON.stringify({ name: "other", version: "2.0.0" }));
+  assert.equal(installedPackages(paths).find(p => p.name === "other")?.version, "2.0.0");
+  assert.equal(newerVersion("2.0.0", "10.0.0"), false);
+  assert.equal(newerVersion("1.10.0", "1.9.0"), true);
+  assert.equal(newerVersion("1.0.0", "^1.0.0"), false);
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async url => String(url).includes("other") ? new Response(JSON.stringify({ name: "other", version: "2.1.0" })) : new Response("unavailable", { status: 503 });
+    const updates = await packageUpdates(paths);
+    assert.equal(updates.find(p => p.name === "other")?.available, true);
+    assert.equal(updates.find(p => p.name === "@gotgenes/pi-subagents")?.failed, true);
+    assert.equal(updates.length, 2);
+    writeFileSync(join(paths.piAgentDir, "npm/node_modules/other/package.json"), JSON.stringify({ version: "2.0.0-beta.1" }));
+    assert.equal((await packageUpdates(paths)).find(p => p.name === "other")?.failed, true);
+    globalThis.fetch = async () => new Response(JSON.stringify({ name: "other", version: "2.1.0", keywords: ["pi-package"] }));
+    let invoked = false;
+    const manager = new PackageManager(paths, async () => 0, async () => { invoked = true; });
+    const op = manager.start("other", "update");
+    while (op.status === "running") await new Promise(r => setImmediate(r));
+    assert.equal(op.status, "error"); assert.equal(invoked, false);
+  } finally { globalThis.fetch = original; }
+});

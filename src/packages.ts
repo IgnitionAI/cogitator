@@ -56,14 +56,18 @@ export function installedPackages(paths: Paths) {
   return (settings.packages ?? []).map(entry => {
     const source = typeof entry === "string" ? entry : entry.source;
     const match = /^npm:((?:@[^/]+\/)?[^@]+)(?:@(.+))?$/.exec(source);
-    return { source, name: match?.[1] ?? source, version: match?.[2] ?? "", removable: !!match && packageName.test(match[1]!) };
+    let version = match?.[2] ?? "";
+    if (match && packageName.test(match[1]!)) {
+      try { const manifest = JSON.parse(readFileSync(join(paths.piAgentDir, "npm", "node_modules", match[1]!, "package.json"), "utf8")); if (typeof manifest.version === "string") version = manifest.version; } catch { /* use configured version if unavailable */ }
+    }
+    return { source, name: match?.[1] ?? source, version, removable: !!match && packageName.test(match[1]!) };
   });
 }
-export interface PackageOperation { name: string; action: "install" | "remove"; status: "running" | "done" | "error"; error?: string; deferred?: number }
+export interface PackageOperation { name: string; action: "install" | "remove" | "update"; status: "running" | "done" | "error"; error?: string; deferred?: number }
 export class PackageManager {
   operation: PackageOperation | null = null;
   constructor(private paths: Paths, private refresh: () => Promise<number>, private run = runPi) {}
-  start(name: string, action: "install" | "remove") {
+  start(name: string, action: "install" | "remove" | "update") {
     if (!packageName.test(name) || name.length > 214) throw new Error("Nom de package npm invalide.");
     if (this.operation?.status === "running") throw new Error("Une installation est déjà en cours.");
     const operation: PackageOperation = { name, action, status: "running" };
@@ -74,6 +78,8 @@ export class PackageManager {
   private async perform(operation: PackageOperation) {
     try {
       let source: string;
+      const current = installedPackages(this.paths).find(p => p.name === operation.name && p.removable);
+      if (operation.action === "update" && !current) throw new Error("Ce package n’est pas installé dans ce profil.");
       if (operation.action === "remove") {
         const installed = installedPackages(this.paths).find(p => p.name === operation.name && p.removable);
         if (!installed) throw new Error("Ce package n’est pas installé dans ce profil.");
@@ -81,9 +87,13 @@ export class PackageManager {
       } else {
         const meta = JSON.parse(await fetchText(`https://registry.npmjs.org/${encodeURIComponent(operation.name)}/latest`));
         if (meta.name !== operation.name || !meta.keywords?.includes("pi-package") || !/^[0-9]+\.[0-9]+\.[0-9]+(?:-[\w.-]+)?$/.test(meta.version)) throw new Error("Ce package n’est pas un package pi valide.");
+        if (operation.action === "update" && current && (!/^\d+\.\d+\.\d+$/.test(current.version) || !/^\d+\.\d+\.\d+$/.test(meta.version))) throw new Error("Version non comparable : mise à jour automatique indisponible.");
+        if (operation.action === "update" && current && !newerVersion(meta.version, current.version)) {
+          operation.status = "done"; return;
+        }
         source = `npm:${operation.name}@${meta.version}`;
       }
-      await this.run(operation.action, source, this.paths);
+      await this.run(operation.action === "update" ? "install" : operation.action, source, this.paths);
       operation.deferred = await this.refresh();
       operation.status = "done";
     } catch (error) { operation.status = "error"; operation.error = error instanceof Error ? error.message : "Installation échouée."; }
@@ -97,4 +107,27 @@ function runPi(action: string, source: string, paths: Paths): Promise<void> {
     child.once("error", () => { clearTimeout(timer); reject(new Error("Impossible de démarrer pi. Vérifiez son installation sur ce serveur.")); });
     child.once("close", code => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error("La commande pi a échoué ou dépassé trois minutes. Vérifiez le réseau et la compatibilité du package.")); });
   });
+}
+
+/** Stable npm releases only: never downgrade a local/newer or prerelease build. */
+export function newerVersion(latest: string, current: string): boolean {
+  const parse = (v: string) => /^\d+\.\d+\.\d+$/.test(v) ? v.split(".").map(Number) : null;
+  const a = parse(latest); const b = parse(current);
+  if (!a || !b) return false;
+  for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) return a[i]! > b[i]!; }
+  return false;
+}
+export async function packageUpdates(paths: Paths) {
+  const installed = installedPackages(paths).filter(p => p.removable);
+  const updates: Array<{ name: string; version: string; latest?: string; available: boolean; failed?: boolean }> = [];
+  for (let offset = 0; offset < installed.length; offset += 4) {
+    updates.push(...await Promise.all(installed.slice(offset, offset + 4).map(async p => {
+      try {
+        const meta = JSON.parse(await fetchText(`https://registry.npmjs.org/${encodeURIComponent(p.name)}/latest`));
+        if (meta.name !== p.name || typeof meta.version !== "string" || !/^\d+\.\d+\.\d+$/.test(p.version) || !/^\d+\.\d+\.\d+$/.test(meta.version)) throw new Error("Invalid metadata or incomparable version");
+        return { name: p.name, version: p.version, latest: meta.version as string, available: newerVersion(meta.version, p.version) };
+      } catch { return { name: p.name, version: p.version, available: false, failed: true }; }
+    })));
+  }
+  return updates;
 }

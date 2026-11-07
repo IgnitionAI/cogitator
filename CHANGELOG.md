@@ -6,7 +6,8 @@ User-facing changes to Cogitator. GitHub development updates and npm releases ar
 
 ### Added
 
-- **Extensions catalog:** browse pi packages, search and filter by type, install or uninstall packages, and follow installation progress from the web interface.
+- **What’s new:** a short bilingual changelog is available from the sidebar footer.
+- **Extensions catalog:** browse pi packages, search and filter by type, install or uninstall packages, check for updates, update individual npm packages, and reload extensions from the web interface without interrupting active agents.
 - **Subagent conversations:** click a subagent to inspect its instructions, messages, tool calls and results in a read-only dialog. The journal refreshes automatically without interrupting the parent conversation or moving your reading position.
 - **GitHub connection:** connect your account with a browser device code to import private repositories. Project imports, classic agents and the GitHub issue board share the installation's connection.
 - **Git repository import:** add a project from a repository link, with an automatic name and optional settings.

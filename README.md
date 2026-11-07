@@ -73,7 +73,7 @@ Logs the URL, then waits. Ctrl+C stops it. After a global npm install you can al
 
 ### Subagent tools
 
-The **Extensions** tab browses the live pi.dev/packages catalog, searches and filters packages, and installs or removes them in the server’s pi profile. Installation progress survives navigation within the UI; idle chat processes are recycled, while active conversations and background subagents stay intact. Use the reload button after busy work finishes. Packages run with the server account’s permissions.
+The **Extensions** tab browses the live pi.dev/packages catalog, searches and filters packages, and installs, updates or removes them in the server’s pi profile. Use **Check updates** to compare installed npm versions with the registry, then **Update** on the package you want. **Reload extensions** is always available. Installation progress survives navigation within the UI; idle chat processes are recycled, while active conversations and background subagents stay intact. Use the reload button after busy work finishes. Packages run with the server account’s permissions.
 
 The subagent panel reads pi's child session journals; launching children requires the separate `@gotgenes/pi-subagents` extension in the **same pi profile and OS account as Cogitator**:
 

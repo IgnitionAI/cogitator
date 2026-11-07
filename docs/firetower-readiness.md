@@ -1,5 +1,11 @@
 # Firetower deployment readiness
 
+## Owner-authorized OpenAI connection completed — 2026-11-07
+
+The owner completed OpenAI authorization in their browser. The provider returned to the fixed loopback callback on the owner's computer, where no callback server was listening because Cogitator runs on Firetower. The existing supported manual-return flow was completed in Cogitator after verifying that the callback state matched the pending attempt; the authorization code was not written to project files or documentation.
+
+The provider credential was accepted and persisted by the native SDK. Read-only server metadata confirms `openai`, OAuth, locally available. The owner's previously requested conversation settings were retried successfully: **openai / gpt-6.1-sol / medium**, with no pending configuration or UI error. The actual browser shows **Connecté · Prêt**. No model prompt was sent on the owner's behalf; a real model response remains unverified.
+
 ## OAuth streaming proxy correction — 2026-11-07
 
 The owner's real browser remained on the provider pending screen after choosing account login. Chrome network evidence identified the cause: the HTTP/2 provider-login SSE response had `Content-Encoding: zstd` and did not deliver the authorization events promptly. The earlier uncompressed HTTP checks and local browser fixtures did not exercise this proxy path.

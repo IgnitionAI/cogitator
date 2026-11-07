@@ -171,3 +171,8 @@ request's authorization. Other errors retain their existing handlers. Read
 `GET /mission` for the structured cause. No new screen or panel behavior is
 implemented. Worker reconciliation, autonomous server recovery/admission,
 stop/cancel, real toolchain and production isolation remain separate work.
+
+
+Conversation startup failures are delivered on `/api/conversations/:id/events` as a terminal `session_error` event, then the SSE response ends. `code` distinguishes `PROVIDER_NOT_CONFIGURED`, `MODEL_UNAVAILABLE`, `CONFIGURATION_FAILED` and `SESSION_START_FAILED`; `provider` identifies the affected provider. Clients must stop automatic reconnects on this event and offer explicit setup/retry. Model-switch rejections include the same code/provider metadata (409 when the provider has no available credentials; 422 when its requested model is unavailable). Authentication failures retain their ordinary 401/403 semantics.
+
+A cross-site top-level browser navigation (`GET /` or `GET /index.html`, Fetch Metadata `navigate`/`document`, no Origin) may load the public login shell. This exception does not apply to API routes, writes, fetches/iframes, or requests carrying a foreign Origin.

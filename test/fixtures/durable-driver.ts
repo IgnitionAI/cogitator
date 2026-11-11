@@ -177,21 +177,7 @@ if (scenario === "generation") {
   const orphan = runtime.recovery.workers.find((w) => w.kind === "live-orphan");
   assert(orphan, "classification live-orphan attendue");
   assert(orphan.record.pid > 0);
-  // Observer/arrêter via la socket privée, attendre le marqueur de sortie (pas de fuite).
-  await new Promise<void>((resolve, reject) => {
-    const socket = createConnection(join(scope!, "w.sock"));
-    let response = "";
-    socket.setTimeout(5_000, () => socket.destroy(new Error("arrêt de l'orphelin en timeout")));
-    socket.on("connect", () => socket.write("stop"));
-    socket.on("data", (data) => {
-      response += data.toString();
-    });
-    socket.on("error", reject);
-    socket.on("end", () => {
-      assert.equal(response, "stopped");
-      resolve();
-    });
-  });
+  await runtime.retireWorker(orphan.record.id);
   const deadline = Date.now() + 5_000;
   for (;;) {
     try {
@@ -202,7 +188,6 @@ if (scenario === "generation") {
       await delay(50);
     }
   }
-  await runtime.resolveWorker(orphan.record.id, "recorded-stopped");
   assert.equal(runtime.recovery.needsAttention, false, "rétabli après classement de l'orphelin");
   const resumed = await runtime.submit("resume", "resume");
   assert.equal(resumed.duplicate, false);

@@ -10,8 +10,9 @@
  * 2. stockage SQLite en `synchronous = FULL` (le défaut du SDK est NORMAL) ;
  * 3. profil de mission gelé vérifié (SDK pin, snapshot preset, toolchain) —
  *    toute divergence rejette l'ouverture (fail closed) ;
- * 4. workers orphelins classés (vivant → orphelin à observer/arrêter ; mort
- *    sans disposition → issue inconnue) avant d'activer la planification ;
+ * 4. workers orphelins classés (identité vérifiée → orphelin à arrêter ;
+ *    mort sans preuve de sortie → inconnu ; identité discordante → attention)
+ *    avant d'activer la planification ;
  * 5. la planification Durable n'est activée qu'après ces vérifications.
  *
  * Admission (P3b, ticket #16) : les envois sont acceptés durablement, mais ne
@@ -43,7 +44,8 @@ import { openNodeSqliteDatabase } from "@earendil-works/pi-durable/storage/sqlit
 import { join } from "node:path";
 import { acquireRuntimeLease, type RuntimeLease } from "./lease.js";
 import { MissionProfile, freezeMissionProfile, assertProfileFrozen } from "./profile.js";
-import { WorkerRecords, classifyWorkers, unresolvedWorkers, type WorkerClassification, type WorkerRecord } from "./workers.js";
+import { WorkerRecords, unresolvedWorkers, type WorkerClassification, type WorkerCreationIntent, type WorkerIdentity, type WorkerRecord } from "./workers.js";
+import { ProcessWorkerBackend, WorkerSupervisor, type WorkerBackend } from "../execution/worker-supervisor.js";
 import {
   MissionApprovals,
   GrantRejectedError,
@@ -150,8 +152,10 @@ export interface MissionControlPlane {
   readonly workspaceDir: string;
   /** Admission immédiate : budget (via runtime) + slot + claim. */
   tryAdmit(): { admitted: true } | { admitted: false; reason: string };
-  /** Relâche slot + claim APRÈS arrêt des écritures, puis tente d'admettre la file. */
-  release(): void;
+  /** Relâche le slot, et le claim workspace sauf `retainWorkspace`. */
+  release(opts?: { retainWorkspace?: boolean }): void;
+  /** Retient le claim workspace sans consommer de slot (worker encore capable d'écrire). */
+  retainWorkspaceClaim(): void;
   /** Détail du claim pour la projection de statut. */
   claimHolder(): string | undefined;
   /** Notifie un changement d'état de mission (fan-out SSE). */
@@ -179,6 +183,8 @@ export interface DurableMissionOpenOptions {
    *  Défaut : plan permissif sans admission (usage direct hors serveur, ex.
    *  driver SIGKILL) — toujours admis, aucun claim, émission ignorée. */
   control?: MissionControlPlane;
+  /** Backend d'identité worker (défaut : processus local, jamais un PID nu). */
+  workerBackend?: WorkerBackend;
 }
 
 /** Plan de contrôle par défaut : pas d'admission (dispatch immédiat). */
@@ -186,6 +192,7 @@ const PERMISSIVE_CONTROL: MissionControlPlane = {
   workspaceDir: "",
   tryAdmit: () => ({ admitted: true }),
   release: () => undefined,
+  retainWorkspaceClaim: () => undefined,
   claimHolder: () => undefined,
   emit: () => undefined,
 };
@@ -221,9 +228,18 @@ export class DurableMissionRuntime {
     private readonly lease: RuntimeLease,
     private readonly registry: Registry,
     private readonly control: MissionControlPlane,
+    private readonly supervisor: WorkerSupervisor,
     /** État de récupération à l'ouverture (workers orphelins classés). */
     readonly recovery: MissionRecovery,
   ) {}
+
+  get workspaceDir(): string {
+    return this.control.workspaceDir;
+  }
+
+  get missionId(): string {
+    return String(this.root.id);
+  }
 
   static async open(opts: DurableMissionOpenOptions): Promise<DurableMissionRuntime> {
     const lease = acquireRuntimeLease(opts.dir);
@@ -262,11 +278,19 @@ export class DurableMissionRuntime {
           },
         },
       );
-      const runtime = new DurableMissionRuntime(harness, root, lease, opts.registry, opts.control ?? PERMISSIVE_CONTROL, {
-        workers: [],
-        needsAttention: false,
-        reasons: [],
-      });
+      const runtime = new DurableMissionRuntime(
+        harness,
+        root,
+        lease,
+        opts.registry,
+        opts.control ?? PERMISSIVE_CONTROL,
+        new WorkerSupervisor(opts.workerBackend ?? new ProcessWorkerBackend()),
+        {
+          workers: [],
+          needsAttention: false,
+          reasons: [],
+        },
+      );
       await runtime.verifyFrozenProfile(versions);
       await runtime.reconcileWorkers();
       await runtime.reconcileEffects();
@@ -296,15 +320,122 @@ export class DurableMissionRuntime {
   /** Reclasse les workers persistés (§5.7) et expose le résultat de récupération. */
   private async reconcileWorkers(): Promise<void> {
     const doc = await this.harness.snapshot(WorkerRecords, this.root.id, context);
-    const workers = classifyWorkers(doc?.workers ?? []);
+    const reconciled: WorkerRecord[] = [];
+    for (const raw of doc?.workers ?? []) {
+      if (raw.intent && !raw.identity && !raw.exitProof) {
+        const bound = await this.supervisor.reconcileCreation(raw);
+        if (bound.kind === "created" && bound.record.identity) {
+          await this.writeWorker(bound.record);
+          reconciled.push(bound.record);
+          continue;
+        }
+        const attention: WorkerRecord = {
+          ...raw,
+          lifecycle: "attention",
+          attentionReason: bound.kind === "attention" ? bound.reason : "intent_unbound",
+          revision: (raw.revision ?? 0) + 1,
+        };
+        await this.writeWorker(attention);
+        reconciled.push(attention);
+        continue;
+      }
+      reconciled.push(raw);
+    }
+    const workers: WorkerClassification[] = [];
+    for (const record of reconciled) {
+      workers.push(await this.supervisor.classify(record));
+    }
     const unresolved = unresolvedWorkers(workers);
     this.recovery.workers = workers;
     this.recovery.needsAttention = unresolved.length > 0;
-    this.recovery.reasons = unresolved.map(
-      (u) => u.kind === "live-orphan"
-        ? `worker ${u.record.id} (pid ${u.record.pid}) toujours vivant : observer/arrêter avant remplacement`
-        : `worker ${u.record.id} (pid ${u.record.pid}) mort sans issue établie : réconciliation requise`,
-    );
+    this.recovery.reasons = unresolved.map((u) => {
+      switch (u.kind) {
+        case "live-orphan":
+          return `worker ${u.record.id} toujours vivant : observer/arrêter avant remplacement`;
+        case "exited-unknown":
+          return `worker ${u.record.id} mort sans preuve de sortie : réconciliation requise`;
+        case "attention":
+          return `worker ${u.record.id} identité incertaine (${u.reason}) : aucun signal`;
+        case "resolved":
+          return `worker ${u.record.id} résolu`;
+        default: {
+          const exhaustive: never = u;
+          return exhaustive;
+        }
+      }
+    });
+    if (unresolved.length) this.control.retainWorkspaceClaim();
+  }
+
+  private async writeWorker(next: WorkerRecord): Promise<void> {
+    await this.root.commit(async (tx) => {
+      const doc = await tx.doc(WorkerRecords, this.root.id);
+      const index = doc.workers.findIndex((w) => w.id === next.id);
+      if (index < 0) doc.workers.push(next);
+      else doc.workers[index] = next;
+    }, context);
+  }
+
+  async persistWorkerIntent(intent: WorkerCreationIntent): Promise<void> {
+    await this.writeWorker({
+      id: intent.workerId,
+      pid: 0,
+      command: "pending-create",
+      dispatchedAt: intent.createdAt,
+      intent,
+      revision: 1,
+      lifecycle: "intent",
+    });
+    this.control.retainWorkspaceClaim();
+    await this.reconcileWorkers();
+  }
+
+  async bindWorkerIdentity(identity: WorkerIdentity): Promise<void> {
+    const doc = await this.harness.snapshot(WorkerRecords, this.root.id, context);
+    const existing = doc?.workers.find((w) => w.id === identity.workerId);
+    if (!existing) throw new Error(`worker inconnu: ${identity.workerId}`);
+    await this.writeWorker({
+      ...existing,
+      pid: identity.observationalPid,
+      identity,
+      lifecycle: "started",
+      revision: (existing.revision ?? 0) + 1,
+    });
+    this.control.retainWorkspaceClaim();
+    await this.reconcileWorkers();
+  }
+
+  async canReleaseWorkspace(): Promise<boolean> {
+    const doc = await this.harness.snapshot(WorkerRecords, this.root.id, context);
+    for (const record of doc?.workers ?? []) {
+      const classified = await this.supervisor.classify(record);
+      if (classified.kind !== "resolved") return false;
+    }
+    return true;
+  }
+
+  async retireWorker(workerId: string): Promise<void> {
+    const doc = await this.harness.snapshot(WorkerRecords, this.root.id, context);
+    const record = doc?.workers.find((w) => w.id === workerId);
+    if (!record) throw new Error(`worker inconnu: ${workerId}`);
+    await this.writeWorker({ ...record, lifecycle: "stop_requested", revision: (record.revision ?? 0) + 1 });
+    const waited = await this.supervisor.stopThenWait(record);
+    if (waited.kind !== "exited") {
+      await this.reconcileWorkers();
+      throw new Error(`sortie non confirmée: worker ${workerId} (${waited.kind})`);
+    }
+    await this.writeWorker({
+      ...record,
+      exitProof: { writingStopped: true, observedAt: Date.now() },
+      lifecycle: "exit_verified",
+      revision: (record.revision ?? 0) + 2,
+    });
+    await this.reconcileWorkers();
+    if (!(await this.blockingReason())) {
+      this.harness.resume();
+      this.schedulingEnabled = true;
+    }
+    this.control.emit(await this.missionStatus());
   }
 
   /** Only reopening classifies abandoned intents; status reads never do. */
@@ -536,8 +667,7 @@ export class DurableMissionRuntime {
       .finally(() => {
         this.activeWrites -= 1;
         if (this.activeWrites === 0) {
-          this.control.release();
-          void this.tryDrainQueue();
+          void this.releaseWhenQuiet();
         }
       });
   }
@@ -616,21 +746,16 @@ export class DurableMissionRuntime {
 
   // ---------- Accès existants ----------
 
-  /** Enregistre la disposition terminale d'un worker après observation/arrêt. */
-  async resolveWorker(workerId: string, disposition: Exclude<WorkerRecord["disposition"], undefined>): Promise<void> {
-    await this.root.commit(async (tx) => {
-      const doc = await tx.doc(WorkerRecords, this.root.id);
-      const record = doc.workers.find((w) => w.id === workerId);
-      if (!record) throw new Error(`worker inconnu: ${workerId}`);
-      record.disposition = disposition;
-    }, context);
-    await this.reconcileWorkers();
-    // Tout orphelin classé : la runtime redevient prête.
-    if (!(await this.blockingReason())) {
-      this.harness.resume();
-      this.schedulingEnabled = true;
-    }
-    this.control.emit(await this.missionStatus());
+  private async releaseWhenQuiet(): Promise<void> {
+    const retainWorkspace = !(await this.canReleaseWorkspace());
+    this.control.release({ retainWorkspace });
+    void this.tryDrainQueue();
+  }
+
+  /** Arrêt vérifié : inspect, signal seulement si l'identité correspond, preuve de sortie avant reprise. */
+  async resolveWorker(workerId: string, disposition?: Exclude<WorkerRecord["disposition"], undefined>): Promise<void> {
+    void disposition;
+    await this.retireWorker(workerId);
   }
 
   /** Transcript brut (vérité Durable — jamais recopié dans le catalogue, ADR-006 amendé). */

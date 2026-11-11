@@ -9,14 +9,18 @@ const [socketPath, scope] = process.argv.slice(2);
 
 writeFileSync(join(scope, "worker.ready"), String(process.pid));
 
+function shutdown(reply) {
+  if (reply) reply.end("stopped");
+  try { writeFileSync(join(scope, "worker.exited"), "exited"); } catch { /* best-effort marker */ }
+  server.close(() => process.exit(0));
+}
+
 const server = createServer((socket) => {
-  socket.on("data", () => {
-    socket.end("stopped");
-    writeFileSync(join(scope, "worker.exited"), "exited");
-    server.close(() => process.exit(0));
-  });
+  socket.on("data", () => shutdown(socket));
 });
 server.listen(socketPath);
+process.on("SIGTERM", () => shutdown());
+process.on("SIGINT", () => shutdown());
 
 // Garde-fou de nettoyage : ne jamais fuir indéfiniment si le test échoue.
 setTimeout(() => {

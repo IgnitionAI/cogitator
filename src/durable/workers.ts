@@ -1,20 +1,68 @@
 /**
- * Identité et classification des workers de mission (Plan 0002 §5.7) : un
- * crash peut laisser une commande worker en vie ; l'identité est persistée
- * AVANT le dispatch, et au redémarrage on observe/arrête et on classe avant
- * tout travail de remplacement.
+ * Identité et classification des workers de mission (Plan 0002 §5.7, #47) :
+ * l'intention de création est persistée AVANT le lancement ; l'identité
+ * immuable (exécution, mission, workspace, backend, handle) est vérifiée à
+ * chaque inspect/stop/wait. Une disposition déclarative n'est pas une preuve
+ * de sortie.
  */
 
 import { defineDoc } from "@earendil-works/pi-durable";
+import type { InspectObservation } from "../execution/worker-supervisor.js";
+
+/** Intention gelée, persistée avant toute requête de création. */
+export type WorkerCreationIntent = {
+  workerId: string;
+  executionId: string;
+  missionId: string;
+  workspaceDir: string;
+  backendId: string;
+  correlation: string;
+  specBinding: string;
+  createdAt: number;
+};
+
+/** Identité immuable d'un worker : le handle est la cible de mutation, jamais le PID. */
+export type WorkerIdentity = {
+  workerId: string;
+  executionId: string;
+  missionId: string;
+  workspaceDir: string;
+  backendId: string;
+  immutableHandle: string;
+  starttime: string;
+  observationalPid: number;
+};
+
+/** Preuve terminale : cessation d'écriture observée, distincte du résultat métier. */
+export type VerifiedExit = {
+  writingStopped: true;
+  observedAt: number;
+};
+
+export type WorkerLifecycle =
+  | "intent"
+  | "created"
+  | "started"
+  | "stop_requested"
+  | "exit_verified"
+  | "unknown"
+  | "attention";
 
 /** Enregistrement durable d'un worker dispatché par un outil de mission. */
 export type WorkerRecord = {
   id: string;
+  /** PID observationnel uniquement — jamais une cible de signal. */
   pid: number;
   command: string;
   dispatchedAt: number;
-  /** Disposition terminale connue (écrite après observation/arrêt). */
+  /** @deprecated Non probant. Conservé pour les journaux existants. */
   disposition?: "recorded-stopped" | "completed" | "failed";
+  intent?: WorkerCreationIntent;
+  identity?: WorkerIdentity;
+  exitProof?: VerifiedExit;
+  revision?: number;
+  lifecycle?: WorkerLifecycle;
+  attentionReason?: string;
 };
 
 export type WorkerRecordsDoc = { workers: WorkerRecord[] };
@@ -31,7 +79,8 @@ export const WorkerRecords = defineDoc<WorkerRecordsDoc>({
 export type WorkerClassification =
   | { kind: "resolved"; record: WorkerRecord }
   | { kind: "live-orphan"; record: WorkerRecord }
-  | { kind: "exited-unknown"; record: WorkerRecord };
+  | { kind: "exited-unknown"; record: WorkerRecord }
+  | { kind: "attention"; record: WorkerRecord; reason: string };
 
 /** true si un processus vit sous ce pid (ESRCH = mort ; EPERM = vivant, pas à nous). */
 export function pidAlive(pid: number): boolean {
@@ -44,18 +93,25 @@ export function pidAlive(pid: number): boolean {
   }
 }
 
-export function classifyWorker(record: WorkerRecord): WorkerClassification {
-  if (record.disposition) return { kind: "resolved", record };
-  if (pidAlive(record.pid)) return { kind: "live-orphan", record };
-  // Plus de processus et aucune disposition/receipt : l'issue est inétablie.
-  return { kind: "exited-unknown", record };
+export function classifyWorker(record: WorkerRecord, observation: InspectObservation): WorkerClassification {
+  if (record.exitProof?.writingStopped) return { kind: "resolved", record };
+  switch (observation.kind) {
+    case "running":
+      return { kind: "live-orphan", record };
+    case "missing":
+      return { kind: "exited-unknown", record };
+    case "pid_reuse":
+    case "identity_mismatch":
+    case "unavailable":
+      return { kind: "attention", record, reason: observation.kind };
+    default: {
+      const exhaustive: never = observation;
+      return exhaustive;
+    }
+  }
 }
 
-export function classifyWorkers(records: readonly WorkerRecord[]): WorkerClassification[] {
-  return records.map(classifyWorker);
-}
-
-/** Des workers non résolus (orphelin vivant OU issue inconnue) bloquent la reprise. */
+/** Des workers non résolus (orphelin, inconnu, attention) bloquent la reprise. */
 export function unresolvedWorkers(classifications: readonly WorkerClassification[]): WorkerClassification[] {
   return classifications.filter((c) => c.kind !== "resolved");
 }

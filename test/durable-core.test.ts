@@ -109,10 +109,13 @@ test("classification des orphelins : vivant / mort sans issue / résolu", async 
   assert.equal(pidAlive(process.pid), true);
   assert.equal(pidAlive(-3), false);
   const record = { id: "w1", pid: process.pid, command: "fixture", dispatchedAt: 1 };
-  assert.equal(classifyWorker(record).kind, "live-orphan");
-  assert.equal(classifyWorker({ ...record, pid: deadPid }).kind, "exited-unknown");
-  assert.equal(classifyWorker({ ...record, disposition: "recorded-stopped" }).kind, "resolved");
-  assert.equal(classifyWorker({ ...record, pid: deadPid, disposition: "completed" }).kind, "resolved");
+  assert.equal(classifyWorker(record, { kind: "running", identity: {
+    workerId: "w1", executionId: "e", missionId: "m", workspaceDir: "/ws", backendId: "process",
+    immutableHandle: "h", starttime: "1", observationalPid: process.pid,
+  } }).kind, "live-orphan");
+  assert.equal(classifyWorker(record, { kind: "missing" }).kind, "exited-unknown");
+  assert.equal(classifyWorker({ ...record, disposition: "recorded-stopped" }, { kind: "missing" }).kind, "exited-unknown");
+  assert.equal(classifyWorker({ ...record, exitProof: { writingStopped: true, observedAt: 1 } }, { kind: "missing" }).kind, "resolved");
 });
 
 test("requestId borné : schéma accepte stable, rejette hors bornes/caractères", () => {

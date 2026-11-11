@@ -18,6 +18,7 @@ import { appendFileSync } from "node:fs";
 import { runProtectedEffect } from "../../src/durable/effect-gateway.js";
 import { digest } from "../../src/durable/profile.js";
 import { WorkerRecords } from "../../src/durable/workers.js";
+import { readProcessStarttime } from "../../src/execution/worker-supervisor.js";
 
 export const FIXTURE_EXTENSION_NAME = "cogitator-fixture-v1";
 
@@ -86,10 +87,25 @@ export function makeFixtureExtension(opts: FixtureMissionToolsOptions) {
     replay: "unsafe",
     async execute(_args, api, context) {
       const id = randomUUID();
-      // Identité persistée AVANT dispatch (Plan 0002 §5.7).
+      const executionId = randomUUID();
+      const correlation = randomUUID();
+      const dispatchedAt = Date.now();
+      const intent = {
+        workerId: id,
+        executionId,
+        missionId: api.conversationId,
+        workspaceDir: workspace,
+        backendId: "process",
+        correlation,
+        specBinding: workspace,
+        createdAt: dispatchedAt,
+      };
+      // Intention persistée AVANT le lancement (Plan 0002 §5.7 / #47).
       await api.commit(async (tx) => {
         const doc = await tx.doc(WorkerRecords, api.conversationId);
-        doc.workers.push({ id, pid: 0, command: "fixture-worker", dispatchedAt: Date.now() });
+        doc.workers.push({
+          id, pid: 0, command: "fixture-worker", dispatchedAt, intent, revision: 1, lifecycle: "intent",
+        });
       }, context);
       const child = spawn(process.execPath, [workerScript, socketPath, opts.scope], {
         detached: true,
@@ -99,10 +115,26 @@ export function makeFixtureExtension(opts: FixtureMissionToolsOptions) {
       child.unref();
       await waitForFile(join(opts.scope, "worker.ready"), 5_000);
       const pid = Number(readFileSync(join(opts.scope, "worker.ready"), "utf8"));
+      const starttime = readProcessStarttime(pid);
+      if (!starttime) throw new Error("identité processus illisible après spawn");
       await api.commit(async (tx) => {
         const doc = await tx.doc(WorkerRecords, api.conversationId);
         const record = doc.workers.find((w) => w.id === id);
-        if (record) record.pid = pid;
+        if (record) {
+          record.pid = pid;
+          record.lifecycle = "started";
+          record.revision = (record.revision ?? 1) + 1;
+          record.identity = {
+            workerId: id,
+            executionId,
+            missionId: api.conversationId,
+            workspaceDir: workspace,
+            backendId: "process",
+            immutableHandle: id,
+            starttime,
+            observationalPid: pid,
+          };
+        }
       }, context);
       await api.details({ point: "worker-running", workerId: id, pid }, context);
       process.send?.({ point: "worker-running", workerId: id, pid });

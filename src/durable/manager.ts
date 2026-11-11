@@ -23,6 +23,7 @@ import type { ConversationRow } from "../conversations.js";
 import type { Paths } from "../paths.js";
 import type { ToolchainRegistry } from "../execution/egress.js";
 import { DurableMissionRuntime, type MissionStatusView } from "./mission-runtime.js";
+import type { WorkerBackend } from "../execution/worker-supervisor.js";
 import { MissionSlotPool, WorkspaceClaims } from "./admission.js";
 import { digest } from "./profile.js";
 
@@ -40,6 +41,8 @@ export interface DurableManagerOptions {
   missionSlots?: number;
   /** Horloge injectable (tests des budgets UTC). */
   now?: () => number;
+  /** Backend d'identité des workers (injectable en test ; défaut processus local). */
+  workerBackend?: WorkerBackend;
 }
 
 interface ManagedRuntime {
@@ -92,8 +95,11 @@ export class DurableRuntimeManager {
         }
         return { admitted: true };
       },
-      release(): void {
-        claims.release(workspaceDir, conv.id);
+      retainWorkspaceClaim(): void {
+        claims.acquire(workspaceDir, conv.id);
+      },
+      release(opts?: { retainWorkspace?: boolean }): void {
+        if (!opts?.retainWorkspace) claims.release(workspaceDir, conv.id);
         const promoted = slots.release(conv.id);
         // La mission promue dispatche SA file immédiatement ; les autres en
         // file re-tentent ensuite leur admission (un slot vient de se libérer).
@@ -121,6 +127,7 @@ export class DurableRuntimeManager {
         mcpServers: [...this.opts.toolchain.approvedMcpServers],
       },
       control,
+      workerBackend: this.opts.workerBackend,
     });
     const entry: ManagedRuntime = { runtime, closed: false };
     this.open.set(conv.id, entry);
@@ -173,13 +180,16 @@ export class DurableRuntimeManager {
   /** Ferme la runtime d'une conversation (le stockage Durable, lui, survit). */
   async release(convId: string): Promise<void> {
     const managed = this.open.get(convId);
+    const retainWorkspace = managed && !managed.closed
+      ? !(await managed.runtime.canReleaseWorkspace())
+      : false;
     this.open.delete(convId);
     if (managed && !managed.closed) {
       managed.closed = true;
       await managed.runtime.close();
     }
-    // La fermeture relâche aussi slot et claim détenus (sinon fuite d'admission).
-    this.claims.releaseByMission(convId);
+    // Le claim workspace reste tant qu'un worker peut encore écrire.
+    if (!retainWorkspace) this.claims.releaseByMission(convId);
     const promoted = this.slots.release(convId);
     if (promoted) {
       const next = this.open.get(promoted);

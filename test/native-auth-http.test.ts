@@ -2,10 +2,25 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chmodSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { browserHeaders } from "../src/auth-http.js";
 import { loadAuth, recoverOwner } from "../src/auth-state.js";
 import { createConversation } from "../src/conversations.js";
-import { request } from "node:http";
+import { request, type IncomingMessage } from "node:http";
 import { authenticated, closeServer, email, enroll, fixture, httpCall, origin, password } from "./native-auth-fixture.js";
+
+function restoreClientAddressEnv(previous: { proxy: string | undefined; header: string | undefined }): void {
+  if (previous.proxy === undefined) delete process.env.COGITATOR_AUTH_TRUSTED_PROXY;
+  else process.env.COGITATOR_AUTH_TRUSTED_PROXY = previous.proxy;
+  if (previous.header === undefined) delete process.env.COGITATOR_AUTH_CLIENT_HEADER;
+  else process.env.COGITATOR_AUTH_CLIENT_HEADER = previous.header;
+}
+async function withClientAddressSource<T>(proxy: string, header: string, run: () => Promise<T>): Promise<T> {
+  const previous = { proxy: process.env.COGITATOR_AUTH_TRUSTED_PROXY, header: process.env.COGITATOR_AUTH_CLIENT_HEADER };
+  process.env.COGITATOR_AUTH_TRUSTED_PROXY = proxy;
+  process.env.COGITATOR_AUTH_CLIENT_HEADER = header;
+  try { return await run(); } finally { restoreClientAddressEnv(previous); }
+}
+const clientHeader = (address: string) => ({ "x-cogitator-client": address });
 
 test("all registered application routes reject anonymous and password-only requests before side effects", async () => {
   const f = await fixture();
@@ -119,6 +134,81 @@ test("persistent bounded rate buckets ignore attacker forwarding headers", async
   } finally { await f.close(); }
 });
 
+test("a client that exhausts its sign-in quota does not block another client", async () => {
+  const f = await fixture();
+  try {
+    await withClientAddressSource("127.0.0.1", "x-cogitator-client", async () => {
+      const attacker = clientHeader("203.0.113.10");
+      for (let i = 0; i < 10; i++) {
+        const blocked = await httpCall(f.port, "/api/auth/sign-in/email", "POST", { email: "attacker@example.invalid", password: "wrong-password" }, attacker);
+        assert.equal(blocked.status, 401, `attacker attempt ${i + 1}`);
+      }
+      assert.equal((await httpCall(f.port, "/api/auth/sign-in/email", "POST", { email: "attacker@example.invalid", password: "wrong-password" }, attacker)).status, 429);
+      const owner = await httpCall(f.port, "/api/auth/sign-in/email", "POST", { email, password }, clientHeader("198.51.100.20"));
+      assert.equal(owner.status, 200);
+      assert.deepEqual(owner.data, { twoFactorRequired: false });
+    });
+  } finally { await f.close(); }
+});
+
+test("the same client stays at 10 sign-in attempts per 60s and 3 two-factor attempts per 10s", async () => {
+  const f = await fixture();
+  try {
+    await withClientAddressSource("127.0.0.1", "x-cogitator-client", async () => {
+      const client = clientHeader("203.0.113.30");
+      for (let i = 0; i < 10; i++) {
+        assert.equal((await httpCall(f.port, "/api/auth/sign-in/email", "POST", { email: "attacker@example.invalid", password: "wrong-password" }, client)).status, 401);
+      }
+      assert.equal((await httpCall(f.port, "/api/auth/sign-in/email", "POST", { email: "attacker@example.invalid", password: "wrong-password" }, client)).status, 429);
+      f.resetRates();
+      for (let i = 0; i < 3; i++) {
+        const challenge = await httpCall(f.port, "/api/auth/two-factor/verify-totp", "POST", { code: "123456" }, client);
+        assert.notEqual(challenge.status, 429, `two-factor attempt ${i + 1}`);
+      }
+      assert.equal((await httpCall(f.port, "/api/auth/two-factor/verify-totp", "POST", { code: "123456" }, client)).status, 429);
+    });
+  } finally { await f.close(); }
+});
+
+test("a forwarding header from an untrusted client is ignored", async () => {
+  const f = await fixture();
+  try {
+    const req = {
+      headers: { "x-forwarded-for": "203.0.113.1", "x-cogitator-client": "203.0.113.1", cookie: "a=b", origin, "content-type": "application/json", "user-agent": "fixture" },
+      socket: { remoteAddress: "127.0.0.1" },
+    } as IncomingMessage;
+    const headers = browserHeaders(req);
+    assert.equal(headers.get("x-forwarded-for"), null);
+    assert.equal(headers.get("x-cogitator-client"), null);
+    assert.equal(headers.get("x-cogitator-peer"), "127.0.0.1");
+    await withClientAddressSource("10.0.0.1", "x-cogitator-client", async () => {
+      assert.equal(browserHeaders(req).get("x-cogitator-peer"), "127.0.0.1");
+      for (let i = 0; i < 10; i++) {
+        assert.equal((await httpCall(f.port, "/api/auth/sign-in/email", "POST", { email: "attacker@example.invalid", password: "wrong-password" }, { "x-forwarded-for": `203.0.113.${i}`, "x-cogitator-client": `198.51.100.${i}` })).status, 401);
+      }
+      const limited = await httpCall(f.port, "/api/auth/sign-in/email", "POST", { email, password }, { "x-forwarded-for": "203.0.113.200", "x-cogitator-client": "198.51.100.200" });
+      assert.equal(limited.status, 429);
+      assert.equal(limited.data.error, "RATE_LIMITED");
+    });
+  } finally { await f.close(); }
+});
+
+test("the global auth throttle ceiling still applies across distinct clients", async () => {
+  const f = await fixture();
+  try {
+    await withClientAddressSource("127.0.0.1", "x-cogitator-client", async () => {
+      for (let i = 1; i <= 100; i++) {
+        const octet = i % 256;
+        const second = Math.floor((i - 1) / 256);
+        const response = await httpCall(f.port, "/api/auth/sign-in/email", "POST", { email: `attacker${i}@example.invalid`, password: "wrong-password" }, clientHeader(`203.0.${second}.${octet}`));
+        assert.equal(response.status, 401, `global attempt ${i}`);
+      }
+      const limited = await httpCall(f.port, "/api/auth/sign-in/email", "POST", { email, password }, clientHeader("198.51.100.1"));
+      assert.equal(limited.status, 429);
+      assert.equal(limited.data.error, "RATE_LIMITED");
+    });
+  } finally { await f.close(); }
+});
 
 test("authorization is fresh after body reads and before delayed protected content", async () => {
   const f=await fixture();

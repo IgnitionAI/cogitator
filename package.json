@@ -54,6 +54,9 @@
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*"
   },
+  "overrides": {
+    "undici": "8.12.3"
+  },
   "dependencies": {
     "@earendil-works/chord": "1.1.0",
     "@earendil-works/pi-durable": "1.1.0",

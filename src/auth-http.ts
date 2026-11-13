@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { isIP } from "node:net";
 import { z } from "zod";
 import { protectedRequired, type AuthState } from "./auth-state.js";
 import { AuthError, authMutationAuthorization, ownerSession, policy, requireApproved, requireEnrollment, requiresMfa, selectEnrollment, sessionById, verifyEnrollment } from "./native-auth.js";
@@ -21,14 +22,39 @@ export function authFailure(res: ServerResponse, error: unknown): void {
   const failure = error instanceof AuthError ? error : new AuthError("AUTH_UNAVAILABLE", 503);
   authJson(res, failure.status, { error: failure.code, ...(failure.retryAt ? { retryAt: failure.retryAt } : {}) });
 }
+function canonicalIp(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("::ffff:") && isIP(trimmed.slice(7)) === 4) return trimmed.slice(7);
+  return trimmed;
+}
+function configuredClientHeader(name: string | undefined): string | undefined {
+  if (!name || !/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(name)) return undefined;
+  const header = name.toLowerCase();
+  if (header === "cookie" || header === "authorization" || header === "host" || header === "origin" || header === "content-type") return undefined;
+  return header;
+}
+/**
+ * Socket peer, or a single IP from a configured header only when that peer is the trusted proxy.
+ * Forwarding headers are never copied into the request bucket; this read is explicit and opt-in.
+ */
+export function authClientAddress(req: IncomingMessage, env: NodeJS.ProcessEnv = process.env): string {
+  const peer = canonicalIp(req.socket.remoteAddress ?? "unknown");
+  const trusted = env.COGITATOR_AUTH_TRUSTED_PROXY;
+  const header = configuredClientHeader(env.COGITATOR_AUTH_CLIENT_HEADER);
+  if (!trusted || !header || isIP(canonicalIp(trusted)) === 0 || canonicalIp(trusted) !== peer) return peer;
+  const forwarded = req.headers[header];
+  if (typeof forwarded !== "string") return peer;
+  const client = canonicalIp(forwarded);
+  return isIP(client) === 0 ? peer : client;
+}
 export function browserHeaders(req: IncomingMessage): Headers {
   const headers = new Headers();
   for (const name of ["cookie", "origin", "content-type", "user-agent"]) {
     const value = req.headers[name];
     if (typeof value === "string") headers.set(name, value);
   }
-  // Never copy forwarding headers. This bucket is deliberately shared behind a loopback TLS proxy.
-  headers.set("x-cogitator-peer", req.socket.remoteAddress ?? "unknown");
+  // Never copy forwarding headers. Client identity is applied only to the dedicated peer field.
+  headers.set("x-cogitator-peer", authClientAddress(req));
   const cookie = headers.get("cookie");
   if (cookie) headers.set("cookie", cookie.split(";").filter(c => !c.split("=")[0]?.includes("trust_device")).join(";"));
   return headers;
@@ -74,14 +100,26 @@ function libraryError(status: number, data: Record<string, unknown>, path: strin
 
 
 const factorMutations = new WeakSet<AuthState>();
-function throttle(state: AuthState, path: string): void {
+/**
+ * Per-client quotas stay as strict as the previous shared path bucket (10/60s sign-in, 3/10s MFA).
+ * A higher global ceiling still bounds aggregate guesses. Untrusted forwarding headers cannot
+ * split either counter; without a configured trusted proxy the socket peer remains the client id,
+ * which is the previous shared-loopback behaviour.
+ */
+function throttle(state: AuthState, path: string, req: IncomingMessage): void {
   const now = Date.now();
   const window = path.includes("two-factor") ? 10_000 : 60_000;
-  const max = path.includes("two-factor") ? 3 : path.endsWith("sign-in/email") ? 10 : 60;
-  const row = state.db.prepare(`INSERT INTO authThrottle(path,count,until) VALUES (?,1,?)
+  const clientMax = path.includes("two-factor") ? 3 : path.endsWith("sign-in/email") ? 10 : 60;
+  const globalMax = clientMax * 10;
+  const client = authClientAddress(req);
+  const bump = (key: string) => state.db.prepare(`INSERT INTO authThrottle(path,count,until) VALUES (?,1,?)
     ON CONFLICT(path) DO UPDATE SET count=CASE WHEN until<=? THEN 1 ELSE count+1 END,
-    until=CASE WHEN until<=? THEN excluded.until ELSE until END RETURNING count,until`).get(path, now+window, now, now) as { count: number; until: number };
-  if (row.count > max) throw new AuthError("RATE_LIMITED", 429, new Date(row.until).toISOString());
+    until=CASE WHEN until<=? THEN excluded.until ELSE until END RETURNING count,until`).get(key, now+window, now, now) as { count: number; until: number };
+  const rows = state.db.transaction(() => ({ client: bump(`c\0${path}\0${client}`), global: bump(`g\0${path}`) }))();
+  if (rows.client.count > clientMax || rows.global.count > globalMax) {
+    const until = Math.max(rows.client.count > clientMax ? rows.client.until : 0, rows.global.count > globalMax ? rows.global.until : 0);
+    throw new AuthError("RATE_LIMITED", 429, new Date(until).toISOString());
+  }
 }
 
 /** Handles the exact public auth surface. No raw library JSON or headers escape. */
@@ -111,7 +149,7 @@ export async function authRoute(req: IncomingMessage, res: ServerResponse, state
   const parsed = schemas[path as keyof typeof schemas].safeParse(await authBody(req));
   if (!parsed.success) throw new AuthError("INVALID_INPUT", 400);
   state.assertAvailable();
-  throttle(state, path);
+  throttle(state, path, req);
   const headers = browserHeaders(req);
   const session = await ownerSession(state.auth, state.db, state.config, headers);
   state.assertAvailable();

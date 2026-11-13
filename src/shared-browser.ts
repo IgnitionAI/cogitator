@@ -1,6 +1,8 @@
 import { chromium, type BrowserContext, type Page } from 'playwright-core';
 import { randomUUID } from 'node:crypto';
+import { lookup as dnsLookup } from 'node:dns/promises';
 import { mkdirSync, existsSync, chmodSync } from 'node:fs';
+import { BlockList, isIP } from 'node:net';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { readJson, atomicWriteJson } from './json-files.js';
@@ -20,6 +22,79 @@ export interface BrowserProfile { id: string; name: string; agentIds: string[] }
 interface Running { context: BrowserContext; pages: Map<string, Page> }
 export class BrowserProblem extends Error {}
 
+export type BrowserHostLookup = (hostname: string) => Promise<Array<{ address: string }>>;
+export interface BrowserUrlPolicy {
+  lookup?: BrowserHostLookup;
+  allowHosts?: Iterable<string>;
+  controllerOrigin?: string;
+  controllerPort?: string;
+}
+
+const privateV4 = new BlockList();
+privateV4.addSubnet('0.0.0.0', 8, 'ipv4');
+privateV4.addSubnet('10.0.0.0', 8, 'ipv4');
+privateV4.addSubnet('127.0.0.0', 8, 'ipv4');
+privateV4.addSubnet('169.254.0.0', 16, 'ipv4');
+privateV4.addSubnet('172.16.0.0', 12, 'ipv4');
+privateV4.addSubnet('192.168.0.0', 16, 'ipv4');
+const privateV6 = new BlockList();
+privateV6.addAddress('::', 'ipv6');
+privateV6.addAddress('::1', 'ipv6');
+privateV6.addSubnet('fc00::', 7, 'ipv6');
+privateV6.addSubnet('fe80::', 10, 'ipv6');
+
+function ipv4Mapped(address: string): string | undefined {
+  if (isIP(address) !== 6) return;
+  const host = address.includes('%') ? address.slice(0, address.indexOf('%')) : address;
+  const dotted = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(host);
+  if (dotted?.[1]) return dotted[1];
+  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(host);
+  if (!hex?.[1] || !hex[2]) return;
+  const hi = Number.parseInt(hex[1], 16);
+  const lo = Number.parseInt(hex[2], 16);
+  return `${(hi >> 8) & 255}.${hi & 255}.${(lo >> 8) & 255}.${lo & 255}`;
+}
+
+function privateOrLocalAddress(address: string): boolean {
+  const mapped = ipv4Mapped(address);
+  if (mapped) return privateOrLocalAddress(mapped);
+  if (isIP(address) === 4) return privateV4.check(address, 'ipv4');
+  if (isIP(address) === 6) return privateV6.check(address, 'ipv6');
+  return true;
+}
+
+async function resolveAddresses(hostname: string, lookup: BrowserHostLookup): Promise<string[]> {
+  if (isIP(hostname)) return [hostname];
+  try {
+    const records = await lookup(hostname);
+    return records.map(record => record.address).filter(address => address.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+function defaultHostLookup(hostname: string): Promise<Array<{ address: string }>> {
+  return dnsLookup(hostname, { all: true, verbatim: true });
+}
+
+function hostAllowList(raw: Iterable<string> | undefined): Set<string> {
+  return new Set([...(raw ?? [])].map(host => host.trim().toLowerCase()).filter(Boolean));
+}
+
+function envAllowHosts(): string[] {
+  return (process.env.COGITATOR_BROWSER_HOST_ALLOWLIST ?? '').split(',');
+}
+
+/** Policy used for the initial URL and every intercepted request, including redirects. */
+export async function browserUrlDenied(url: URL, opts: BrowserUrlPolicy = {}): Promise<boolean> {
+  const port = opts.controllerPort ?? process.env.COGITATOR_PORT ?? '5320';
+  if (url.port === port || (!!opts.controllerOrigin && url.origin === opts.controllerOrigin)) return true;
+  const allowHosts = hostAllowList(opts.allowHosts);
+  if (allowHosts.has(url.hostname.toLowerCase())) return false;
+  const addresses = await resolveAddresses(url.hostname, opts.lookup ?? defaultHostLookup);
+  return addresses.length === 0 || addresses.some(privateOrLocalAddress);
+}
+
 /** Profiles contain credentials on disk. No profile bytes, cookies or CDP endpoints leave this service. */
 export class SharedBrowser {
   private profiles: BrowserProfile[];
@@ -30,7 +105,11 @@ export class SharedBrowser {
   private readonly human = new Set<string>();
   private readonly epochs = new Map<string, number>();
   private closing = false;
-  constructor(home: string, private readonly db: Db, private readonly controllerOrigin?: string) {
+  private readonly hostLookup: BrowserHostLookup;
+  private readonly allowHosts: ReadonlySet<string>;
+  constructor(home: string, private readonly db: Db, private readonly controllerOrigin?: string, options?: { lookup?: BrowserHostLookup; allowHosts?: Iterable<string> }) {
+    this.hostLookup = options?.lookup ?? defaultHostLookup;
+    this.allowHosts = hostAllowList(options?.allowHosts ?? envAllowHosts());
     this.directory = join(home, 'browsers');
     mkdirSync(this.directory, { recursive: true, mode: 0o700 }); chmodSync(this.directory, 0o700);
     const stored = readJson<unknown>(join(this.directory, 'profiles.json'), []);
@@ -71,14 +150,17 @@ export class SharedBrowser {
     if (!this.agentProfiles(conversationId).some(p => p.id === id)) throw new BrowserProblem('BROWSER_ACCESS_DENIED');
     if (this.human.has(id)) throw new BrowserProblem('BROWSER_HUMAN_CONTROL');
   }
-  private validUrl(raw: string) {
+  private async validUrl(raw: string) {
     let url: URL; try { url = new URL(raw); } catch { throw new BrowserProblem('BROWSER_URL_INVALID'); }
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || this.blocked(url)) throw new BrowserProblem('BROWSER_URL_DENIED');
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || await this.blocked(url)) throw new BrowserProblem('BROWSER_URL_DENIED');
     return url.href;
   }
   private blocked(url: URL) {
-    // Never let the managed browser open its own controller/owner API.
-    return url.port === (process.env.COGITATOR_PORT ?? '5320') || (!!this.controllerOrigin && url.origin === this.controllerOrigin);
+    return browserUrlDenied(url, {
+      lookup: this.hostLookup,
+      allowHosts: this.allowHosts,
+      controllerOrigin: this.controllerOrigin,
+    });
   }
   private async launch(id: string): Promise<Running> {
     this.profile(id); if (this.closing) throw new BrowserProblem('BROWSER_STOPPING');
@@ -95,13 +177,13 @@ export class SharedBrowser {
       }); } catch { throw new BrowserProblem('BROWSER_START_FAILED'); }
       context.setDefaultTimeout(3000); context.setDefaultNavigationTimeout(15000);
       const run: Running = { context, pages: new Map() };
-      await context.route('**/*', route => {
+      await context.route('**/*', async route => {
         const url = new URL(route.request().url());
-        return this.blocked(url) ? route.abort() : route.continue();
+        return await this.blocked(url) ? route.abort() : route.continue();
       });
-      await context.routeWebSocket('**/*', socket => {
+      await context.routeWebSocket('**/*', async socket => {
         const url = new URL(socket.url()); url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
-        if (this.blocked(url)) socket.close(); else socket.connectToServer();
+        if (await this.blocked(url)) socket.close(); else socket.connectToServer();
       });
       const register = (page: Page) => {
         if (run.pages.size >= 8) { void page.close(); return; }
@@ -140,7 +222,7 @@ export class SharedBrowser {
       const run = await this.launch(id); check();
       let page = input.tabId ? run.pages.get(input.tabId) : undefined;
       if (input.action === 'open') {
-        const url = this.validUrl(input.url ?? ''); check();
+        const url = await this.validUrl(input.url ?? ''); check();
         if (run.pages.size >= 8) throw new BrowserProblem('BROWSER_TAB_LIMIT');
         page = [...run.pages.values()].find(p => p.url() === "about:blank") ?? await run.context.newPage(); check();
         await page.goto(url, { waitUntil: 'domcontentloaded' });
@@ -148,7 +230,7 @@ export class SharedBrowser {
         if (!page || page.isClosed()) throw new BrowserProblem('BROWSER_TAB_NOT_FOUND');
         const locator = input.selector ? page.locator(input.selector) : undefined;
         switch (input.action) {
-          case 'navigate': await page.goto(this.validUrl(input.url ?? ''), { waitUntil: 'domcontentloaded' }); break;
+          case 'navigate': await page.goto(await this.validUrl(input.url ?? ''), { waitUntil: 'domcontentloaded' }); break;
           case 'back': await page.goBack({ waitUntil: 'domcontentloaded' }); break;
           case 'forward': await page.goForward({ waitUntil: 'domcontentloaded' }); break;
           case 'reload': await page.reload({ waitUntil: 'domcontentloaded' }); break;

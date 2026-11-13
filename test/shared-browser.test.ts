@@ -7,7 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { createServer as httpServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { openDb } from '../src/db.js';
-import { SharedBrowser } from '../src/shared-browser.js';
+import { SharedBrowser, browserUrlDenied } from '../src/shared-browser.js';
 import { closeSharedBrowser } from '../src/browser-http.js';
 import { fixture, httpCall, origin } from './native-auth-fixture.js';
 import WebSocket from 'ws';
@@ -15,7 +15,7 @@ import WebSocket from 'ws';
 function setup(){const home=mkdtempSync(join(tmpdir(),'browser-test-'));const {db}=openDb(join(home,'db.sqlite'));const agent=randomUUID(),other=randomUUID(),conv=randomUUID();
  for(const [id,name] of [[agent,'allowed'],[other,'other']])db.prepare('INSERT INTO agent_preset(id,slug,name,provider,model) VALUES (?,?,?,?,?)').run(id,name,name,'fake','fake');
  db.prepare('INSERT INTO conversation(id,agent_id,provider,model) VALUES (?,?,?,?)').run(conv,agent,'fake','fake');
- return {home,db,agent,other,conv,browser:new SharedBrowser(home,db)};}
+ return {home,db,agent,other,conv,browser:new SharedBrowser(home,db,undefined,{allowHosts:['127.0.0.1']})};}
 
 test('profiles persist, default to human control, and enforce current agent assignment',async()=>{
  const f=setup();try{
@@ -67,12 +67,67 @@ test('real Chromium: navigation, agent interaction, takeover, isolated persisten
   await assert.rejects(f.browser.act(profile.id,{action:'open',url:'http://localhost:5320/api/status'}),/URL_DENIED/);
   const separate=f.browser.create({name:'Development',agentIds:[]});await f.browser.act(separate.id,{action:'open',url});
   const other=(await f.browser.tabs(separate.id)).at(-1)!;assert.match(JSON.stringify(await f.browser.act(separate.id,{action:'read',tabId:other.id})),/Guest/);
-  await f.browser.dispose();const restarted=new SharedBrowser(f.home,f.db);
+  await f.browser.dispose();const restarted=new SharedBrowser(f.home,f.db,undefined,{allowHosts:['127.0.0.1']});
   try{await restarted.act(profile.id,{action:'open',url});const t=(await restarted.tabs(profile.id)).at(-1)!;assert.match(JSON.stringify(await restarted.act(profile.id,{action:'read',tabId:t.id})),/Signed in/);assert.equal(restarted.list()[0]?.humanControl,true);}finally{await restarted.dispose();}
  }finally{await f.browser.dispose();f.db.close();await new Promise<void>(done=>http.close(()=>done()));}
 });
 
+function unexpectedLookup(hostname: string): Promise<Array<{ address: string }>> {
+  return Promise.reject(new Error(`unexpected DNS lookup: ${hostname}`));
+}
+function publicLookup(hostname: string): Promise<Array<{ address: string }>> {
+  if (hostname === 'example.com') return Promise.resolve([{ address: '93.184.216.34' }]);
+  return unexpectedLookup(hostname);
+}
+
+test('managed browser refuses loopback, link-local and private literals', async () => {
+  const lookup = async (hostname: string) => {
+    if (hostname === 'localhost') return [{ address: '127.0.0.1' }];
+    return unexpectedLookup(hostname);
+  };
+  const denied = [
+    'http://127.0.0.1:8080/',
+    'http://localhost/',
+    'http://169.254.169.254/',
+    'http://10.1.2.3/',
+    'http://[::1]/',
+  ];
+  for (const href of denied) {
+    assert.equal(await browserUrlDenied(new URL(href), { lookup }), true, href);
+  }
+});
+
+test('managed browser refuses a public hostname that resolves to a private address', async () => {
+  const lookup = async (hostname: string) => {
+    if (hostname === 'public.example') return [{ address: '10.0.0.8' }];
+    return unexpectedLookup(hostname);
+  };
+  assert.equal(await browserUrlDenied(new URL('https://public.example/login'), { lookup }), true);
+});
+
+test('managed browser refuses a redirect from a public URL to an internal address', async () => {
+  const lookup = async (hostname: string) => {
+    if (hostname === 'cdn.example') return [{ address: '93.184.216.34' }];
+    return unexpectedLookup(hostname);
+  };
+  assert.equal(await browserUrlDenied(new URL('https://cdn.example/go'), { lookup }), false);
+  // Same check runs on every intercepted request, including the redirect target.
+  assert.equal(await browserUrlDenied(new URL('http://127.0.0.1:9000/secret'), { lookup }), true);
+});
+
+test('managed browser still allows a normal public URL', async () => {
+  assert.equal(await browserUrlDenied(new URL('https://example.com/docs'), { lookup: publicLookup }), false);
+});
+
+test('managed browser allows an address placed on the explicit allow list', async () => {
+  const url = new URL('http://127.0.0.1:3000/');
+  assert.equal(await browserUrlDenied(url, { lookup: unexpectedLookup, allowHosts: [] }), true);
+  assert.equal(await browserUrlDenied(url, { lookup: unexpectedLookup, allowHosts: ['127.0.0.1'] }), false);
+});
+
 test('live view rejects foreign origins and closes promptly on logout',{skip:!real,timeout:60000},async()=>{
+ const previousAllow=process.env.COGITATOR_BROWSER_HOST_ALLOWLIST;
+ process.env.COGITATOR_BROWSER_HOST_ALLOWLIST='127.0.0.1';
  const f=await fixture('password');const owner=f.browser();await owner.login();
  const demo=httpServer((_req,res)=>res.end('<h1>Public synthetic page</h1>'));await new Promise<void>(done=>demo.listen(0,'127.0.0.1',done));
  let peer:WebSocket|undefined;
@@ -85,5 +140,9 @@ test('live view rejects foreign origins and closes promptly on logout',{skip:!re
   await new Promise<void>((resolve,reject)=>{peer!.on('message',(_data,binary)=>{if(binary)resolve();});peer!.on('error',reject);setTimeout(()=>reject(new Error('no live frame')),8000).unref();});
   const closed=new Promise<void>((resolve,reject)=>{peer!.once('close',()=>resolve());setTimeout(()=>reject(new Error('logout left stream alive')),3000).unref();});
   await owner.call('/api/auth/sign-out',{});await closed;
- }finally{peer?.terminate();await closeSharedBrowser(f.app);await f.close();await new Promise<void>(done=>demo.close(()=>done()));}
+ }finally{
+  if(previousAllow===undefined) delete process.env.COGITATOR_BROWSER_HOST_ALLOWLIST;
+  else process.env.COGITATOR_BROWSER_HOST_ALLOWLIST=previousAllow;
+  peer?.terminate();await closeSharedBrowser(f.app);await f.close();await new Promise<void>(done=>demo.close(()=>done()));
+ }
 });

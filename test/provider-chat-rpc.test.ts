@@ -11,7 +11,7 @@ import { createConversation } from "../src/conversations.js";
 import { createApp } from "../src/server.js";
 import { PiPool } from "../src/pool.js";
 import { piCliPath, piCodingAgent } from "../src/host-pi.js";
-import { disposeSetprivShims, guardedRpcSpawn } from "../src/pi-child.js";
+import { createGuardedRpcClient, disposeSetprivShims } from "../src/pi-child.js";
 import { upsertProvider } from "../src/registry.js";
 
 // A real pi subprocess talks only to a disposable local HTTP fixture. No provider account or paid API.
@@ -32,12 +32,12 @@ test("configured custom provider completes an HTTP chat through the actual pi RP
   });
   await new Promise<void>(resolve => modelServer.listen(0, "127.0.0.1", resolve));
   const { db } = openDb(paths.db);
-  const pool = new PiPool({ factory: options => new piCodingAgent.RpcClient(guardedRpcSpawn(piCliPath, {
+  const pool = new PiPool({ factory: options => createGuardedRpcClient(piCodingAgent.RpcClient, piCliPath, {
     ...options,
     cwd: home,
     args: [...options.args, "--offline", "--no-extensions", "--no-skills", "--no-tools", "--no-prompt-templates"],
     env: { ...options.env, HOME: home },
-  })) });
+  }) });
   const app = createApp({ db, dbPath: paths.db, dbVersion: 10, paths, pool });
   const events = new AbortController();
   try {

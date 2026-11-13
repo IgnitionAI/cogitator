@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPaths } from "./paths.js";
+import { buildChildEnv, providerFromSpawnArgs } from "./spawn.js";
 
 /**
  * PDEATHSIG (PR_SET_PDEATHSIG) est délivré à la mort du *thread* parent, pas du
@@ -165,14 +166,49 @@ export interface GuardedRpcSpawn {
   shimDir?: string;
 }
 
-/** Options RpcClient : setpriv via PATH si possible, sinon wrapper watchdog. */
+export interface GuardedRpcClient {
+  start(): Promise<void>;
+  stop?: () => Promise<void>;
+}
+
+/**
+ * Remplace `process.env` le temps d'un appel synchrone jusqu'au premier await.
+ * RpcClient.start() fait `env: { ...process.env, ...options.env }` puis `await`
+ * : le spawn a déjà eu lieu, on restaure avant de rendre la main à l'event loop.
+ */
+export function runWithProcessEnv<T>(env: Record<string, string>, fn: () => T): T {
+  const snapshot: Record<string, string | undefined> = {};
+  for (const key of Object.keys(process.env)) snapshot[key] = process.env[key];
+  try {
+    for (const key of Object.keys(process.env)) delete process.env[key];
+    Object.assign(process.env, env);
+    return fn();
+  } finally {
+    for (const key of Object.keys(process.env)) delete process.env[key];
+    for (const [key, value] of Object.entries(snapshot)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+export function bindChildEnvOnStart<T extends GuardedRpcClient>(client: T, env: Record<string, string>): T {
+  const start = client.start.bind(client);
+  client.start = () => runWithProcessEnv(env, start);
+  return client;
+}
+
+/** Options RpcClient : env à liste d'autorisation, setpriv via PATH si possible, sinon wrapper watchdog. */
 export function guardedRpcSpawn(
   piCliPath: string,
   opts: { cwd: string; args: string[]; env?: Record<string, string> },
 ): GuardedRpcSpawn {
-  const env: Record<string, string> = { ...opts.env };
+  const env = buildChildEnv({
+    provider: providerFromSpawnArgs(opts.args),
+    extra: opts.env,
+  });
   const home = env.COGITATOR_HOME ?? getPaths().home;
-  const origPath = env.PATH ?? process.env.PATH ?? "";
+  const origPath = env.PATH ?? "";
   const shim = setprivShimDir(home);
   if (shim) {
     env.PATH = origPath ? `${shim}:${origPath}` : shim;
@@ -180,4 +216,13 @@ export function guardedRpcSpawn(
   }
   env.COGITATOR_PI_CLI = piCliPath;
   return { cliPath: piRpcWrapPath(), cwd: opts.cwd, args: opts.args, env };
+}
+
+export function createGuardedRpcClient<T extends GuardedRpcClient>(
+  RpcClient: new (opts: GuardedRpcSpawn) => T,
+  piCliPath: string,
+  opts: { cwd: string; args: string[]; env?: Record<string, string> },
+): T {
+  const spawnOpts = guardedRpcSpawn(piCliPath, opts);
+  return bindChildEnvOnStart(new RpcClient(spawnOpts), spawnOpts.env);
 }

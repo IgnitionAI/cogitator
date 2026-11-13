@@ -4,7 +4,7 @@
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
 import { OWNED_PI_ENV, ownedPiMarker } from "../../src/reap-orphans.js";
-import { guardedRpcSpawn } from "../../src/pi-child.js";
+import { bindChildEnvOnStart, guardedRpcSpawn } from "../../src/pi-child.js";
 
 const home = process.argv[2]!;
 const cliPath = process.argv[3]!;
@@ -17,7 +17,7 @@ const spawn = guardedRpcSpawn(cliPath, {
   args: ["--model", "openai/gpt-5.4", "--offline", "--no-extensions", "--no-skills", "--no-tools"],
   env: { HOME: home, [OWNED_PI_ENV]: ownedPiMarker() ?? "", COGITATOR_HOME: home },
 });
-const client = new RpcClient(spawn);
+const client = bindChildEnvOnStart(new RpcClient(spawn), spawn.env);
 await client.start();
 process.send?.({ pid: process.pid, rpcPid: client.process?.pid });
 setInterval(() => {}, 1000);

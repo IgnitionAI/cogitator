@@ -15,7 +15,7 @@ import { authCommand } from "./auth-cli.js";
 import { loadAuth, lockHome, protectedRequired, type AuthState } from "./auth-state.js";
 import { listenOwnerSocket } from "./owner-transport.js";
 import { makeSpawner } from "./spawner.js";
-import { disposeSetprivShims, guardedRpcSpawn, reapStaleSetprivShims } from "./pi-child.js";
+import { createGuardedRpcClient, disposeSetprivShims, reapStaleSetprivShims } from "./pi-child.js";
 import { mkdirSync } from "node:fs";
 import { packageVersion } from "./pi.js";
 import { isProcessAlive, removeServerIdentity, writeServerIdentity } from "./server-identity.js";
@@ -63,7 +63,7 @@ async function start(explicit: boolean): Promise<void> {
     seedDefaultAgents(db, paths);
     const catalog = db;
     const pool = new PiPool({
-      factory: (opts) => new piCodingAgent.RpcClient(guardedRpcSpawn(piCliPath, opts)),
+      factory: (opts) => createGuardedRpcClient(piCodingAgent.RpcClient, piCliPath, opts),
       callbacks: { onStatus: (convId, status) => setConversationStatus(catalog, convId, status) },
     });
     const events = new EventEmitter();

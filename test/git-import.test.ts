@@ -489,7 +489,7 @@ test("import git : « déjà importé » seulement si un workspace pointe dessus
   assert.equal(again.status, 400);
   assert.match(String(again.body.error), /^workspace déjà enregistré pour /);
   // suppression du workspace → réimport : le dossier existant est réutilisé, pas refusé
-  const del = await fetch(`${base}/api/workspaces/${first.body.workspace!.id}`, { method: "DELETE" });
+  const del = await fetch(`${base}/api/workspaces/${first.body.workspace!.id}`, { method: "DELETE", headers: { "content-type": "application/json" } });
   assert.equal(del.status, 200);
   const reimport = await postWorkspace({ git_url: src });
   assert.equal(reimport.status, 201);

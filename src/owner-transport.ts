@@ -68,8 +68,9 @@ export async function ownerRequest<T>(method: string, path: string, body?: unkno
   const home = getPaths(env).home;
   const required = authenticationRequired(env);
   if (env.COGITATOR_URL !== undefined || !protectedRequired(home, required)) {
+    const mutation = method !== "GET" && method !== "HEAD";
     const response = await fetch(`${env.COGITATOR_URL ?? BASE_URL}${path}`, { method,
-      ...(body !== undefined ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}) });
+      ...(mutation ? { headers: { "content-type": "application/json" }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) } : {}) });
     const data = await response.json() as Record<string, unknown>;
     if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : `HTTP ${response.status}`);
     return data as T;

@@ -20,7 +20,7 @@ import { requestAuthorization } from "./request-authorization.js";
 import type { AuthState } from "./auth-state.js";
 import { protectedRequired } from "./auth-state.js";
 import { AuthError, ownerSession, requireApproved, sessionById } from "./native-auth.js";
-import { authFailure, authJson, authRoute, browserHeaders, checkResponse, localCheck, responseChecks, validateBoundary } from "./auth-http.js";
+import { authFailure, authJson, authRoute, browserHeaders, checkResponse, localCheck, responseChecks, validateBoundary, validateLocalBoundary } from "./auth-http.js";
 import type { Db } from "./db.js";
 import { packageVersion, piVersion } from "./pi.js";
 import type { Paths } from "./paths.js";
@@ -199,6 +199,10 @@ function readBody(req: IncomingMessage): Promise<unknown> {
     });
     req.on("end", () => {
       if (!chunks.length) return resolve({});
+      if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(String(req.headers["content-type"] ?? ""))) {
+        reject(new AuthError("INVALID_INPUT", 400));
+        return;
+      }
       try {
         resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
       } catch {
@@ -1615,7 +1619,10 @@ export function createApp(opts: AppOptions): Server {
       if (state) {
         state.assertAvailable();
         if (!privateRequest) validateBoundary(req, state);
-      } else localCheck(paths.home);
+      } else {
+        localCheck(paths.home);
+        if (!privateRequest) validateLocalBoundary(req);
+      }
       const url = new URL(req.url ?? "/", `http://${HOST}`);
       if (req.url === "/api/status" && req.method === "GET") return authJson(res, 200, { service: "cogitator", authentication: state ? "required" : "local" });
       if (url.pathname.startsWith("/api/auth")) {
@@ -1649,7 +1656,7 @@ export function createApp(opts: AppOptions): Server {
       await requestAuthorization.run(check, () => found.handler({ params: found.params, query: url.searchParams, body, req, res, check }));
     } catch (err) {
       if (err instanceof AuthError || opts.auth || protectedRequired(paths.home)) authFailure(res, err);
-      else if (!res.headersSent) sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+      else if (!res.headersSent) sendJson(res, 500, { error: "INTERNAL" });
       else res.end();
     }
   });

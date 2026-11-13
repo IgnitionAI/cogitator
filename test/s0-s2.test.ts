@@ -153,7 +153,7 @@ test("DELETE workspace SET NULL on agent default_workspace_id", async () => {
       default_workspace_id: ws.workspace.id, skills: [], mcp_servers: [],
     }),
   })).json() as { agent: { id: string } };
-  const del = await fetch(`${base}/api/workspaces/${ws.workspace.id}`, { method: "DELETE" });
+  const del = await fetch(`${base}/api/workspaces/${ws.workspace.id}`, { method: "DELETE", headers: { "content-type": "application/json" } });
   assert.equal(del.status, 200);
   const again = await (await fetch(`${base}/api/agents/${bot.agent.id}`)).json() as {
     agent: { default_workspace_id: string | null };
@@ -190,7 +190,7 @@ test("PUT assigns then re-assigns a bot's default workspace (picker path)", asyn
   const r1 = await (await put({ ...baseBody, default_workspace_id: wsA.workspace.id })).json() as { agent: { default_workspace_id: string } };
   assert.equal(r1.agent.default_workspace_id, wsA.workspace.id);
 
-  await fetch(`${base}/api/workspaces/${wsA.workspace.id}`, { method: "DELETE" });
+  await fetch(`${base}/api/workspaces/${wsA.workspace.id}`, { method: "DELETE", headers: { "content-type": "application/json" } });
   const cleared = await (await fetch(`${base}/api/agents/${created.agent.id}`)).json() as { agent: { default_workspace_id: string | null } };
   assert.equal(cleared.agent.default_workspace_id, null);
 
@@ -225,7 +225,7 @@ test("POST /api/workspaces?git_url clones a repo and enrolls it", async () => {
   assert.equal(again.status, 400); // workspace déjà enregistré pour ce clone
 
   // suppression du workspace → réimport possible : le dossier cloné est réutilisé (S2/D4)
-  const del = await fetch(`${base}/api/workspaces/${workspace.id}`, { method: "DELETE" });
+  const del = await fetch(`${base}/api/workspaces/${workspace.id}`, { method: "DELETE", headers: { "content-type": "application/json" } });
   assert.equal(del.status, 200);
   const reimport = await fetch(`${base}/api/workspaces`, {
     method: "POST", headers: { "content-type": "application/json" },

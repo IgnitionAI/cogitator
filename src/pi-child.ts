@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -180,4 +180,42 @@ export function guardedRpcSpawn(
   }
   env.COGITATOR_PI_CLI = piCliPath;
   return { cliPath: piRpcWrapPath(), cwd: opts.cwd, args: opts.args, env };
+}
+
+export interface ChildExit {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+}
+
+/**
+ * Processus OS derrière un RpcClient (`client.process`, champ d'instance).
+ * Absent ou illisible → on ne peut pas conclure à une mort.
+ */
+export function childProcessOf(client: object): ChildProcess | undefined {
+  const proc = (client as { process?: unknown }).process;
+  if (!proc || typeof proc !== "object") return undefined;
+  const child = proc as ChildProcess;
+  if (typeof child.on !== "function" || typeof child.off !== "function") return undefined;
+  return child;
+}
+
+/** `exitCode`/`signalCode` renseignés : le process a quitté. Sans handle OS, on ne sait pas. */
+export function childHasExited(child: ChildProcess | undefined): boolean {
+  if (!child) return false;
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
+/** Écoute `exit` et `close` (les deux peuvent arriver, le listener doit être idempotent). */
+export function subscribeChildExit(client: object, listener: (exit: ChildExit) => void): () => void {
+  const child = childProcessOf(client);
+  if (!child) return () => {};
+  const handler = (code: number | null, signal: NodeJS.Signals | null) => {
+    listener({ code, signal });
+  };
+  child.on("exit", handler);
+  child.on("close", handler);
+  return () => {
+    child.off("exit", handler);
+    child.off("close", handler);
+  };
 }

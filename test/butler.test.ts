@@ -130,7 +130,7 @@ test("conversation sans rien préciser → agent par défaut global", async () =
 
 test("route POST /api/agents/:id/default", async () => {
   const maj = db.prepare("SELECT id FROM agent_preset WHERE slug = 'majordome'").get() as { id: string };
-  const res = await fetch(`${base}/api/agents/${maj.id}/default`, { method: "POST" });
+  const res = await fetch(`${base}/api/agents/${maj.id}/default`, { method: "POST", headers: { "content-type": "application/json" } });
   assert.equal(res.status, 200);
   assert.equal(getDefaultAgentId(db), maj.id);
 });

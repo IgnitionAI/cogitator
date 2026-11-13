@@ -49,6 +49,20 @@ export function validateBoundary(req: IncomingMessage, state: AuthState): void {
   if (!["GET", "HEAD"].includes(req.method ?? "") && origin !== state.config.origin) throw new AuthError("FORBIDDEN", 403);
   if (!["GET", "HEAD"].includes(req.method ?? "") && !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(String(req.headers["content-type"] ?? ""))) throw new AuthError("INVALID_INPUT", 400);
 }
+
+/** Loopback HTTP surface: same CSRF/content-type rules as `validateBoundary`, with Host limited to this process. */
+export function validateLocalBoundary(req: IncomingMessage): void {
+  const port = req.socket.localPort;
+  const host = (req.headers.host ?? "").toLowerCase();
+  if (port === undefined || (host !== `127.0.0.1:${port}` && host !== `localhost:${port}`)) throw new AuthError("FORBIDDEN", 403);
+  const origin = req.headers.origin;
+  const allowedOrigin = origin === `http://127.0.0.1:${port}` || origin === `http://localhost:${port}`;
+  const raw = req.url ?? "";
+  const publicNavigation = req.method === "GET" && (raw === "/" || raw === "/index.html")
+    && !origin && req.headers["sec-fetch-mode"] === "navigate" && req.headers["sec-fetch-dest"] === "document";
+  if ((origin && !allowedOrigin) || (req.headers["sec-fetch-site"] === "cross-site" && !publicNavigation)) throw new AuthError("FORBIDDEN", 403);
+  if (!["GET", "HEAD"].includes(req.method ?? "") && !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(String(req.headers["content-type"] ?? ""))) throw new AuthError("INVALID_INPUT", 400);
+}
 async function authBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let length = 0;

@@ -85,10 +85,11 @@ test("local-mode instance observes newly required marker without restarting; pro
   await new Promise<void>(done=>local.listen(0,'127.0.0.1',done));
   const port=(local.address() as {port:number}).port;
   try {
-    assert.equal((await httpCall(port,'/api/status')).data.authentication,'local');
+    const localHost={host:`127.0.0.1:${port}`};
+    assert.equal((await httpCall(port,'/api/status','GET',undefined,localHost)).data.authentication,'local');
     writeFileSync(authPaths(localHome).required,'required',{mode:0o600});
-    assert.equal((await httpCall(port,'/api/health')).data.error,'AUTH_UNAVAILABLE');
-    assert.equal((await httpCall(port,'/api/status')).status,503);
+    assert.equal((await httpCall(port,'/api/health','GET',undefined,localHost)).data.error,'AUTH_UNAVAILABLE');
+    assert.equal((await httpCall(port,'/api/status','GET',undefined,localHost)).status,503);
     maintenance(f.home);
     assert.equal((await httpCall(f.port,'/api/health')).status,503);
   } finally {await closeServer(local);await f.close();}

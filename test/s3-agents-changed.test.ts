@@ -150,6 +150,6 @@ test("DELETE /api/agents émet agents_changed", async () => {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ name: "Éphémère", provider: "openai", model: "gpt-5.4", skills: [], mcp_servers: [] }),
   })).json() as { agent: { id: string } };
-  const deleted = await withEvent("agents_changed", () => fetch(`${base}/api/agents/${created.agent.id}`, { method: "DELETE" }));
+  const deleted = await withEvent("agents_changed", () => fetch(`${base}/api/agents/${created.agent.id}`, { method: "DELETE", headers: { "content-type": "application/json" } }));
   assert.equal(deleted.status, 200);
 });

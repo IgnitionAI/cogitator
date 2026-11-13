@@ -206,7 +206,7 @@ test("validate : preset valide → aucune erreur", async () => {
 });
 
 test("DELETE retire le preset + ses .md, garde les étrangers", async () => {
-  const res = await fetch(`${base}/api/agents/${agentId}`, { method: "DELETE" });
+  const res = await fetch(`${base}/api/agents/${agentId}`, { method: "DELETE", headers: { "content-type": "application/json" } });
   assert.equal(res.status, 200);
   assert.ok(!existsSync(join(agentsDir, "noo-rag-expert-critic.md")));
   assert.ok(existsSync(join(agentsDir, "auditor.md")));

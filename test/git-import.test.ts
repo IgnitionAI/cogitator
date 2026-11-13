@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test, before, after } from "node:test";
 import type { AddressInfo } from "node:net";
 import { basename, dirname, join } from "node:path";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import Database from "better-sqlite3";
@@ -212,6 +212,24 @@ test("cloneRepo : clone réel d'un dépôt local (S3)", async () => {
   assert.ok("dir" in res);
   assert.equal(existsSync(join(dest, ".git")), true);
   assert.equal(readFileSync(join(dest, "README.md"), "utf8"), "# src-clone\n");
+});
+
+test("cloneRepo : un lien symbolique du dépôt source n'est pas recréé (core.symlinks=false)", async () => {
+  const src = join(home, "srcs", "symlink-sidecar");
+  mkdirSync(src, { recursive: true });
+  writeFileSync(join(src, "README.md"), "# symlink-sidecar\n");
+  symlinkSync("/tmp/secret-outside-board.json", join(src, "cogitator.board.json"));
+  const git = (...args: string[]) => execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd: src, stdio: ["ignore", "ignore", "ignore"] });
+  git("init", "--quiet");
+  git("add", ".");
+  git("commit", "--quiet", "-m", "init");
+  const dest = join(root(), "symlink-sidecar");
+  const res = await cloneRepo(src, dest);
+  assert.ok("dir" in res);
+  const planted = join(dest, "cogitator.board.json");
+  assert.equal(existsSync(planted), true);
+  assert.equal(lstatSync(planted).isSymbolicLink(), false);
+  assert.equal(readFileSync(planted, "utf8"), "/tmp/secret-outside-board.json");
 });
 
 test("cloneRepo : échec → erreur cataloguée, aucun dossier résiduel (S3, critère 4)", async () => {

@@ -170,7 +170,7 @@ export async function cloneRepo(url: string, dest: string, connectionEnv?: NodeJ
     await new Promise<void>((resolvePromise, reject) => {
       execFile(
         "git",
-        [...(github ? ["-c", "credential.https://github.com.helper=", "-c", "credential.https://github.com.helper=!gh auth git-credential"] : []), "clone", "--quiet", ...(github ? ["--config", "credential.https://github.com.helper=", "--config", "credential.https://github.com.helper=!gh auth git-credential"] : []), "--", source, dest],
+        ["-c", "core.symlinks=false", ...(github ? ["-c", "credential.https://github.com.helper=", "-c", "credential.https://github.com.helper=!gh auth git-credential"] : []), "clone", "--quiet", ...(github ? ["--config", "credential.https://github.com.helper=", "--config", "credential.https://github.com.helper=!gh auth git-credential"] : []), "--", source, dest],
         { timeout: CLONE_TIMEOUT_MS, env: { ...(connectionEnv ?? process.env), GIT_TERMINAL_PROMPT: "0" } },
         (err, _stdout, stderr) => (err ? reject(new Error(gitErrorDetail(stderr) || gitErrorDetail(err.message))) : resolvePromise()),
       );

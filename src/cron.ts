@@ -209,6 +209,22 @@ function runningRunFor(db: Db, taskId: string, currentRunId: string): CronRunRow
   return (db.prepare("SELECT * FROM cron_run WHERE task_id = ? AND status = 'running' AND id != ? ORDER BY started_at DESC, rowid DESC LIMIT 1").get(taskId, currentRunId) as CronRunRow | undefined) ?? null;
 }
 
+/** Au boot : clôt les `cron_run` encore `running` (crash). Les ids encore tenus par ce process sont épargnés. */
+export function recoverStaleCronRuns(db: Db, exceptRunIds: readonly string[] = []): number {
+  const message = "host restarted during run";
+  if (exceptRunIds.length === 0) {
+    return db.prepare(
+      `UPDATE cron_run SET status = 'interrupted', finished_at = datetime('now'), error = ?
+       WHERE status = 'running'`,
+    ).run(message).changes;
+  }
+  const placeholders = exceptRunIds.map(() => "?").join(", ");
+  return db.prepare(
+    `UPDATE cron_run SET status = 'interrupted', finished_at = datetime('now'), error = ?
+     WHERE status = 'running' AND id NOT IN (${placeholders})`,
+  ).run(message, ...exceptRunIds).changes;
+}
+
 function createRun(db: Db, taskId: string): string {
   const id = randomUUID();
   db.prepare("INSERT INTO cron_run (id, task_id) VALUES (?, ?)").run(id, taskId);
@@ -259,6 +275,7 @@ function lastSessionFile(db: Db, taskId: string): string | null {
 export class CronService {
   private timer: ReturnType<typeof setInterval> | null = null;
   private firing = new Set<string>(); // garde anti-recouvrement dans un tick
+  private liveRunIds = new Set<string>();
   private team: LaneDispatcher | undefined;
   private lastTickAt: Date | null = null;
 
@@ -301,8 +318,14 @@ export class CronService {
 
   start(intervalMs = DEFAULT_TICK_MS): void {
     if (this.timer) return;
+    this.recoverStaleRuns();
     this.lastTickAt = new Date();
     this.timer = setInterval(() => this.tick().catch(() => undefined), intervalMs);
+  }
+
+  /** Clôt les runs `running` orphelins ; laisse ceux que ce process est en train d'exécuter. */
+  recoverStaleRuns(): number {
+    return recoverStaleCronRuns(this.opts.db, [...this.liveRunIds]);
   }
 
   stop(): void {
@@ -324,6 +347,7 @@ export class CronService {
     }
     this.firing.add(taskId);
     const runId = createRun(db, taskId);
+    this.liveRunIds.add(runId);
     db.prepare("UPDATE cron_task SET last_run_at = ? WHERE id = ?").run(now.toISOString(), taskId);
     this.opts.notify?.({ type: "cron_run_started", taskId, runId, name: task.name });
 
@@ -363,6 +387,7 @@ export class CronService {
         await pool.evict(convId).catch(() => undefined);
         db.prepare("DELETE FROM conversation WHERE id = ?").run(convId);
       }
+      this.liveRunIds.delete(runId);
       this.firing.delete(taskId);
     }
   }
@@ -370,12 +395,19 @@ export class CronService {
   /** Conversation éphémère du run, dans le workspace de la tâche (session reprise si append_session). */
   private createRunConversation(task: CronTaskRow, preset: AgentPreset): ConversationRow {
     const { db } = this.opts;
+    const resumeFile = task.output_policy === "append_session" ? lastSessionFile(db, task.id) : null;
+    if (resumeFile) {
+      const existing = db.prepare("SELECT id FROM conversation WHERE session_file = ?").get(resumeFile) as { id: string } | undefined;
+      if (existing) {
+        db.prepare("UPDATE conversation SET title = ? WHERE id = ?").run(`[cron] ${task.name}`, existing.id);
+        return getConversation(db, existing.id)!;
+      }
+    }
     const conv = createConversation(db, {
       workspaceId: task.workspace_id,
       agentId: preset.id,
       spawn: spawnConfigFromPreset(preset),
     });
-    const resumeFile = task.output_policy === "append_session" ? lastSessionFile(db, task.id) : null;
     if (resumeFile) db.prepare("UPDATE conversation SET session_file = ? WHERE id = ?").run(resumeFile, conv.id);
     db.prepare("UPDATE conversation SET title = ? WHERE id = ?").run(`[cron] ${task.name}`, conv.id);
     return getConversation(db, conv.id)!;

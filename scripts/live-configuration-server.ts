@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { mkdirSync, writeFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getPackageDir, RpcClient } from '@earendil-works/pi-coding-agent';
+import { createGuardedRpcClient } from '../src/pi-child.js';
 import { openDb } from '../src/db.js';
 import { getPaths } from '../src/paths.js';
 import { PiPool } from '../src/pool.js';
@@ -55,7 +56,7 @@ writeFileSync(join(paths.piAgentDir, 'settings.json'), JSON.stringify({ defaultP
 let opened = openDb(paths.db);
 const clients: RpcClient[] = [];
 const makePool = () => new PiPool({ max: 8, factory: opts => {
-  const client = new RpcClient({ cliPath: join(getPackageDir(), 'dist/cli.js'), cwd: join(root, 'workspace'),
+  const client = createGuardedRpcClient(RpcClient, join(getPackageDir(), 'dist/cli.js'), { cwd: join(root, 'workspace'),
     args: [...opts.args, '--no-extensions', '--no-skills', '--no-prompt-templates', '--no-context-files', '--no-tools', '--offline'], env: opts.env });
   const clientId = clients.push(client);
   // Passive tracing: every method still calls the official RpcClient implementation.

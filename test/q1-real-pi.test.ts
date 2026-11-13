@@ -10,7 +10,7 @@ import { openDb } from "../src/db.js";
 import { PiPool } from "../src/pool.js";
 import { enqueue, LaneDispatcher, listItems } from "../src/team-queue.js";
 import { OWNED_PI_ENV, ownedPiMarker, processIsGone, reapOrphanOwnedPi } from "../src/reap-orphans.js";
-import { disposeSetprivShims, guardedRpcSpawn } from "../src/pi-child.js";
+import { bindChildEnvOnStart, disposeSetprivShims, guardedRpcSpawn } from "../src/pi-child.js";
 
 function resolvePi(): { bin: string; cli: string; pkg: string } | undefined {
   const bin = process.env.COGITATOR_PI_BIN;
@@ -60,7 +60,7 @@ test("e2e pi réel : un message passe par queue_item jusqu'au process rpc", { ti
         env: { ...opts.env, HOME: home, [OWNED_PI_ENV]: ownedPiMarker() ?? "", COGITATOR_HOME: home },
       });
       shimDir = spawn.shimDir;
-      const client = new RpcClient(spawn);
+      const client = bindChildEnvOnStart(new RpcClient(spawn), spawn.env);
       const start = client.start.bind(client);
       client.start = async () => {
         await start();

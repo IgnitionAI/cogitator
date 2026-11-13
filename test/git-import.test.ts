@@ -17,6 +17,11 @@ process.env.COGITATOR_HOME = home;
 process.env.COGITATOR_PI_AGENT_DIR = piDir;
 process.env.COGITATOR_AGENTS_DIR = join(piDir, "agents");
 process.env.COGITATOR_SKILLS_DIRS = join(home, "skills");
+// Isolate `git remote get-url` from the runner's url.*.insteadof rewrites so M2
+// compares the stored origin, not a rewritten GitHub URL.
+process.env.GIT_CONFIG_GLOBAL = "/dev/null";
+process.env.GIT_CONFIG_SYSTEM = "/dev/null";
+process.env.GIT_CONFIG_NOSYSTEM = "1";
 writeFileSync(join(piDir, "models-store.json"), JSON.stringify({ openai: { models: [{ id: "gpt-5.4" }] } }));
 
 const { normalizeGitUrl, localDirFor, cloneRepo, gitErrorDetail, isInsideDir } = await import("../src/git-import.js");

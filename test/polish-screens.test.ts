@@ -15,7 +15,10 @@ const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(
 function harness(screen: string, api: object, fetch?: unknown, component = "default") {
   const slots: unknown[] = [];
   let cursor = 0;
-  let mounted = false;
+  const effectSlots: Array<{ deps?: unknown[] }> = [];
+  let effectCursor = 0;
+  const callbackSlots: Array<{ value?: unknown; deps?: unknown[] }> = [];
+  let callbackCursor = 0;
   const effects: Array<() => void> = [];
   const exports: Record<string, (props: unknown) => Element> = {};
   const jsx = (type: unknown, props: Element["props"]): Element =>
@@ -50,8 +53,21 @@ function harness(screen: string, api: object, fetch?: unknown, component = "defa
           if (!(index in slots)) slots[index] = { current: initial };
           return slots[index];
         },
-        useCallback: (callback: unknown) => callback,
-        useEffect: (effect: () => void) => { if (!mounted) effects.push(effect); },
+        useCallback: (callback: unknown, deps?: unknown[]) => {
+          const slot = callbackSlots[callbackCursor++] ??= {};
+          if (slot.deps && deps && deps.length === slot.deps.length && deps.every((value, i) => Object.is(value, slot.deps![i]))) {
+            return slot.value;
+          }
+          slot.value = callback;
+          slot.deps = deps;
+          return callback;
+        },
+        useEffect: (effect: () => void, deps?: unknown[]) => {
+          const slot = effectSlots[effectCursor++] ??= {};
+          if (slot.deps && deps && deps.length === slot.deps.length && deps.every((value, i) => Object.is(value, slot.deps![i]))) return;
+          effects.push(effect);
+          slot.deps = deps;
+        },
       };
       if (name === "./api" || name === "../api") return { api };
       if (name === "./ui" || name === "../ui") return { Modal: "Modal", PageHead: "PageHead", ErrorText: "ErrorText", Field: "Field", useToast: () => () => {} };
@@ -60,11 +76,22 @@ function harness(screen: string, api: object, fetch?: unknown, component = "defa
   });
   return (props = {}) => {
     cursor = 0;
+    effectCursor = 0;
+    callbackCursor = 0;
     const tree = exports[component]!(props);
-    mounted = true;
     while (effects.length) effects.shift()!();
     return tree;
   };
+}
+
+function hasText(element: Element, needle: string): boolean {
+  const visit = (node: unknown): boolean => {
+    if (typeof node === "string" && node.includes(needle)) return true;
+    if (Array.isArray(node)) return node.some(visit);
+    if (node && typeof node === "object") return visit((node as Element).props?.children);
+    return false;
+  };
+  return visit(element.props?.children);
 }
 
 function find(node: unknown, predicate: (element: Element) => boolean): Element | undefined {
@@ -141,7 +168,11 @@ test("folder picker explains an empty root and retains a named add action", asyn
   const render = harness("Workspaces", {
     browse: async () => ({ path: "/", parent: null, entries: [] }),
   }, undefined, "AddWorkspaceModal");
-  render(); await settle();
+  const local = find(render(), (e) => e.type === "button" && hasText(e, "Dossier sur le serveur"));
+  assert.ok(local, "local source control is present while GitHub is the default mode");
+  (local.props.onClick as () => void)();
+  render();
+  await settle();
   const tree = render();
   assert.ok(find(tree, (e) => e.type === "p" && e.props.children === "Aucun sous-dossier. Tu peux ajouter le dossier actuel."));
   assert.ok(find(tree, (e) => e.type === "button" && e.props.children === "Ajouter /"));

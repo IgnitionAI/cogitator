@@ -35,7 +35,7 @@ import {
   type AgentPreset,
 } from "./agents.js";
 import {
-  CronService, createTask, deleteTask, getTask, listRuns, listTasks, updateTask,
+  CronService, createTask, deleteTask, getTask, listRuns, listTasks, recoverStaleCronRuns, updateTask,
 } from "./cron.js";
 import {
   createConversation, deleteConversation, getConversation, listConversations,
@@ -1496,6 +1496,7 @@ export function createApp(opts: AppOptions): Server {
 
   recoverConfigurations(db);
   recoverInterrupted(db);
+  recoverStaleCronRuns(db);
   reapOrphanOwnedPi(paths.home);
   const stopReap = startPeriodicReap(paths.home);
   const spawner = makeSpawner({ db, pool, paths });

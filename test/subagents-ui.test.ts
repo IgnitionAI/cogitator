@@ -30,6 +30,7 @@ function harness() {
     require(name: string) {
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (name === "./i18n") return i18n;
+      if (name === "./SubagentConversation") return { SubagentConversation() { return null; } };
       if (name === "./ui") return { Empty: "Empty" };
       if (name === "./api") return { api: { conversationSubagents: (id: string, signal: AbortSignal) =>
         new Promise<Snapshot>((resolve, reject) => requests.push({ id, signal, resolve, reject })) } };
@@ -60,6 +61,19 @@ function harness() {
   return { render, requests, counts, timers, poll, unmount };
 }
 
+function findNode(node: unknown, predicate: (element: Node) => boolean): Node | undefined {
+  if (node == null || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const match = findNode(child, predicate);
+      if (match) return match;
+    }
+    return;
+  }
+  const element = node as Node;
+  return predicate(element) ? element : findNode(element.props?.children, predicate);
+}
+
 function text(node: unknown): string {
   if (node == null || typeof node === "boolean") return "";
   if (Array.isArray(node)) return node.map(text).join(" ");
@@ -88,7 +102,7 @@ test("subagent panel: loading, model/status, visible refresh failure, explicit r
     const failed = ui.render();
     assert.ok(text(failed).includes(i18n.t("chat.subagentsRefreshError")));
     assert.ok(text(failed).includes("Inspect the build"), "last list remains visible with its stale warning");
-    const alert = (failed.props.children as Node[]).find((node) => node?.props?.role === "alert")!;
+    const alert = findNode(failed, (node) => node.props?.role === "alert")!;
     const button = (alert.props.children as Node[]).find((node) => node?.type === "button")!;
     (button.props.onClick as () => void)();
     ui.render();

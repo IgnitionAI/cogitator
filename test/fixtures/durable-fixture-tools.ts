@@ -9,7 +9,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { Type } from "@earendil-works/pi-ai";
 import { defineExtension, defineTool } from "@earendil-works/pi-durable";
@@ -51,7 +52,7 @@ export function makeFixtureExtension(opts: FixtureMissionToolsOptions) {
   const edit = createEditTool();
   const workspace = join(opts.scope, "workspace");
   const socketPath = join(opts.scope, "w.sock");
-  const workerScript = join(new URL(".", import.meta.url).pathname, "durable-worker.mjs");
+  const workerScript = join(dirname(fileURLToPath(import.meta.url)), "durable-worker.mjs");
 
   const fixtureEdit = defineTool({
     name: "fixture_edit",

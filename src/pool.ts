@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { childHasExited, childProcessOf, subscribeChildExit, type ChildExit } from "./pi-child.js";
 import { requestAuthorization, checkRequestAuthorization } from "./request-authorization.js";
 
 /**
@@ -48,6 +49,7 @@ interface Handle {
   queue: Array<{ text: string; run: () => Promise<unknown> }>;
   pending?: () => Promise<void>;
   cancelPending?: () => void;
+  unwatchChild?: () => void;
 }
 
 const ASYNC_WIDGET_PREFIX = "PI_SUBAGENT_ASYNC_JSON:";
@@ -201,13 +203,31 @@ export class PiPool {
     return handle && !handle.dead ? this.streaming(handle) : false;
   }
 
+  private processExited(h: Handle): boolean {
+    return childHasExited(childProcessOf(h.client));
+  }
+
   private async streaming(h: Handle): Promise<boolean> {
+    if (h.dead) return false;
+    if (this.processExited(h)) {
+      await this.reapDead(h);
+      return false;
+    }
     if (h.background > 0) return true; // enfant pi-subagents encore en vie : pas d'éviction (pdeathsig tuerait l'enfant)
     try {
       const state = await h.client.getState();
+      if (h.dead || this.processExited(h)) {
+        await this.reapDead(h);
+        return false;
+      }
       return h.active || state.isStreaming === true || state.isCompacting === true;
     } catch {
-      return true; // Unknown runtime state must never be evicted as idle.
+      // Processus mort : le slot doit se libérer. État inconnu d'un process encore vivant : jamais d'éviction idle.
+      if (h.dead || this.processExited(h)) {
+        await this.reapDead(h);
+        return false;
+      }
+      return true;
     }
   }
 
@@ -258,10 +278,15 @@ export class PiPool {
           }
           this.emit(convId, event);
         });
+        handle.unwatchChild = subscribeChildExit(client, (exit) => {
+          this.lockContext.exit(() => { void this.reapDead(handle, exit); });
+        });
         await spawn.initialize?.(client);
         this.status(convId, "active");
         return { sessionFile: state.sessionFile };
       } catch (err) {
+        handle.unwatchChild?.();
+        handle.unwatchChild = undefined;
         await client.stop().catch(() => undefined);
         handle.dead = true;
         this.handles.delete(convId);
@@ -274,6 +299,9 @@ export class PiPool {
   /** Libère une place sous le plafond en évincant le plus vieux process non-streaming. */
   private async makeRoom(): Promise<void> {
     const max = this.opts.max ?? DEFAULT_MAX_PROCESSES;
+    for (const h of [...this.handles.values()]) {
+      if (h.dead || this.processExited(h)) await this.reapDead(h);
+    }
     if (this.handles.size < max) return;
     const oldestFirst = [...this.handles.values()].sort((a, b) => a.lastActivityAt - b.lastActivityAt);
     for (const h of oldestFirst) {
@@ -281,6 +309,7 @@ export class PiPool {
       checkRequestAuthorization();
       if (await this.evictIdle(h)) return;
     }
+    if (this.handles.size < max) return;
     throw new PoolError("pool plein : toutes les sessions sont actives", "pool_full");
   }
 
@@ -288,6 +317,41 @@ export class PiPool {
     return this.serial(h.convId, async () => {
       if (this.handles.get(h.convId) !== h || h.pending || await this.streaming(h)) return false;
       return this.evict(h.convId);
+    });
+  }
+
+  private failQueue(h: Handle, error: string): void {
+    const items = h.queue;
+    h.queue = [];
+    if (!items.length) return;
+    this.queueChanged(h);
+    for (const item of items) {
+      this.emit(h.convId, { type: "queue_error", message: item.text, error });
+    }
+  }
+
+  private childExitMessage(exit?: ChildExit): string {
+    if (!exit) return "child process exited";
+    return `child process exited (code=${exit.code} signal=${exit.signal})`;
+  }
+
+  /** Mort inattendue : libère le slot et fait échouer les messages en attente. */
+  private reapDead(h: Handle, exit?: ChildExit): Promise<void> {
+    return this.serial(h.convId, async () => {
+      if (h.dead || this.handles.get(h.convId) !== h) return;
+      h.dead = true;
+      h.unwatchChild?.();
+      h.unwatchChild = undefined;
+      h.cancelPending?.();
+      h.pending = undefined;
+      this.failQueue(h, this.childExitMessage(exit));
+      this.handles.delete(h.convId);
+      try {
+        await h.client.stop();
+      } catch {
+        /* stop best-effort : le process est déjà mort */
+      }
+      this.status(h.convId, "dead");
     });
   }
 
@@ -312,10 +376,12 @@ export class PiPool {
         } catch (error) { await this.evict(convId); throw error; }
       };
       if (h.active || h.pending || await this.streaming(h)) {
+        if (h.dead) throw new PoolError("enfant pi mort", "child_exited");
         h.queue.push({ text, run: dispatch });
         this.queueChanged(h);
         return { disposition: "queued" };
       }
+      if (h.dead) throw new PoolError("enfant pi mort", "child_exited");
       return dispatch();
     });
   }
@@ -337,6 +403,8 @@ export class PiPool {
       const h = this.handles.get(convId);
       if (!h) return false;
       h.dead = true;
+      h.unwatchChild?.();
+      h.unwatchChild = undefined;
       h.cancelPending?.();
       h.pending = undefined;
       this.clearQueue(h);

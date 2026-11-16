@@ -321,15 +321,16 @@ export class PiPool {
   }
 
   async abort(convId: string): Promise<void> {
-    return this.serial(convId, async () => {
-      try {
-        const h = this.live(convId);
-        this.clearQueue(h);
-        await h.client.abort();
-      } catch {
-        /* process déjà mort : abort est best-effort */
-      }
-    });
+    // Hors `serial` : un `prompt` encore bloqué dans le client ne doit pas retarder l'arrêt.
+    const h = this.handles.get(convId);
+    if (!h || h.dead) return;
+    this.clearQueue(h);
+    h.active = false;
+    try {
+      await h.client.abort();
+    } catch {
+      /* process déjà mort : abort est best-effort */
+    }
   }
 
   async evict(convId: string): Promise<boolean> {

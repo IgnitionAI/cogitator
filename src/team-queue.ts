@@ -4,7 +4,7 @@ import type { PiPool } from "./pool.js";
 
 /**
  * Files durables (pi-openbot lot 2, prototype Q1). Module ajouté AU-DESSUS du pool :
- * il n'utilise que l'API publique de PiPool (prompt, onEvent) et un `ensure`
+ * il n'utilise que l'API publique de PiPool (prompt, onEvent, abort, isStreaming) et un `ensure`
  * fourni par l'appelant (Spawner.ensure en production). pool.ts n'est pas modifié.
  *
  * Invariant : un élément `delivering` trouvé au démarrage devient `interrupted`
@@ -131,7 +131,7 @@ export function kickQueuedLanes(db: Db, dispatcher: LaneDispatcher): void {
 
 export interface DispatcherOptions {
   db: Db;
-  pool: Pick<PiPool, "prompt" | "onEvent">;
+  pool: Pick<PiPool, "prompt" | "onEvent" | "abort" | "isStreaming">;
   /** Spawn paresseux de la conversation (Spawner.ensure en production). */
   ensure: (conversationId: string) => Promise<unknown>;
   /** Délai sans progrès avant échec. Ce n'est pas un plafond sur la durée totale du tour. */
@@ -182,9 +182,11 @@ export class LaneDispatcher {
 
   private waitUntilSettled(convId: string): Promise<void> {
     const stallMs = this.opts.settleTimeoutMs ?? DEFAULT_STALL_MS;
+    const { pool } = this.opts;
     return new Promise((resolve, reject) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
       let finished = false;
+      let parentSettled = false;
       const finish = (error?: unknown) => {
         if (finished) return;
         finished = true;
@@ -197,13 +199,28 @@ export class LaneDispatcher {
         if (finished) return;
         if (timer !== undefined) clearTimeout(timer);
         timer = setTimeout(() => {
-          finish(new Error(`agent stalled (${stallMs}ms without progress)`));
+          const stalled = new Error(`agent stalled (${stallMs}ms without progress)`);
+          void pool.abort(convId).catch(() => undefined).finally(() => finish(stalled));
         }, stallMs);
       };
-      const unsub = this.opts.pool.onEvent((id, event) => {
+      const considerDone = () => {
+        if (finished || !parentSettled) return;
+        void pool.isStreaming(convId).then((busy) => {
+          if (finished) return;
+          if (busy) {
+            arm();
+            return;
+          }
+          finish();
+        }, () => {
+          if (!finished && parentSettled) finish();
+        });
+      };
+      const unsub = pool.onEvent((id, event) => {
         if (id !== convId) return;
-        if ((event as { type?: string } | null)?.type === "agent_settled") finish();
+        if ((event as { type?: string } | null)?.type === "agent_settled") parentSettled = true;
         else arm();
+        considerDone();
       });
       arm();
     });
@@ -240,6 +257,7 @@ export class LaneDispatcher {
         // Images libérées à l'état terminal : elles ne resserviront pas (#31).
         db.prepare("UPDATE queue_item SET status = 'done', finished_at = datetime('now'), images = NULL WHERE id = ?").run(item.id);
       } catch (error) {
+        await pool.abort(convId).catch(() => undefined);
         db.prepare("UPDATE queue_item SET status = 'failed', finished_at = datetime('now'), error = ?, images = NULL WHERE id = ?").run(String(error), item.id);
       } finally {
         this.markPrompted(item.id);

@@ -70,6 +70,32 @@ test("sanitizeSkillName : pas de traversal, kebab propre", () => {
   assert.equal(sanitizeSkillName("Mon Skill v2!"), "Mon-Skill-v2");
 });
 
+test("importFromGitHub : coupe le téléchargement au plafond sans tout lire en mémoire", async () => {
+  const dest = join(home, "dest-cap");
+  let pulled = 0;
+  const chunk = new Uint8Array(1024 * 1024);
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      pulled += 1;
+      if (pulled > 40) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(chunk);
+    },
+  });
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(stream, { status: 200 })) as typeof fetch;
+  try {
+    const r = await importFromGitHub("IgnitionAI/skills", dest);
+    assert.match(r.error ?? "", /tarball/);
+    assert.equal(r.imported.length, 0);
+    assert.ok(pulled <= 22, `téléchargement coupé au plafond (pulls=${pulled})`);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test("importFromGitHub : tarball local via tar système (stub du download non nécessaire — archive réelle créée par tar)", async () => {
   // construit un vrai .tar.gz d'un repo-skill via le tar système
   const repo = join(home, "gh-repo");

@@ -14,7 +14,7 @@ export interface ImportResult {
 /** Bornes de l'exploration et des transferts (une source hostile ne doit pas saturer le disque). */
 const SCAN_MAX_DEPTH = 2;
 const SCAN_MAX_SKILLS = 50;
-const ARCHIVE_MAX_BYTES = 20 * 1024 * 1024;
+export const ARCHIVE_MAX_BYTES = 20 * 1024 * 1024;
 const CLI_MAX_BUFFER = 5 * 1024 * 1024;
 const CLI_TIMEOUT_MS = 180_000;
 const CLI_OUTPUT_TAIL_LINES = 3;
@@ -81,6 +81,34 @@ export function parseGitHubRepo(source: string): { owner: string; repo: string }
   return { owner: m[1]!, repo: m[2]! };
 }
 
+/** Lit le corps d'une Response en s'arrêtant au plafond (annule le flux). */
+export async function readCappedBody(res: Response, maxBytes: number): Promise<Buffer | null> {
+  const declared = Number(res.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await res.body?.cancel();
+    return null;
+  }
+  const reader = res.body?.getReader();
+  if (!reader) {
+    const buf = Buffer.from(await res.arrayBuffer());
+    return buf.length > maxBytes ? null : buf;
+  }
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, size);
+}
+
 /**
  * Importe les skills d'un repo GitHub : tarball (branche main, repli master) →
  * extraction via le `tar` système → copie des dossiers SKILL.md.
@@ -96,13 +124,12 @@ export async function importFromGitHub(source: string, destRoot: string, overwri
     for (const branch of ["main", "master"]) {
       const url = `https://codeload.github.com/${repo.owner}/${repo.repo}/tar.gz/refs/heads/${branch}`;
       const res = await fetch(url);
-      if (res.ok) {
-        archive = Buffer.from(await res.arrayBuffer());
-        break;
-      }
+      if (!res.ok) continue;
+      archive = await readCappedBody(res, ARCHIVE_MAX_BYTES);
+      if (!archive) return { imported: [], skipped: [], error: "tarball > 20 Mo — refusé" };
+      break;
     }
     if (!archive) return { imported: [], skipped: [], error: `repo introuvable ou privé: ${repo.owner}/${repo.repo}` };
-    if (archive.length > ARCHIVE_MAX_BYTES) return { imported: [], skipped: [], error: "tarball > 20 Mo — refusé" };
 
     const tgz = join(tmp, "repo.tar.gz");
     writeFileSync(tgz, archive);

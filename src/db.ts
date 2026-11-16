@@ -206,11 +206,21 @@ export function openDb(dbPath: string): { db: Db; version: number } {
     migrateV9ToV10(db);
     return { db, version: 10 };
   }
+  if (version < 10) {
+    // SQLite ignore PRAGMA foreign_keys à l'intérieur d'une transaction : le basculer avant.
+    if (version < 2) db.pragma("foreign_keys = OFF");
+    try {
+      db.transaction(() => applyLegacyMigrations(db, version))();
+    } finally {
+      db.pragma("foreign_keys = ON");
+    }
+  }
+  return { db, version: 10 };
+}
+
+function applyLegacyMigrations(db: Db, version: number): void {
   if (version < 2) {
-    // FK OFF pendant la migration (pratique SQLite standard ; les parents peuvent être créés plus tard)
-    db.pragma("foreign_keys = OFF");
     db.exec(MIGRATE_V1_TO_V2);
-    db.pragma("foreign_keys = ON");
     db.pragma("user_version = 2");
   }
   if (version < 3) {
@@ -242,5 +252,4 @@ export function openDb(dbPath: string): { db: Db; version: number } {
     db.pragma("user_version = 9");
   }
   if (version < 10) migrateV9ToV10(db);
-  return { db, version: 10 };
 }

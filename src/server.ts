@@ -14,6 +14,7 @@ import { existsSync, rmSync, statSync, readFileSync, realpathSync } from "node:f
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from "node:http";
+import { maxBodyBytesFor, readBody } from "./request-body.js";
 import type { ZodType } from "zod";
 import { HOST } from "./config.js";
 import { requestAuthorization } from "./request-authorization.js";
@@ -180,33 +181,6 @@ function matchRoute(routes: Route[], method: string, pathname: string): { handle
     if (matches) return { handler, params };
   }
   return null;
-}
-
-// Doit rester cohérent avec messageSchema : 8 images × 15 Mo base64 + texte (~121 Mo).
-const MAX_BODY_BYTES = 130_000_000;
-
-function readBody(req: IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    let size = 0;
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => {
-      size += c.length;
-      if (size > MAX_BODY_BYTES) {
-        reject(new AuthError("INVALID_INPUT", 413));
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on("end", () => {
-      if (!chunks.length) return resolve({});
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-      } catch {
-        reject(new AuthError("INVALID_INPUT", 400));
-      }
-    });
-    req.on("error", reject);
-  });
 }
 
 /** Valide un body brut contre un schéma zod ; répond 400 et renvoie null si invalide. */
@@ -1642,7 +1616,9 @@ export function createApp(opts: AppOptions): Server {
         if (serveStatic(res, url.pathname)) return;
         return sendJson(res, 404, { error: "NOT_FOUND" });
       }
-      const body = req.method === "POST" || req.method === "PUT" || req.method === "DELETE" ? await readBody(req) : {};
+      const body = req.method === "POST" || req.method === "PUT" || req.method === "DELETE"
+        ? await readBody(req, maxBodyBytesFor(req.method ?? "GET", url.pathname))
+        : {};
       check();
       const found = matchRoute(routes, req.method ?? "GET", url.pathname);
       if (!found) return sendJson(res, 404, { error: state ? "NOT_FOUND" : `not found: ${url.pathname}` });
@@ -1651,6 +1627,7 @@ export function createApp(opts: AppOptions): Server {
       if (err instanceof AuthError || opts.auth || protectedRequired(paths.home)) authFailure(res, err);
       else if (!res.headersSent) sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
       else res.end();
+      if (err instanceof AuthError && err.status === 413) res.once("finish", () => req.destroy());
     }
   });
   return app;

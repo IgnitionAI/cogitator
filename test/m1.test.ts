@@ -167,9 +167,9 @@ test("POST /api/agents : crée + Apply génère les .md herdr (checklist item 5)
   assert.deepEqual(apply.written.sort(), ["noo-rag-expert-critic.md", "noo-rag-expert-evaluator.md"]);
 
   const md = readFile(join(agentsDir, "noo-rag-expert-evaluator.md"));
-  assert.match(md, /name: noo-rag-expert-evaluator/);
-  assert.match(md, /model: deepseek\/deepseek-flash/);
-  assert.match(md, /thinking: low/);
+  assert.match(md, /name: "noo-rag-expert-evaluator"/);
+  assert.match(md, /model: "deepseek\/deepseek-flash"/);
+  assert.match(md, /thinking: "low"/);
   assert.match(md, /Tu évalues\./);
 });
 

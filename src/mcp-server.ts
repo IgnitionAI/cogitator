@@ -12,6 +12,7 @@ import { z } from "zod";
 import { ownerRequest } from "./owner-transport.js";
 import { packageVersion } from "./pi.js";
 import { CARD_PRIORITIES, CARD_STATUSES, thinkingSchema } from "./schemas.js";
+import { COMMAND_IMPORT_HUMAN_ONLY, skillCommandSource } from "./skills-import.js";
 
 const call = ownerRequest;
 
@@ -178,12 +179,15 @@ addTool("cogitator_list_providers", "Liste les providers pi (catalogue + statut 
 
 addTool("cogitator_list_skills", "Liste les skills disponibles (name, description, path).", {}, () => call("GET", "/api/skills"));
 
-addTool("cogitator_import_skills", "Importe des skills : repo GitHub (ex: IgnitionAI/skills), dossier local, ou commande CLI (ex: 'npx aiblueprint-cli@latest skills update'). Les dossiers contenant un SKILL.md sont copiés vers ~/.agents/skills/.",
+addTool("cogitator_import_skills", "Importe des skills depuis un repo GitHub (ex: IgnitionAI/skills) ou un dossier local. Les dossiers contenant un SKILL.md sont copiés vers le répertoire de skills. L'import par commande npm/npx n'est pas disponible ici.",
   {
     source: z.string().describe("URL GitHub (https://github.com/owner/repo) ou chemin absolu d'un dossier local"),
     overwrite: z.boolean().optional().describe("Écrase les skills existants du même nom (défaut: skip)"),
   },
-  (a) => call("POST", "/api/skills/import", a));
+  (a) => {
+    if (skillCommandSource(String(a.source ?? ""))) throw new Error(COMMAND_IMPORT_HUMAN_ONLY);
+    return call("POST", "/api/skills/import", a);
+  });
 
 addTool("cogitator_health", "État du serveur Cogitator (version, pi, sessions, base).", {}, () => call("GET", "/api/health"));
 

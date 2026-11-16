@@ -248,15 +248,19 @@ function subagentFileName(agentSlug: string, subName: string): string {
   return `noo-${agentSlug}-${subName}.md`;
 }
 
+function yamlQuote(value: string): string {
+  return JSON.stringify(value.replace(/\r\n|\r|\n/g, " "));
+}
+
 function renderSubagent(sub: SubagentInput & { id: string }, agentSlug: string): { file: string; content: string } {
   const lines = [
     "---",
-    `name: noo-${agentSlug}-${sub.name}`,
-    `description: ${(sub.description ?? "").replace(/\n/g, " ")}`,
+    `name: ${yamlQuote(`noo-${agentSlug}-${sub.name}`)}`,
+    `description: ${yamlQuote(sub.description ?? "")}`,
     "kind: pi",
-    `model: ${sub.provider}/${sub.model}`,
+    `model: ${yamlQuote(`${sub.provider}/${sub.model}`)}`,
   ];
-  if (sub.thinking) lines.push(`thinking: ${sub.thinking}`);
+  if (sub.thinking) lines.push(`thinking: ${yamlQuote(sub.thinking)}`);
   if (sub.skills?.length) lines.push(`skills: ${JSON.stringify(sub.skills)}`);
   lines.push("---", "", sub.system_prompt ?? "");
   return { file: subagentFileName(agentSlug, sub.name), content: lines.join("\n") + "\n" };

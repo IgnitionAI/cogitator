@@ -125,7 +125,7 @@ function ImportSkillsModal(props: { onClose: () => void }) {
   const toast = useToast();
   const [actionError, setActionError] = useState<string | null>(null);
   const [source, setSource] = useState("");
-  const [mode, setMode] = useState<"github" | "server" | "computer">("github");
+  const [mode, setMode] = useState<"github" | "server" | "computer" | "command">("github");
   const [files, setFiles] = useState<File[]>([]);
   const [overwrite, setOverwrite] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -162,14 +162,15 @@ function ImportSkillsModal(props: { onClose: () => void }) {
           <option value="github">{translate("skillsUpload.github")}</option>
           <option value="computer">{translate("skillsUpload.computer")}</option>
           <option value="server">{translate("skillsUpload.server")}</option>
+          <option value="command">{translate("skillsUpload.command")}</option>
         </select>
       </Field>
       {mode === "computer" ? <Field label={translate("skillsUpload.choose")} hint={translate("skillsUpload.hint")}>
         <input type="file" multiple {...{ webkitdirectory: "", directory: "" }} onChange={e => setFiles(Array.from(e.target.files ?? []).filter(f => !f.webkitRelativePath.split("/").some(p => p.startsWith(".") || p === "node_modules")))} />
         <p role="status">{translate("skillsUpload.selected", { count: files.length })}</p>
-      </Field> : <Field label={translate("screens.source")} hint={translate(mode === "server" ? "skillsUpload.serverHint" : "skillsUpload.githubHint")}>
+      </Field> : <Field label={translate("screens.source")} hint={translate(mode === "command" ? "skillsUpload.commandHint" : mode === "server" ? "skillsUpload.serverHint" : "skillsUpload.githubHint")}>
 
-        <input value={source} onChange={(e) => setSource(e.target.value)} placeholder={mode === "server" ? "/srv/skills" : "IgnitionAI/skills"} />
+        <input value={source} onChange={(e) => setSource(e.target.value)} placeholder={mode === "command" ? "npx package@latest skills update" : mode === "server" ? "/srv/skills" : "IgnitionAI/skills"} />
       </Field>}
       {mode !== "computer" && <label style={{ display: "flex", gap: 8, marginBottom: 14, fontSize: 13 }}>
         <input type="checkbox" style={{ width: "auto" }} checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} />

@@ -6,6 +6,11 @@ import type { AuthState } from './auth-state.js';
 import { AuthError, ownerSession, requireApproved, sessionById } from './native-auth.js';
 import { browserHeaders, validateBoundary, localCheck } from './auth-http.js';
 import { requestAuthorization } from './request-authorization.js';
+import { CONVERSATION_ID_HEADER } from './config.js';
+
+function headerValue(raw: string | string[] | undefined): string | undefined {
+  return Array.isArray(raw) ? raw[0] : raw;
+}
 
 type Ctx = { params: Record<string,string>; body: unknown; req: IncomingMessage; res: ServerResponse; check: () => void };
 type Route = [string, string, (ctx: Ctx) => Promise<void> | void];
@@ -27,8 +32,9 @@ export function browserRoutes(browser: SharedBrowser, privateRequest: (req: Inco
       // Agent identity is attached by the bundled extension, not accepted on the public HTTP surface.
       if (!privateRequest(ctx.req) && protectedMode) throw new AuthError('FORBIDDEN',403);
       try {
-        const b = z.object({conversationId:z.string().uuid(),profileId:z.string().uuid().optional(),command:z.unknown().optional()}).strict().parse(ctx.body);
-        ctx.check(); const result = b.profileId ? await browser.act(b.profileId,b.command,b.conversationId) : {profiles:browser.agentProfiles(b.conversationId)};
+        const b = z.object({conversationId:z.string().uuid().optional(),profileId:z.string().uuid().optional(),command:z.unknown().optional()}).strict().parse(ctx.body);
+        const conversationId = z.string().uuid().parse(headerValue(ctx.req.headers[CONVERSATION_ID_HEADER]));
+        ctx.check(); const result = b.profileId ? await browser.act(b.profileId,b.command,conversationId) : {profiles:browser.agentProfiles(conversationId)};
         ctx.check(); send(ctx.res,200,result);
       } catch(error) { if(error instanceof BrowserProblem || error instanceof z.ZodError) send(ctx.res,400,{error:error instanceof BrowserProblem ? error.message : 'BROWSER_INVALID_INPUT'}); else if (error instanceof AuthError) throw error; else send(ctx.res,400,{error:'BROWSER_ACTION_FAILED'}); }
     }],

@@ -7,6 +7,8 @@ export const screensMessages = {
   "skillsUpload.choose": {"fr": "Choisir un dossier de skills", "en": "Choose a skills folder"},
   "skillsUpload.hint": {"fr": "Le dossier sera envoyé à Cogitator. SKILL.md, références et scripts sont conservés ; fichiers cachés et node_modules sont exclus. Les skills existants ne sont pas remplacés. 500 fichiers / 6 Mo maximum.", "en": "The folder will be uploaded to Cogitator. SKILL.md, references and scripts are retained; hidden files and node_modules are excluded. Existing skills are preserved. Maximum 500 files / 6 MB."},
   "skillsUpload.serverHint": {"fr": "Chemin absolu sur la machine qui héberge Cogitator, pas sur ton ordinateur si tu utilises un VPS.", "en": "Absolute path on the machine hosting Cogitator, not your laptop when using a VPS."},
+  "skillsUpload.command": {"fr": "Commande npm / npx", "en": "npm / npx command"},
+  "skillsUpload.commandHint": {"fr": "Action humaine uniquement. Les scripts d’installation npm sont ignorés. Exemple : npx paquet@latest skills update", "en": "Human action only. npm install scripts are ignored. Example: npx package@latest skills update"},
   "skillsUpload.selected": {"fr": "{count} fichiers sélectionnés", "en": "{count} files selected"},
   "skillsUpload.limit": {"fr": "Maximum 500 fichiers et 6 Mo par import.", "en": "Maximum 500 files and 6 MB per import."},
   "skillsUpload.readFailed": {"fr": "Impossible de lire un fichier sélectionné.", "en": "Could not read a selected file."},

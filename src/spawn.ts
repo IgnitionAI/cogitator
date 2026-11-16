@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { McpServerEntry } from "./mcp-env.js";
 
@@ -52,7 +52,8 @@ export function buildArgs(c: SpawnConfig, tmpDir: string, convId: string): strin
   const systemPrompt = [c.systemPrompt, c.uiInstructions].filter(Boolean).join("\n\n");
   if (systemPrompt) {
     const file = join(tmpDir, `${convId}.prompt.md`);
-    writeFileSync(file, systemPrompt);
+    writeFileSync(file, systemPrompt, { mode: 0o600 });
+    chmodSync(file, 0o600);
     args.push("--append-system-prompt", file);
   }
   if (c.skills?.length) {

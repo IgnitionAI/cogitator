@@ -1,7 +1,7 @@
 import { checkRequestAuthorization } from "./request-authorization.js";
 import { AuthError } from "./native-auth.js";
 import { execFile } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync, realpathSync, renameSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync, realpathSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
 
@@ -18,6 +18,31 @@ const ARCHIVE_MAX_BYTES = 20 * 1024 * 1024;
 const CLI_MAX_BUFFER = 5 * 1024 * 1024;
 const CLI_TIMEOUT_MS = 180_000;
 const CLI_OUTPUT_TAIL_LINES = 3;
+
+export const COMMAND_IMPORT_HUMAN_ONLY =
+  "import par commande réservé à une action humaine dans l'interface";
+
+/** True si la source est une commande npm/npx (pas un chemin ni un dépôt). */
+export function skillCommandSource(source: string): boolean {
+  return /^npx\s|^npm\s/.test(source.trim());
+}
+
+function assertNoSymlinks(root: string): void {
+  const stack = [root];
+  while (stack.length) {
+    const dir = stack.pop()!;
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      const st = lstatSync(path);
+      if (st.isSymbolicLink()) throw new Error("lien symbolique refusé à l'extraction");
+      if (st.isDirectory()) stack.push(path);
+    }
+  }
+}
+
+function cliArgsWithoutScriptToggle(tokens: string[]): string[] {
+  return tokens.filter((token) => token !== "--ignore-scripts" && !token.startsWith("--ignore-scripts="));
+}
 
 /** Nom de dossier sûr pour un skill (kebab-case, pas de traversal). */
 export function sanitizeSkillName(name: string): string {
@@ -63,8 +88,10 @@ export function importFromDir(srcDir: string, destRoot: string, overwrite = fals
       result.skipped.push(name);
       continue;
     }
+    assertNoSymlinks(dir);
     const stage = mkdtempSync(join(destRoot, ".import-"));
     cpSync(dir, stage, { recursive: true });
+    assertNoSymlinks(stage);
     if (existsSync(target)) renameSync(target, `${stage}.previous-${name}`);
     renameSync(stage, target);
     result.imported.push(name);
@@ -111,6 +138,7 @@ export async function importFromGitHub(source: string, destRoot: string, overwri
     await new Promise<void>((resolve, reject) => {
       execFile("tar", ["-xzf", tgz, "-C", extractDir], (err) => (err ? reject(err) : resolve()));
     });
+    assertNoSymlinks(extractDir);
     const roots = readdirSync(extractDir).filter((e) => statSync(join(extractDir, e)).isDirectory());
     if (roots.length === 0) return { imported: [], skipped: [], error: "tarball vide" };
     return importFromDir(join(extractDir, roots[0]!), destRoot, overwrite);
@@ -122,9 +150,10 @@ export async function importFromGitHub(source: string, destRoot: string, overwri
   }
 }
 
-/** Point d'entrée unique : URL GitHub, chemin local, ou commande npx/npm. */
-export function importSkills(source: string, destRoot: string, overwrite = false): Promise<ImportResult> {
-  if (/^npx\s|^npm\s/.test(source.trim())) {
+/** Point d'entrée unique : URL GitHub, chemin local, ou commande npx/npm (si allowCommand). */
+export function importSkills(source: string, destRoot: string, overwrite = false, allowCommand = false): Promise<ImportResult> {
+  if (skillCommandSource(source)) {
+    if (!allowCommand) return Promise.resolve({ imported: [], skipped: [], error: COMMAND_IMPORT_HUMAN_ONLY });
     return runSkillCommand(source.trim(), [destRoot]);
   }
   if (/^(https?:\/\/github\.com\/|git@github\.com:|[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?$)/.test(source.trim()) && !existsSync(source)) {
@@ -148,6 +177,7 @@ export async function runSkillCommand(cmd: string, destRoots: string[], timeoutM
   if (bin !== "npx" && bin !== "npm") {
     return { imported: [], skipped: [], error: "seuls npx et npm sont autorisés comme commande d'import" };
   }
+  const args = [...cliArgsWithoutScriptToggle(tokens.slice(1)), "--ignore-scripts"];
   const snapshot = new Set<string>();
   for (const root of destRoots) {
     for (const dir of scanSkillDirs(root)) snapshot.add(sanitizeSkillName(basename(dir)));
@@ -156,7 +186,9 @@ export async function runSkillCommand(cmd: string, destRoots: string[], timeoutM
   try {
     const { stdout, stderr } = await new Promise<{ stdout: string; stderr: string }>((resolve) => {
       // certains CLI renvoient un code non nul tout en ayant installé : on garde la sortie
-      execFile(bin, tokens.slice(1), { timeout: timeoutMs, maxBuffer: CLI_MAX_BUFFER }, (_err, out, serr) => {
+      const cwd = destRoots[0];
+      if (cwd) mkdirSync(cwd, { recursive: true });
+      execFile(bin, args, { timeout: timeoutMs, maxBuffer: CLI_MAX_BUFFER, cwd, env: { ...process.env, npm_config_ignore_scripts: "true" } }, (_err, out, serr) => {
         resolve({ stdout: String(out), stderr: String(serr) });
       });
     });

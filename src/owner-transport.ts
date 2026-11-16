@@ -2,7 +2,7 @@ import { chmodSync, closeSync, existsSync, fstatSync, fsyncSync, lstatSync, open
 import { request, type Server } from "node:http";
 import { connect } from "node:net";
 import { authPaths, checkPrivate, protectedRequired, validateOwnerSocketPath } from "./auth-state.js";
-import { authenticationRequired, BASE_URL } from "./config.js";
+import { authenticationRequired, BASE_URL, CONVERSATION_ID_HEADER } from "./config.js";
 import { getPaths } from "./paths.js";
 import { createPrivateServer } from "./server.js";
 
@@ -64,12 +64,20 @@ function removeOwnedFile(path: string, own: Stats | undefined): void {
 }
 
 /** Explicit URLs, including loopback overrides, always retain ordinary HTTP semantics. */
+function ownerHeaders(env: NodeJS.ProcessEnv, withJson: boolean): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (withJson) headers["content-type"] = "application/json";
+  const conversationId = env.COGITATOR_CONVERSATION_ID;
+  if (conversationId) headers[CONVERSATION_ID_HEADER] = conversationId;
+  return headers;
+}
+
 export async function ownerRequest<T>(method: string, path: string, body?: unknown, env: NodeJS.ProcessEnv = process.env): Promise<T> {
   const home = getPaths(env).home;
   const required = authenticationRequired(env);
   if (env.COGITATOR_URL !== undefined || !protectedRequired(home, required)) {
     const response = await fetch(`${env.COGITATOR_URL ?? BASE_URL}${path}`, { method,
-      ...(body !== undefined ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}) });
+      ...(body !== undefined ? { headers: ownerHeaders(env, true), body: JSON.stringify(body) } : { headers: ownerHeaders(env, false) }) });
     const data = await response.json() as Record<string, unknown>;
     if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : `HTTP ${response.status}`);
     return data as T;
@@ -80,7 +88,7 @@ export async function ownerRequest<T>(method: string, path: string, body?: unkno
   const s = lstatSync(socket);
   if (!s.isSocket() || (s.mode & 0o077) || (process.getuid && s.uid !== process.getuid())) throw new Error("Unsafe owner socket");
   return new Promise<T>((done, reject) => {
-    const req = request({ socketPath: socket, method, path, headers: { "content-type": "application/json" }, timeout: 30_000 }, res => {
+    const req = request({ socketPath: socket, method, path, headers: ownerHeaders(env, true), timeout: 30_000 }, res => {
       const chunks: Buffer[] = [];
       res.on("data", chunk => chunks.push(Buffer.from(chunk)));
       res.on("error", reject);

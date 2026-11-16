@@ -64,7 +64,7 @@ import {
   listCards, createCardGh, updateCardGh, moveCardGh, addCommentGh, closeCardGh,
   type BoardCard, type CardWrite,
 } from "./board.js";
-import { importSkills } from "./skills-import.js";
+import { COMMAND_IMPORT_HUMAN_ONLY, importSkills, skillCommandSource } from "./skills-import.js";
 import {
   agentInputSchema, conversationCreateSchema, groupCreateSchema, messageSchema, modelSwitchSchema,
   providerLoginReplySchema, providerLoginSchema, providerUpsertSchema, scheduleCreateSchema, scheduleUpdateSchema, skillImportSchema,
@@ -153,6 +153,19 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   checkResponse(res);
   res.writeHead(status, { "content-type": "application/json" });
   res.end(JSON.stringify(body));
+}
+
+/** Commande npm/npx : uniquement une requête navigateur (Origin = Host), jamais le canal agent. */
+function isHumanUiRequest(req: IncomingMessage): boolean {
+  if (privateRequests.has(req)) return false;
+  const origin = req.headers.origin;
+  const host = req.headers.host;
+  if (typeof origin !== "string" || !origin || typeof host !== "string") return false;
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false;
+  }
 }
 
 /** Répond 404 et renvoie null — garde d'existence commune à toutes les routes paramétrées. */
@@ -456,13 +469,16 @@ function registryRoutes(deps: Deps): Route[] {
     ["POST", "/api/skills/import", async (ctx) => {
       const b = parseBody(ctx.res, skillImportSchema, ctx.body);
       if (!b) return;
+      const command = skillCommandSource(b.source);
       // Mode distant : les imports par commande hôte (npx/npm) sont désactivés
       // (Plan 0002 §4 : pas d'import npm/npx côté hôte en mode distant).
-      if (enrollmentPolicyFromEnv().remote && /^npx\s|^npm\s/.test(b.source.trim())) {
+      if (command && enrollmentPolicyFromEnv().remote) {
         return sendJson(ctx.res, 400, { error: "import par commande (npx/npm) désactivé en mode distant" });
       }
+      const allowCommand = command && isHumanUiRequest(ctx.req);
+      if (command && !allowCommand) return sendJson(ctx.res, 400, { error: COMMAND_IMPORT_HUMAN_ONLY });
       const destRoot = paths.skillsDirs[0] ?? join(paths.piAgentDir, "skills");
-      const result = await importSkills(b.source, destRoot, b.overwrite === true);
+      const result = await importSkills(b.source, destRoot, b.overwrite === true, allowCommand);
       if (result.error && result.imported.length === 0) return sendJson(ctx.res, 400, { error: result.error });
       sendJson(ctx.res, 200, { ...result, dest: destRoot, skills: listSkills(paths) });
     }],

@@ -48,9 +48,11 @@ export default function (pi: ExtensionAPI) {
       action: Type.String(), tabId: Type.Optional(Type.String()), url: Type.Optional(Type.String()), selector: Type.Optional(Type.String()), text: Type.Optional(Type.String()), key: Type.Optional(Type.String()), x: Type.Optional(Type.Number()), y: Type.Optional(Type.Number()), delta: Type.Optional(Type.Number()),
     })) }),
     execute: async (_id, params) => {
-      const conversationId = process.env.COGITATOR_CONVERSATION_ID;
-      if (!conversationId) throw new Error("Open this tool from a Cogitator conversation.");
-      const result = await ownerRequest<{ image?: string; mimeType?: string }>("POST", "/api/browser/agent", {conversationId,...params});
+      if (!process.env.COGITATOR_CONVERSATION_ID) throw new Error("Open this tool from a Cogitator conversation.");
+      const result = await ownerRequest<{ image?: string; mimeType?: string }>("POST", "/api/browser/agent", {
+        profileId: params.profileId,
+        command: params.command,
+      });
       return result.image ? {content:[{type:"image",data:result.image,mimeType:"image/jpeg"}],details:{}} : {content:[{type:"text",text:JSON.stringify(result)}],details:{}};
     },
   });

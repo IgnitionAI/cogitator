@@ -110,6 +110,14 @@ export function deleteConversation(db: Db, id: string): boolean {
 }
 
 function parseConversation(row: ConversationRow): ConversationRow {
-  const raw = row.pending_configuration;
-  return { ...row, pending_configuration: typeof raw === "string" ? JSON.parse(raw) as PendingConfiguration : raw ?? null };
+  return { ...row, pending_configuration: parsePendingConfiguration(row.pending_configuration) };
+}
+
+export function parsePendingConfiguration(raw: unknown): PendingConfiguration | null {
+  if (typeof raw !== "string") return raw && typeof raw === "object" ? (raw as PendingConfiguration) : null;
+  try {
+    return JSON.parse(raw) as PendingConfiguration;
+  } catch {
+    return null;
+  }
 }

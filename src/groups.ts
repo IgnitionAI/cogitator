@@ -1,4 +1,4 @@
-import type { PendingConfiguration } from "./conversations.js";
+import { parsePendingConfiguration, type PendingConfiguration } from "./conversations.js";
 import { randomUUID } from "node:crypto";
 import type { Db } from "./db.js";
 
@@ -56,7 +56,7 @@ export function listGroupMembers(db: Db, groupId: string): GroupMember[] {
        ORDER BY c.created_at`,
     )
     .all(groupId) as unknown as GroupMember[];
-  return rows.map(row => ({ ...row, pending_configuration: typeof row.pending_configuration === "string" ? JSON.parse(row.pending_configuration) as PendingConfiguration : null }));
+  return rows.map((row) => ({ ...row, pending_configuration: parsePendingConfiguration(row.pending_configuration) }));
 }
 
 export function listGroups(db: Db): GroupWithMembers[] {

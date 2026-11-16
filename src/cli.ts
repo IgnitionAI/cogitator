@@ -20,6 +20,9 @@ import { mkdirSync } from "node:fs";
 import { packageVersion } from "./pi.js";
 import { isProcessAlive, removeServerIdentity, writeServerIdentity } from "./server-identity.js";
 import { assertNoLiveInstance, probeServer } from "./server-compat.js";
+import { onUnhandledRejection } from "./unhandled-rejection.js";
+
+process.on("unhandledRejection", onUnhandledRejection);
 
 const SWEEP_INTERVAL_MS = 60_000;
 const CRON_TICK_MS = 30_000;

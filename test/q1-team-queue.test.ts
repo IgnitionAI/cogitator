@@ -8,7 +8,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { openDb } from "../src/db.js";
 import { PiPool } from "../src/pool.js";
-import { enqueue, LaneDispatcher, listItems, originHop, QueueError, setLanePaused, cancelItem, DEFAULT_HOP_LIMIT, submitToLane } from "../src/team-queue.js";
+import { enqueue, kickQueuedLanes, LaneDispatcher, listItems, originHop, QueueError, setLanePaused, cancelItem, DEFAULT_HOP_LIMIT, submitToLane } from "../src/team-queue.js";
 
 const DRIVER = join(import.meta.dirname, "fixtures", "team-queue-driver.ts");
 
@@ -353,6 +353,47 @@ test("un tour bloqué sans progrès est marqué failed (stall, pas la durée tot
   assert.equal(item.status, "failed");
   assert.match(item.error ?? "", /stall|sans progrès|progress/i);
   await pool.dispose(); db.close(); rmSync(dir, { recursive: true, force: true });
+});
+
+async function collectUnhandled<T>(fn: () => T | Promise<T>): Promise<{ result: T; reasons: unknown[] }> {
+  const reasons: unknown[] = [];
+  const listener = (reason: unknown) => { reasons.push(reason); };
+  process.on("unhandledRejection", listener);
+  try {
+    const result = await fn();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    return { result, reasons };
+  } finally {
+    process.off("unhandledRejection", listener);
+  }
+}
+
+test("kickQueuedLanes attrape les rejets de kick (pas de unhandledRejection)", async () => {
+  const { db, dir } = freshDb();
+  try {
+    enqueue(db, { conversationId: "a", body: "x" });
+    const { reasons } = await collectUnhandled(() => {
+      kickQueuedLanes(db, { kick: () => Promise.reject(new Error("kick boom")) } as unknown as LaneDispatcher);
+    });
+    assert.equal(reasons.length, 0);
+  } finally {
+    db.close(); rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("submitToLane attrape le rejet de kick pendant l'attente du prompt", async () => {
+  const { db, dir } = freshDb();
+  try {
+    const dispatcher = {
+      kick: () => Promise.reject(new Error("kick boom")),
+      waitUntilPrompted: async () => undefined,
+      attachImages: () => undefined,
+    } as unknown as LaneDispatcher;
+    const { reasons } = await collectUnhandled(() => submitToLane(db, dispatcher, { conversationId: "a", body: "x" }));
+    assert.equal(reasons.length, 0);
+  } finally {
+    db.close(); rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("ensure/spawn en erreur propage et marque failed (pas un succès silencieux)", async () => {

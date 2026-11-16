@@ -126,7 +126,7 @@ export function laneIsDelivering(db: Db, laneId: string): boolean {
 }
 
 export function kickQueuedLanes(db: Db, dispatcher: LaneDispatcher): void {
-  for (const id of listQueuedLaneIds(db)) void dispatcher.kick(id);
+  for (const id of listQueuedLaneIds(db)) void dispatcher.kick(id).catch(() => undefined);
 }
 
 export interface DispatcherOptions {
@@ -267,11 +267,12 @@ export async function submitToLane(
   const paused = laneIsPaused(db, result.laneId);
   const busy = laneIsDelivering(db, result.laneId);
   const kicked = dispatcher.kick(result.laneId);
+  void kicked.catch(() => undefined);
   if (result.created && !paused && !busy) {
     await dispatcher.waitUntilPrompted(result.id);
     const row = db.prepare("SELECT status, error FROM queue_item WHERE id = ?").get(result.id) as { status: QueueStatus; error: string | null } | undefined;
     if (row?.status === "failed") throw new Error(row.error ?? "livraison échouée");
-  } else void kicked.catch(() => undefined);
+  }
   return result;
 }
 

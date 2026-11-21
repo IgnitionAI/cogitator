@@ -85,6 +85,8 @@ Le **MCP** permet aux agents d’agir dans Cogitator : créer un agent, ajouter 
 
 Le serveur intégré utilise le transport **stdio**. En mode protégé, il rejoint Cogitator par une socket privée du compte propriétaire. Ce n’est pas une API MCP publique sans authentification. Tu peux configurer d’autres serveurs dans les agents et consulter la configuration globale dans **Paramètres**. Leur programme et leurs identifiants doivent exister sur le serveur.
 
+Pour qu’un agent **externe** (Claude Code, API Claude ou OpenAI, tes propres bots) pilote Cogitator, utilise l’endpoint **Streamable HTTP** `/mcp`. Crée un jeton avec `cogitator mcp token create mon-bot` (ajoute `--scope read` pour un accès en lecture seule), puis envoie-le dans l’en-tête `Authorization: Bearer cgt_…`. Le jeton n’est affiché qu’une fois. `cogitator mcp token revoke mon-bot` le révoque immédiatement. Détails et exemples de configuration : [MCP distant](mcp-http.md).
+
 ## Conversations et automatisations
 
 Les conversations affichent les réponses en direct, les appels d’outils et les fichiers modifiés. Ouvre **Réglages du modèle** pour changer de fournisseur, modèle ou raisonnement une fois le tour terminé. Choisis explicitement si tu modifies uniquement cette conversation ou aussi les valeurs par défaut du bot.

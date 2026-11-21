@@ -61,7 +61,7 @@ These are editable agent presets, not separate subscriptions. Select their provi
 - **Extensions:** browse the pi catalog, install packages, check their versions, update individually and reload idle conversations. Active parents and background children keep running.
 - **Skills:** import reusable procedures, attach them to agents or invoke `/skill:name` in a message. Ask the Skills Architect to create a missing procedure.
 - **Schedules:** repeat a task with cron, inspect run history and review its outcome. The server must remain running; model usage is billed by your provider.
-- **MCP:** the bundled stdio MCP server lets agents operate Cogitator. Agent presets can also use other MCP servers; **Settings** exposes global MCP configuration.
+- **MCP:** the bundled stdio MCP server lets agents operate Cogitator. External agents (Claude Code, the Claude/OpenAI APIs, your own bots) can use the same tools over **Streamable HTTP** at `/mcp`, with a revocable Bearer token (`cogitator mcp token create`). See [Remote MCP](https://github.com/IgnitionAI/cogitator/blob/dev/docs/mcp-http.md). Agent presets can also use other MCP servers; **Settings** exposes global MCP configuration.
 
 ![Extension installation, version checks and reload](https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/docs/images/extensions.jpg)
 

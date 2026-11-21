@@ -14,7 +14,7 @@ The authentication/HTTPS path is in use on the project's VPS. This is not a clai
 | pi package running on a VPS | The VPS's pi profile and OS account, then restart its actual controller |
 | Source release managed by systemd | A new server release directory, then activate it and restart the service |
 
-The source-release recipe below matches the deployment model used by the project. **0.5.2 is currently unreleased on npm.** Use an inspected source revision containing native auth for these features; do not assume an older global/npm binary understands `--auth-required`.
+The source-release recipe below matches the deployment model used by the project. **0.5.2 is published on npm** and includes native auth (`--auth-required`) and the remote MCP endpoint. Do not assume an older global/npm binary (0.5.1 or earlier) understands `--auth-required`.
 
 ## Prerequisites and layout
 

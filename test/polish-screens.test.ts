@@ -51,7 +51,14 @@ function harness(screen: string, api: object, fetch?: unknown, component = "defa
           return slots[index];
         },
         useCallback: (callback: unknown) => callback,
-        useEffect: (effect: () => void) => { if (!mounted) effects.push(effect); },
+        useEffect: (effect: () => void, deps?: unknown[]) => {
+          // Mount-only by default; an effect re-runs when a value dependency changes.
+          // Functions are skipped: this harness's useCallback has no stable identity.
+          const index = cursor++;
+          const previous = slots[index] as unknown[] | undefined;
+          slots[index] = deps;
+          if (!mounted || (deps && previous && deps.some((value, i) => typeof value !== "function" && value !== previous[i]))) effects.push(effect);
+        },
       };
       if (name === "./api" || name === "../api") return { api };
       if (name === "./ui" || name === "../ui") return { Modal: "Modal", PageHead: "PageHead", ErrorText: "ErrorText", Field: "Field", useToast: () => () => {} };
@@ -141,6 +148,11 @@ test("folder picker explains an empty root and retains a named add action", asyn
   const render = harness("Workspaces", {
     browse: async () => ({ path: "/", parent: null, entries: [] }),
   }, undefined, "AddWorkspaceModal");
+  render(); await settle();
+  // The modal opens on the repository-link source; the folder picker lives under the local source.
+  const local = find(render(), (e) => e.type === "button" && e.props["aria-pressed"] === false);
+  assert.ok(local, "local source switch");
+  (local!.props.onClick as () => void)();
   render(); await settle();
   const tree = render();
   assert.ok(find(tree, (e) => e.type === "p" && e.props.children === "Aucun sous-dossier. Tu peux ajouter le dossier actuel."));

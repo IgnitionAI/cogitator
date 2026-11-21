@@ -14,7 +14,7 @@
 
 Cogitator is a **pi package and web UI**, not a separate hosted AI service. Connect your model providers, open a bot, and work through conversations, projects, skills and subagents. Your installation keeps its own data and credentials. The interface is available in **English and French**, including on mobile.
 
-> **Release status:** this README describes the current `dev` build, including the upcoming **0.5.2** features. The published npm version is shown in the badge above. Features marked in the [unreleased changelog](https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md) require the current source build until publication. Updating from npm does not install unreleased code.
+> **Release status:** this README describes the current `dev` build. **0.5.2** is published on npm, and the badge above shows the latest published version. Any later entry marked **Unreleased** in the [changelog](https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md) requires a source build until it is published.
 
 ![Cogitator bots: Majordome, Project Manager and Skills Architect](https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/docs/images/bots.jpg)
 

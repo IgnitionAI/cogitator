@@ -31,6 +31,8 @@ function harness() {
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (name === "./i18n") return i18n;
       if (name === "./ui") return { Empty: "Empty" };
+      // The transcript dialog is covered by its own tests; the panel only mounts it on selection.
+      if (name === "./SubagentConversation") return { SubagentConversation: "SubagentConversation" };
       if (name === "./api") return { api: { conversationSubagents: (id: string, signal: AbortSignal) =>
         new Promise<Snapshot>((resolve, reject) => requests.push({ id, signal, resolve, reject })) } };
       if (name === "react") return {
@@ -88,7 +90,9 @@ test("subagent panel: loading, model/status, visible refresh failure, explicit r
     const failed = ui.render();
     assert.ok(text(failed).includes(i18n.t("chat.subagentsRefreshError")));
     assert.ok(text(failed).includes("Inspect the build"), "last list remains visible with its stale warning");
-    const alert = (failed.props.children as Node[]).find((node) => node?.props?.role === "alert")!;
+    // The panel renders a fragment: the <aside> list, then the optional transcript dialog.
+    const aside = failed.type === "aside" ? failed : (failed.props.children as Node[]).find((node) => node?.type === "aside")!;
+    const alert = (aside.props.children as Node[]).find((node) => node?.props?.role === "alert")!;
     const button = (alert.props.children as Node[]).find((node) => node?.type === "button")!;
     (button.props.onClick as () => void)();
     ui.render();

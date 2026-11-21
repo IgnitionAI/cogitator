@@ -76,7 +76,13 @@ const reply = await client.callTool({
 }, undefined, { onprogress: (p) => console.log(p.message) });
 ```
 
-**ChatGPT / Claude.ai custom connectors** (the web apps) require OAuth sign-in. This is not supported yet: use the APIs above, or Claude Code.
+**ChatGPT / Claude.ai custom connectors** (web apps) use OAuth instead of a token you paste. This requires **protected mode** (`cogitator --auth-required` with a public HTTPS origin):
+
+1. In the app, add a custom connector with the URL `https://cogitator.example.org/mcp`. Leave client ID/secret empty: the app registers itself automatically.
+2. The app opens Cogitator's consent page. If you are not signed in, sign in as the owner in that browser, then click **Continue**.
+3. Choose **Read only** or **Full control**, then **Allow**.
+
+Connected apps appear in `cogitator mcp token list` (marked OAuth). Revoke one with `cogitator mcp token revoke "<app name>"`.
 
 ## 4. Talking to Cogitator agents
 
@@ -90,7 +96,16 @@ const reply = await client.callTool({
 
 Reverse proxies and hosted clients may cut very long requests. For long tasks, use `wait: false`, then poll `cogitator_get_conversation` or `cogitator_read_conversation`.
 
-## 5. Sessions and limits
+## 5. OAuth details
+
+- Discovery: `/.well-known/oauth-protected-resource` (RFC 9728) and `/.well-known/oauth-authorization-server` (RFC 8414). A `401` from `/mcp` points to them through `WWW-Authenticate: Bearer resource_metadata="…"`.
+- Dynamic client registration at `/oauth/register` (RFC 7591). Redirect URIs must be `https` or loopback `http`. Registration is capped at 30 per hour and 100 clients; clients never authorized are purged after 24 h.
+- Authorization code with mandatory **PKCE S256**. The `redirect_uri` must match exactly, and `resource`, when sent, must be this server's `/mcp`. Codes are single-use and last 60 s.
+- The consent page requires an approved owner session (including MFA when it is enabled) and a same-origin form. The authorization request is bound to that session.
+- Access tokens (`cgo_…`) last 1 hour. Refresh tokens (`cgr_…`) rotate on each use and last 30 days. If a client replays a refresh token that has already been rotated, Cogitator revokes the whole grant.
+- Only hashes are stored, in `<COGITATOR_HOME>/mcp-oauth.json` (mode `0600`). In local mode, OAuth is disabled and these endpoints return `404`.
+
+## 6. Sessions and limits
 
 - Sessions are stateful (`Mcp-Session-Id`) and bound to the token that opened them. Another token gets `403`, and an unknown or expired session gets `404`, after which the client re-initializes.
 - Idle sessions close after 30 minutes. At most 64 sessions are kept; the oldest is evicted first.

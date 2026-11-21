@@ -85,7 +85,7 @@ Le **MCP** permet aux agents d’agir dans Cogitator : créer un agent, ajouter 
 
 Le serveur intégré utilise le transport **stdio**. En mode protégé, il rejoint Cogitator par une socket privée du compte propriétaire. Ce n’est pas une API MCP publique sans authentification. Tu peux configurer d’autres serveurs dans les agents et consulter la configuration globale dans **Paramètres**. Leur programme et leurs identifiants doivent exister sur le serveur.
 
-Pour qu’un agent **externe** (Claude Code, API Claude ou OpenAI, tes propres bots) pilote Cogitator, utilise l’endpoint **Streamable HTTP** `/mcp`. Crée un jeton avec `cogitator mcp token create mon-bot` (ajoute `--scope read` pour un accès en lecture seule), puis envoie-le dans l’en-tête `Authorization: Bearer cgt_…`. Le jeton n’est affiché qu’une fois. `cogitator mcp token revoke mon-bot` le révoque immédiatement. Détails et exemples de configuration : [MCP distant](mcp-http.md).
+Pour qu’un agent **externe** (Claude Code, API Claude ou OpenAI, tes propres bots) pilote Cogitator, utilise l’endpoint **Streamable HTTP** `/mcp`. Crée un jeton avec `cogitator mcp token create mon-bot` (ajoute `--scope read` pour un accès en lecture seule), puis envoie-le dans l’en-tête `Authorization: Bearer cgt_…`. Le jeton n’est affiché qu’une fois. `cogitator mcp token revoke mon-bot` le révoque immédiatement. Sur un VPS en mode protégé, ChatGPT et Claude.ai peuvent aussi se connecter comme **connecteur personnalisé** avec l’URL `https://<ton-origine>/mcp`. L’application s’enregistre seule, tu te connectes, puis tu choisis **Lecture seule** ou **Contrôle total** sur la page de consentement. Détails et exemples de configuration : [MCP distant](mcp-http.md).
 
 ## Conversations et automatisations
 

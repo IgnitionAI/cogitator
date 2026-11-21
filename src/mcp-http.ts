@@ -15,6 +15,14 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { registerCogitatorTools, type CogitatorCall } from "./mcp-tools.js";
 import { bearerToken, McpTokenVerifier, type McpTokenInfo } from "./mcp-tokens.js";
+import type { McpScope } from "./mcp-tools.js";
+
+/** Source de jetons supplémentaire (OAuth en mode protégé). */
+export interface McpAccessVerifier {
+  verify(token: string | undefined): McpTokenInfo | undefined;
+  stillValid(id: string, scope: McpScope): boolean;
+  readonly resourceMetadataUrl: string;
+}
 
 export const MCP_HTTP_PATH = "/mcp";
 const MAX_MCP_BODY_BYTES = 4 * 1024 * 1024;
@@ -34,6 +42,8 @@ export interface McpHttpOptions {
   version: string;
   /** Appel interne d'une route `/api/*` (autorisation propriétaire du processus serveur). */
   dispatch: CogitatorCall;
+  /** OAuth (mode protégé) : jetons `cgo_…` et découverte via WWW-Authenticate. */
+  oauth?: McpAccessVerifier;
 }
 
 class McpHttpError extends Error {
@@ -76,6 +86,14 @@ export class McpHttpEndpoint {
 
   get sessionCount(): number { return this.sessions.size; }
 
+  private verify(token: string | undefined): McpTokenInfo | undefined {
+    return this.verifier.verify(token) ?? this.opts.oauth?.verify(token);
+  }
+
+  private stillValid(token: McpTokenInfo): boolean {
+    return this.verifier.stillValid(token.id, token.scope) || (this.opts.oauth?.stillValid(token.id, token.scope) ?? false);
+  }
+
   async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     res.setHeader("cache-control", "no-store");
     try {
@@ -83,10 +101,11 @@ export class McpHttpEndpoint {
       if (!["POST", "GET", "DELETE"].includes(method)) {
         return jsonRpcError(res, 405, -32000, "Method not allowed", { allow: "POST, GET, DELETE" });
       }
-      const token = this.verifier.verify(bearerToken(req.headers.authorization));
+      const token = this.verify(bearerToken(req.headers.authorization));
       if (!token) {
+        const metadata = this.opts.oauth ? `, resource_metadata="${this.opts.oauth.resourceMetadataUrl}"` : "";
         return jsonRpcError(res, 401, -32001, "Jeton MCP manquant ou invalide (Authorization: Bearer cgt_…)",
-          { "www-authenticate": 'Bearer realm="cogitator", error="invalid_token"' });
+          { "www-authenticate": `Bearer realm="cogitator", error="invalid_token"${metadata}` });
       }
       const header = req.headers["mcp-session-id"];
       const sessionId = typeof header === "string" ? header : undefined;
@@ -114,7 +133,7 @@ export class McpHttpEndpoint {
   private open(token: McpTokenInfo): StreamableHTTPServerTransport {
     const server = new McpServer({ name: "cogitator", version: this.opts.version });
     const call: CogitatorCall = (method, path, body) => {
-      if (!this.verifier.stillValid(token.id, token.scope)) return Promise.reject(new Error("Jeton MCP révoqué"));
+      if (!this.stillValid(token)) return Promise.reject(new Error("Jeton MCP révoqué"));
       return this.opts.dispatch(method, path, body);
     };
     registerCogitatorTools(server, { call, scope: token.scope, author: `MCP: ${token.name}` });
@@ -144,7 +163,7 @@ export class McpHttpEndpoint {
   /** Ferme les sessions inactives et celles dont le jeton a été révoqué. */
   sweep(now = Date.now()): void {
     for (const [id, s] of this.sessions) {
-      if (now - s.lastSeen > SESSION_IDLE_MS || !this.verifier.stillValid(s.token.id, s.token.scope)) this.drop(id);
+      if (now - s.lastSeen > SESSION_IDLE_MS || !this.stillValid(s.token)) this.drop(id);
     }
   }
 

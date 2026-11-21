@@ -185,3 +185,13 @@ test("mode protégé : /mcp exige le jeton, contrôle l'hôte et l'Origin, pas d
     assert.doesNotMatch(called.text, /"isError":true/);
   } finally { await f.close(); }
 });
+
+test("mode local : pas d'OAuth, découverte en 404 JSON (jamais le fallback SPA)", async () => {
+  for (const path of ["/.well-known/oauth-protected-resource", "/.well-known/oauth-authorization-server", "/oauth/authorize"]) {
+    const res = await fetch(`${base}${path}`);
+    assert.equal(res.status, 404, path);
+    assert.match(res.headers.get("content-type") ?? "", /json/, path);
+  }
+  const res = await fetch(`${base}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+  assert.doesNotMatch(res.headers.get("www-authenticate") ?? "", /resource_metadata/);
+});

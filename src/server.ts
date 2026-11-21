@@ -81,6 +81,7 @@ import {
 import { cloneRepo, isInsideDir, localDirFor } from "./git-import.js";
 import { listSubagents, readSubagentTranscript } from "./subagents.js";
 import { MCP_HTTP_PATH, McpHttpEndpoint } from "./mcp-http.js";
+import { McpOAuth } from "./mcp-oauth.js";
 
 // ---------- Statique ----------
 
@@ -1597,9 +1598,12 @@ export function createApp(opts: AppOptions): Server {
   // Dispatch interne des routes /api/* pour le serveur MCP HTTP : mêmes handlers,
   // mêmes validations et contrôles de disponibilité que l'UI, sans boucle réseau.
   const availability = () => { if (opts.auth) opts.auth.assertAvailable(); else localCheck(paths.home); };
+  // OAuth 2.1 (connecteurs web ChatGPT / Claude.ai) : seulement avec une origine HTTPS et un login propriétaire.
+  const oauth = opts.auth ? new McpOAuth(paths.home, opts.auth) : undefined;
   const mcp = new McpHttpEndpoint({
     home: paths.home,
     version: packageVersion(),
+    oauth,
     dispatch: (method, path, body) => dispatchInternal(routes, method, path, body, availability),
   });
 
@@ -1634,6 +1638,16 @@ export function createApp(opts: AppOptions): Server {
         } else localCheck(paths.home);
         return await mcp.handle(req, res);
       }
+      // OAuth : métadonnées, enregistrement, jeton (appelés de serveur à serveur) et page de
+      // consentement (navigation intersite depuis l'application). Contrôles propres au module.
+      if (oauth && McpOAuth.handles((req.url ?? "").split("?")[0] ?? "")) {
+        if (privateRequest || !state) throw new AuthError("FORBIDDEN", 403);
+        state.assertAvailable();
+        if (req.headers.host !== new URL(state.config.origin).host) throw new AuthError("FORBIDDEN", 403);
+        return await oauth.handle(req, res, new URL(req.url ?? "/", state.config.origin));
+      }
+      // Sans OAuth (mode local), la découverte doit échouer proprement, jamais via le fallback SPA.
+      if ((req.url ?? "").startsWith("/.well-known/") || (req.url ?? "").startsWith("/oauth/")) return sendJson(res, 404, { error: "NOT_FOUND" });
       if (state) {
         state.assertAvailable();
         if (!privateRequest) validateBoundary(req, state);

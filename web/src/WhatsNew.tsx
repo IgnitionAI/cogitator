@@ -10,6 +10,7 @@ export function WhatsNew({ onClose }: { onClose: () => void }) {
       <article><h3>{t("news.subagents")}</h3><p>{t("news.subagentsText")}</p></article>
       <article><h3>{t("news.github")}</h3><p>{t("news.githubText")}</p></article>
       <article><h3>{t("news.setup")}</h3><p>{t("news.setupText")}</p></article>
+      <article><h3>{t("news.mcp")}</h3><p>{t("news.mcpText")}</p></article>
       <article><h3>{t("news.reliability")}</h3><p>{t("news.reliabilityText")}</p></article>
     </div>
     <a href="https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md" target="_blank" rel="noreferrer">{t("news.details")} ↗</a>

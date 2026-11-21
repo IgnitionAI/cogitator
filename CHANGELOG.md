@@ -2,13 +2,16 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
-## [0.5.2] - Unreleased
+## [0.5.2] - 2026-11-21
 
 ### Fixed
 
 - **Conversation status:** show “Running” only while work is in progress, with the same orange indicator in the list and conversation. Loaded idle sessions show “Ready”; the counter follows actual work.
 
 ### Added
+
+- **Remote MCP (Streamable HTTP):** external agents (Claude Code, the Claude/OpenAI APIs, your own bots) can operate Cogitator through `/mcp` with a Bearer token. `cogitator mcp token create|list|revoke` manages tokens, which are hashed, revocable at once and scoped `read` or `full`. New tools: read a conversation transcript, send a message and wait for the reply with progress notifications, and stop a turn. These tools are also available to the Majordome over stdio.
+- **ChatGPT / Claude.ai connectors (OAuth):** in protected mode, the web apps can add Cogitator as a custom connector. The app registers itself, then the owner signs in and chooses read-only or full access on a consent page. Connections use PKCE, short-lived access tokens and rotating refresh tokens, and can be revoked with the CLI.
 
 - **Machine indicators:** live host CPU/RAM summary and a detail panel with logical cores, data-disk usage, uptime and Cogitator process memory. Metrics require authentication and refresh every five seconds.
 

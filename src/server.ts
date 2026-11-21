@@ -80,6 +80,8 @@ import {
 } from "./workspaces.js";
 import { cloneRepo, isInsideDir, localDirFor } from "./git-import.js";
 import { listSubagents, readSubagentTranscript } from "./subagents.js";
+import { MCP_HTTP_PATH, McpHttpEndpoint } from "./mcp-http.js";
+import { McpOAuth } from "./mcp-oauth.js";
 
 // ---------- Statique ----------
 
@@ -1593,6 +1595,18 @@ export function createApp(opts: AppOptions): Server {
     }],
   ];
 
+  // Dispatch interne des routes /api/* pour le serveur MCP HTTP : mêmes handlers,
+  // mêmes validations et contrôles de disponibilité que l'UI, sans boucle réseau.
+  const availability = () => { if (opts.auth) opts.auth.assertAvailable(); else localCheck(paths.home); };
+  // OAuth 2.1 (connecteurs web ChatGPT / Claude.ai) : seulement avec une origine HTTPS et un login propriétaire.
+  const oauth = opts.auth ? new McpOAuth(paths.home, opts.auth) : undefined;
+  const mcp = new McpHttpEndpoint({
+    home: paths.home,
+    version: packageVersion(),
+    oauth,
+    dispatch: (method, path, body) => dispatchInternal(routes, method, path, body, availability),
+  });
+
   const app = opts.server ?? createServer();
   attachBrowserView(app, browser, paths.home, opts.auth);
   if (opts.auth) { app.requestTimeout = 30_000; app.headersTimeout = 10_000; app.maxHeadersCount = 100; }
@@ -1601,6 +1615,7 @@ export function createApp(opts: AppOptions): Server {
     deps.githubLogin.cancel();
     stopReap.stop();
     unsubscribePool();
+    void mcp.close();
     void durable.dispose();
   });
   app.on("request", async (req, res) => {
@@ -1612,6 +1627,27 @@ export function createApp(opts: AppOptions): Server {
       const privateRequest = privateRequests.has(req);
       const state = opts.auth;
       if (privateRequest && ("origin" in req.headers || Object.keys(req.headers).some(h => h.startsWith("sec-fetch-")))) throw new AuthError("FORBIDDEN", 403);
+      // MCP Streamable HTTP : authentifié par jeton Bearer (jamais par cookie de session),
+      // donc hors de la frontière navigateur ; l'hôte et une Origin éventuelle restent contrôlés.
+      if ((req.url ?? "").split("?")[0] === MCP_HTTP_PATH) {
+        if (privateRequest) throw new AuthError("FORBIDDEN", 403);
+        if (state) {
+          state.assertAvailable();
+          if (req.headers.host !== new URL(state.config.origin).host) throw new AuthError("FORBIDDEN", 403);
+          if (req.headers.origin !== undefined && req.headers.origin !== state.config.origin) throw new AuthError("FORBIDDEN", 403);
+        } else localCheck(paths.home);
+        return await mcp.handle(req, res);
+      }
+      // OAuth : métadonnées, enregistrement, jeton (appelés de serveur à serveur) et page de
+      // consentement (navigation intersite depuis l'application). Contrôles propres au module.
+      if (oauth && McpOAuth.handles((req.url ?? "").split("?")[0] ?? "")) {
+        if (privateRequest || !state) throw new AuthError("FORBIDDEN", 403);
+        state.assertAvailable();
+        if (req.headers.host !== new URL(state.config.origin).host) throw new AuthError("FORBIDDEN", 403);
+        return await oauth.handle(req, res, new URL(req.url ?? "/", state.config.origin));
+      }
+      // Sans OAuth (mode local), la découverte doit échouer proprement, jamais via le fallback SPA.
+      if ((req.url ?? "").startsWith("/.well-known/") || (req.url ?? "").startsWith("/oauth/")) return sendJson(res, 404, { error: "NOT_FOUND" });
       if (state) {
         state.assertAvailable();
         if (!privateRequest) validateBoundary(req, state);
@@ -1654,6 +1690,78 @@ export function createApp(opts: AppOptions): Server {
     }
   });
   return app;
+}
+
+/** Réponse en mémoire pour le dispatch interne (routes JSON uniquement, pas de SSE). */
+class CaptureResponse extends EventEmitter {
+  statusCode = 200;
+  headersSent = false;
+  destroyed = false;
+  writableEnded = false;
+  private readonly chunks: Buffer[] = [];
+  private readonly headers = new Map<string, unknown>();
+  setHeader(name: string, value: unknown): this { this.headers.set(name.toLowerCase(), value); return this; }
+  getHeader(name: string): unknown { return this.headers.get(name.toLowerCase()); }
+  removeHeader(name: string): void { this.headers.delete(name.toLowerCase()); }
+  writeHead(status: number, headers?: Record<string, unknown>): this {
+    this.statusCode = status;
+    for (const [k, v] of Object.entries(headers ?? {})) this.setHeader(k, v);
+    this.headersSent = true;
+    return this;
+  }
+  write(chunk: unknown): boolean {
+    this.headersSent = true;
+    if (chunk !== undefined && chunk !== null) this.chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    return true;
+  }
+  end(chunk?: unknown): this {
+    if (typeof chunk !== "function") this.write(chunk);
+    this.headersSent = true;
+    this.writableEnded = true;
+    this.emit("finish");
+    this.emit("close");
+    return this;
+  }
+  flushHeaders(): void { this.headersSent = true; }
+  text(): string { return Buffer.concat(this.chunks).toString("utf8"); }
+}
+
+/** Requête synthétique : jamais privée (pas de capacité propriétaire OS), jamais navigateur. */
+function syntheticRequest(method: string, path: string): IncomingMessage {
+  const req = new EventEmitter() as unknown as IncomingMessage & { headers: Record<string, string> };
+  Object.assign(req, { method, url: path, headers: { "content-type": "application/json" }, socket: { remoteAddress: "mcp" } });
+  return req;
+}
+
+/** Exécute une route /api/* en mémoire et renvoie son JSON (erreur si statut ≥ 400). */
+async function dispatchInternal(routes: Route[], method: string, path: string, body: unknown, check: () => void): Promise<unknown> {
+  const url = new URL(path, `http://${HOST}`);
+  if (!url.pathname.startsWith("/api/")) throw new Error(`not found: ${url.pathname}`);
+  const found = matchRoute(routes, method, url.pathname);
+  if (!found) throw new Error(`not found: ${url.pathname}`);
+  const capture = new CaptureResponse();
+  const res = capture as unknown as ServerResponse;
+  responseChecks.set(res, check);
+  check();
+  // Aller-retour JSON : le handler voit exactement ce qu'un client HTTP aurait envoyé.
+  const parsed = body === undefined ? {} : JSON.parse(JSON.stringify(body)) as unknown;
+  try {
+    await requestAuthorization.run(check, () => found.handler({
+      params: found.params, query: url.searchParams, body: parsed, req: syntheticRequest(method, path), res, check,
+    }));
+  } catch (err) {
+    if (err instanceof AuthError) throw new Error(err.code);
+    throw err;
+  }
+  if (!capture.writableEnded) throw new Error(`route sans réponse JSON : ${method} ${url.pathname}`);
+  const text = capture.text();
+  let data: unknown;
+  try { data = text ? JSON.parse(text) : {}; } catch { throw new Error(`réponse non JSON : ${method} ${url.pathname}`); }
+  if (capture.statusCode >= 400) {
+    const error = data && typeof data === "object" && "error" in data ? (data as { error: unknown }).error : undefined;
+    throw new Error(typeof error === "string" ? error : `HTTP ${capture.statusCode}`);
+  }
+  return data;
 }
 
 // Server-owned identity only: no HTTP header can confer the local OS-owner capability.

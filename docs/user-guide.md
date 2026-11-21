@@ -95,6 +95,8 @@ The flow is: **agent → MCP tool → Cogitator API → operation**. It is why t
 
 For a custom local MCP client, configure `node` with the absolute path to this script. Run it as the Cogitator owner OS account, with the same `COGITATOR_HOME`. In protected mode it uses the owner-only Unix socket. Do not set `COGITATOR_URL` for that private-socket path: an explicit URL selects ordinary HTTP and does not bypass login. There is no public unauthenticated HTTP MCP endpoint.
 
+External agents (Claude Code, the Claude or OpenAI APIs, your own bots) can use the **Streamable HTTP** endpoint `/mcp` with a Bearer token created by `cogitator mcp token create`. In protected mode, ChatGPT and Claude.ai custom connectors connect through OAuth with owner consent. See [Remote MCP](mcp-http.md).
+
 Other MCP servers can be attached to an agent. **Settings** also exposes the global pi MCP configuration. A saved definition still requires its executable, credentials and any necessary adapter on the host. Check agent tools after setup; do not assume every MCP entry is usable merely because JSON was saved.
 
 ## 9. Schedule recurring work

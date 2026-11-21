@@ -4,7 +4,7 @@
 
 Cogitator est **l’interface web de tes agents pi**. Tu l’installes sur ton ordinateur ou sur ton propre VPS. Chacun possède son installation ; ce n’est pas un service avec inscription publique. L’interface est disponible en français et en anglais.
 
-> Cette documentation décrit le code actuel de `dev`. Les nouveautés 0.5.2 ne sont pas encore toutes publiées sur npm : consulte le badge de version et le changelog avant d’installer.
+> Cette documentation décrit le code actuel de `dev`. La version 0.5.2 est publiée sur npm. Une entrée marquée **Unreleased** dans le changelog nécessite encore une installation depuis les sources.
 
 ![Les trois agents intégrés](images/bots.jpg)
 
@@ -84,6 +84,8 @@ Dans une conversation, ouvre **Sous-agents**, puis clique sur un enfant : une gr
 Le **MCP** permet aux agents d’agir dans Cogitator : créer un agent, ajouter un espace de travail, consulter le board ou programmer une tâche. Les agents intégrés reçoivent ce serveur lors de leur création. Sans les outils MCP appropriés, un agent peut expliquer une action sans pouvoir l’effectuer.
 
 Le serveur intégré utilise le transport **stdio**. En mode protégé, il rejoint Cogitator par une socket privée du compte propriétaire. Ce n’est pas une API MCP publique sans authentification. Tu peux configurer d’autres serveurs dans les agents et consulter la configuration globale dans **Paramètres**. Leur programme et leurs identifiants doivent exister sur le serveur.
+
+Pour qu’un agent **externe** (Claude Code, API Claude ou OpenAI, tes propres bots) pilote Cogitator, utilise l’endpoint **Streamable HTTP** `/mcp`. Crée un jeton avec `cogitator mcp token create mon-bot` (ajoute `--scope read` pour un accès en lecture seule), puis envoie-le dans l’en-tête `Authorization: Bearer cgt_…`. Le jeton n’est affiché qu’une fois. `cogitator mcp token revoke mon-bot` le révoque immédiatement. Sur un VPS en mode protégé, ChatGPT et Claude.ai peuvent aussi se connecter comme **connecteur personnalisé** avec l’URL `https://<ton-origine>/mcp`. L’application s’enregistre seule, tu te connectes, puis tu choisis **Lecture seule** ou **Contrôle total** sur la page de consentement. Détails et exemples de configuration : [MCP distant](mcp-http.md).
 
 ## Conversations et automatisations
 

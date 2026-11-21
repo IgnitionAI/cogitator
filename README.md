@@ -14,7 +14,7 @@
 
 Cogitator is a **pi package and web UI**, not a separate hosted AI service. Connect your model providers, open a bot, and work through conversations, projects, skills and subagents. Your installation keeps its own data and credentials. The interface is available in **English and French**, including on mobile.
 
-> **Release status:** this README describes the current `dev` build, including the upcoming **0.5.2** features. The published npm version is shown in the badge above. Features marked in the [unreleased changelog](https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md) require the current source build until publication. Updating from npm does not install unreleased code.
+> **Release status:** this README describes the current `dev` build. **0.5.2** is published on npm, and the badge above shows the latest published version. Any later entry marked **Unreleased** in the [changelog](https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md) requires a source build until it is published.
 
 ![Cogitator bots: Majordome, Project Manager and Skills Architect](https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/docs/images/bots.jpg)
 
@@ -61,7 +61,7 @@ These are editable agent presets, not separate subscriptions. Select their provi
 - **Extensions:** browse the pi catalog, install packages, check their versions, update individually and reload idle conversations. Active parents and background children keep running.
 - **Skills:** import reusable procedures, attach them to agents or invoke `/skill:name` in a message. Ask the Skills Architect to create a missing procedure.
 - **Schedules:** repeat a task with cron, inspect run history and review its outcome. The server must remain running; model usage is billed by your provider.
-- **MCP:** the bundled stdio MCP server lets agents operate Cogitator. Agent presets can also use other MCP servers; **Settings** exposes global MCP configuration.
+- **MCP:** the bundled stdio MCP server lets agents operate Cogitator. External agents (Claude Code, the Claude/OpenAI APIs, your own bots) can use the same tools over **Streamable HTTP** at `/mcp`, with a revocable Bearer token (`cogitator mcp token create`), or via OAuth for ChatGPT/Claude.ai custom connectors on a protected VPS. See [Remote MCP](https://github.com/IgnitionAI/cogitator/blob/dev/docs/mcp-http.md). Agent presets can also use other MCP servers; **Settings** exposes global MCP configuration.
 
 ![Extension installation, version checks and reload](https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/docs/images/extensions.jpg)
 

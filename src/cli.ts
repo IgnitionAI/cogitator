@@ -12,6 +12,7 @@ import { getPaths } from "./paths.js";
 import { PiPool } from "./pool.js";
 import { createApp } from "./server.js";
 import { authCommand } from "./auth-cli.js";
+import { mcpCommand } from "./mcp-cli.js";
 import { loadAuth, lockHome, protectedRequired, type AuthState } from "./auth-state.js";
 import { listenOwnerSocket } from "./owner-transport.js";
 import { makeSpawner } from "./spawner.js";
@@ -28,8 +29,9 @@ try {
   const required = authenticationRequired();
   const args = process.argv.slice(2);
   if (args[0] === "auth") await authCommand(paths.home, PORT, args.slice(1));
+  else if (args[0] === "mcp") { mkdirSync(paths.home, { recursive: true }); mcpCommand(paths.home, PORT, args.slice(1)); }
   else {
-    if (args.length > 1 || args.some(arg => arg !== "--auth-required")) throw new Error("Usage: cogitator [--auth-required] | cogitator auth <init|recover|setup-key>");
+    if (args.length > 1 || args.some(arg => arg !== "--auth-required")) throw new Error("Usage: cogitator [--auth-required] | cogitator auth <init|recover|setup-key> | cogitator mcp token <create|list|revoke>");
     await start(required || args.length === 1);
   }
 } catch (err) {

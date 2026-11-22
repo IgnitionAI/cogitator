@@ -79,7 +79,8 @@ test("vrai bash : sortie interactive et code de sortie émis (OSC 133;D)", { ski
     const l = shellLaunch(home, home);
     const info = m.create({ ...l, env: { ...l.env, HOME: home } }, { cols: 100, rows: 30 });
     let out = "";
-    m.attach(info.id, { send: (f) => { const fr = JSON.parse(f); if (fr.t === "o") out += fr.d; }, close: () => {} });
+    let exited = false;
+    m.attach(info.id, { send: (f) => { const fr = JSON.parse(f); if (fr.t === "o") out += fr.d; if (fr.t === "x") exited = true; }, close: () => {} });
     const waitFor = async (re: RegExp) => { for (let i = 0; i < 100 && !re.test(out); i++) await new Promise((r) => setTimeout(r, 50)); assert.match(out, re); };
     if (l.shellIntegration) await waitFor(/\u001b\]133;D;0\u0007/);
     m.input(info.id, "echo cogito-$((40+2))\r");
@@ -88,8 +89,12 @@ test("vrai bash : sortie interactive et code de sortie émis (OSC 133;D)", { ski
       m.input(info.id, "false\r");
       await waitFor(/\u001b\]133;D;1\u0007/);
     }
+    // Sortie propre : bash écrit son historique dans HOME en quittant, avant le nettoyage du dossier.
+    m.input(info.id, "exit\r");
+    for (let i = 0; i < 100 && !exited; i++) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(exited, true, "bash a quitté");
     m.dispose();
-  } finally { rmSync(home, { recursive: true, force: true }); }
+  } finally { rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); }
 });
 
 // ---------- Assistant ----------

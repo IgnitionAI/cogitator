@@ -4,7 +4,7 @@
 
 Cogitator est **l’interface web de tes agents pi**. Tu l’installes sur ton ordinateur ou sur ton propre VPS. Chacun possède son installation ; ce n’est pas un service avec inscription publique. L’interface est disponible en français et en anglais.
 
-> Cette documentation décrit le code actuel de `dev`. La version 0.6.0 est publiée sur npm. Une entrée marquée **Unreleased** dans le changelog nécessite encore une installation depuis les sources.
+> Cette documentation décrit le code actuel de `dev`. La version 0.7.0 est publiée sur npm. Une entrée marquée **Unreleased** dans le changelog nécessite encore une installation depuis les sources.
 
 ![Les trois agents intégrés](images/bots.jpg)
 

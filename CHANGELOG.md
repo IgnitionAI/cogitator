@@ -2,7 +2,9 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
-## [Unreleased]
+## [0.7.0] - 2026-11-22
+
+**Highlight:** update Cogitator and your pi extensions in one click.
 
 ### Added
 

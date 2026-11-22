@@ -3,17 +3,16 @@ import { Icon, type IconName } from "./icons";
 import { Modal } from "./ui";
 
 /** Version décrite par le dialogue. La changer fait réapparaître le point « non lu ». */
-export const NEWS_VERSION = "0.6.0";
+export const NEWS_VERSION = "0.7.0";
 const NEWS_DATE = "2026-11-22T12:00:00Z";
 const NEWS_SEEN_KEY = "cogitator.newsSeen";
 const CHANGELOG_URL = "https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md";
-const FEATURE_DOC_URL = "https://github.com/IgnitionAI/cogitator/blob/dev/docs/terminal.md";
+const FEATURE_DOC_URL = "https://github.com/IgnitionAI/cogitator/blob/dev/docs/user-guide.md#updates";
 
 const ITEMS: Array<{ icon: IconName; title: TranslationKey; text: TranslationKey }> = [
-  { icon: "spark", title: "news.ask", text: "news.askText" },
-  { icon: "chevron", title: "news.ghost", text: "news.ghostText" },
-  { icon: "warning", title: "news.explain", text: "news.explainText" },
-  { icon: "bot", title: "news.agents", text: "news.agentsText" },
+  { icon: "plug", title: "news.updateAll", text: "news.updateAllText" },
+  { icon: "warning", title: "news.safeRestart", text: "news.safeRestartText" },
+  { icon: "key", title: "news.vps", text: "news.vpsText" },
 ];
 
 /** Le propriétaire a-t-il déjà ouvert les notes de cette version ? (préférence locale, best-effort) */
@@ -37,12 +36,12 @@ export function WhatsNew({ onClose }: { onClose: () => void }) {
     </header>
 
     <article className="news-feature">
-      <span className="news-feature-icon" aria-hidden="true"><Icon name="terminal" size={18} /></span>
+      <span className="news-feature-icon" aria-hidden="true"><Icon name="download" size={18} /></span>
       <div>
         <span className="news-kicker">{t("news.featured")}</span>
-        <h3>{t("news.terminal")}</h3>
-        <p>{t("news.terminalText")}</p>
-        <a className="news-cta" href={FEATURE_DOC_URL} target="_blank" rel="noreferrer">{t("news.terminalCta")} <span aria-hidden="true">↗</span></a>
+        <h3>{t("news.updates")}</h3>
+        <p>{t("news.updatesText")}</p>
+        <a className="news-cta" href={FEATURE_DOC_URL} target="_blank" rel="noreferrer">{t("news.updatesCta")} <span aria-hidden="true">↗</span></a>
       </div>
     </article>
 

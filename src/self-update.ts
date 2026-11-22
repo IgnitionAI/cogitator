@@ -10,7 +10,7 @@
  * compte du serveur (protection voulue) ; l'UI affiche alors la procédure du guide VPS.
  */
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
 import { findPackageRoot } from "./default-agent.js";
 import type { Paths } from "./paths.js";
@@ -18,23 +18,55 @@ import type { Paths } from "./paths.js";
 export const PACKAGE = "@ignitionai/cogitator";
 
 export type SelfUpdateBlock = "SOURCE_BUILD" | "NOT_PI_MANAGED" | "SERVICE_MANAGED";
-export interface SelfUpdateSupport { supported: boolean; reason?: SelfUpdateBlock }
+/** `pi` : installation gérée par pi ; `updater` : service root cogitator-updater (VPS systemd). */
+export interface SelfUpdateSupport { supported: boolean; mode?: "pi" | "updater"; reason?: SelfUpdateBlock }
+
+/** Dossier d'état du service cogitator-updater (voir src/updater/cogitator-updater.ts). */
+export function updaterDir(env: NodeJS.ProcessEnv = process.env): string {
+  return env.COGITATOR_UPDATER_DIR ?? "/var/lib/cogitator-updater";
+}
+
+/** Updater installé : status.json lisible et inbox/ accessible en écriture pour ce compte. */
+export function updaterAvailable(dir: string): boolean {
+  try {
+    accessSync(join(dir, "status.json"), constants.R_OK);
+    accessSync(join(dir, "inbox"), constants.W_OK | constants.X_OK);
+    return true;
+  } catch { return false; }
+}
+
+export interface UpdaterStatus { status: string; target?: string; from?: string; message?: string; at?: string }
+export function readUpdaterStatus(dir: string): UpdaterStatus | null {
+  try { return JSON.parse(readFileSync(join(dir, "status.json"), "utf8")) as UpdaterStatus; } catch { return null; }
+}
+
+/** Dépôt atomique de la demande (fichier temporaire du même dossier puis rename). */
+export function requestUpdater(dir: string, version: string): void {
+  const inbox = join(dir, "inbox");
+  const tmp = join(inbox, `.request-${process.pid}-${Date.now()}.json`);
+  writeFileSync(tmp, JSON.stringify({ version, requested_at: new Date().toISOString() }), { mode: 0o640 });
+  renameSync(tmp, join(inbox, "request.json"));
+}
 
 export function selfUpdateSupport(paths: Paths, root: string | null = findPackageRoot(), env: NodeJS.ProcessEnv = process.env): SelfUpdateSupport {
+  if (env.COGITATOR_SELF_UPDATE === "0") return { supported: false, reason: "SERVICE_MANAGED" };
+  if (updaterAvailable(updaterDir(env))) return { supported: true, mode: "updater" };
   if (!root) return { supported: false, reason: "SOURCE_BUILD" };
   const piModules = join(paths.piAgentDir, "npm", "node_modules");
   let real: string, base: string;
   try { real = realpathSync(root); base = realpathSync(piModules); } catch { return { supported: false, reason: "NOT_PI_MANAGED" }; }
   if (!real.startsWith(base + sep)) return { supported: false, reason: "NOT_PI_MANAGED" };
   // Un service (systemd) gère lui-même le cycle de vie : pas de relance concurrente.
-  if (env.INVOCATION_ID || env.COGITATOR_SELF_UPDATE === "0") return { supported: false, reason: "SERVICE_MANAGED" };
-  return { supported: true };
+  if (env.INVOCATION_ID) return { supported: false, reason: "SERVICE_MANAGED" };
+  return { supported: true, mode: "pi" };
 }
 
 export interface SelfUpdateState {
   status: "idle" | "installing" | "restarting" | "error";
   target?: string;
   error?: string;
+  /** Étape détaillée du service updater (downloading, installing, switching…). */
+  step?: string;
 }
 
 export interface SelfUpdateDeps {
@@ -47,6 +79,9 @@ export interface SelfUpdateDeps {
   installedVersion: () => string | null;
   relaunch: () => void;
   shutdown: () => void;
+  /** Mode updater : dépose la demande et lit l'avancement du service root. */
+  requestUpdater?: (version: string) => void;
+  updaterStatus?: () => UpdaterStatus | null;
 }
 
 export class SelfUpdateError extends Error {
@@ -54,8 +89,28 @@ export class SelfUpdateError extends Error {
 }
 
 export class SelfUpdater {
-  state: SelfUpdateState = { status: "idle" };
+  private internal: SelfUpdateState = { status: "idle" };
+  private requestedAt = 0;
   constructor(private readonly deps: SelfUpdateDeps) {}
+
+  /** État courant ; en mode updater, il suit le status.json du service root. */
+  get state(): SelfUpdateState {
+    const s = this.internal;
+    // Processus relancé après un retour arrière : signaler l'échec récent du service updater.
+    if (s.status === "idle" && this.deps.updaterStatus) {
+      const u = this.deps.updaterStatus();
+      if (u && (u.status === "rolled-back" || u.status === "error") && u.at && Date.now() - Date.parse(u.at) < 5 * 60_000) {
+        return { status: "error", target: u.target, step: u.status, error: u.message ?? u.status };
+      }
+    }
+    if (!this.requestedAt || s.status !== "installing" || !this.deps.updaterStatus) return s;
+    const u = this.deps.updaterStatus();
+    if (!u || u.target !== s.target || (u.at && Date.parse(u.at) < this.requestedAt - 1000)) return s;
+    if (u.status === "error" || u.status === "rolled-back") return { status: "error", target: s.target, step: u.status, error: u.message ?? u.status };
+    if (u.status === "restarting" || u.status === "verifying" || u.status === "rolling-back") return { status: "restarting", target: s.target, step: u.status };
+    return { ...s, step: u.status };
+  }
+  set state(value: SelfUpdateState) { this.internal = value; }
 
   /** Lance la mise à jour ; l'installation se poursuit en tâche de fond (suivie par `state`). */
   async start(force = false): Promise<SelfUpdateState> {
@@ -67,6 +122,14 @@ export class SelfUpdater {
     const busy = await this.deps.busy();
     if (busy > 0 && !force) throw new SelfUpdateError("SELF_UPDATE_BUSY", 409, { busy });
     const target = release.latest;
+    if (support.mode === "updater") {
+      if (!this.deps.requestUpdater) throw new SelfUpdateError("SELF_UPDATE_SERVICE_MANAGED", 400);
+      this.deps.requestUpdater(target);
+      this.requestedAt = Date.now();
+      this.state = { status: "installing", target, step: "requested" };
+      return { ...this.state };
+    }
+    this.requestedAt = 0;
     this.state = { status: "installing", target };
     void this.run(target);
     return { ...this.state };

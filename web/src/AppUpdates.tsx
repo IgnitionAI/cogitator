@@ -13,12 +13,14 @@ type Release = Awaited<ReturnType<typeof api.appUpdates>>;
 type Phase =
   | { kind: "idle" }
   | { kind: "confirm-busy" }
-  | { kind: "installing"; target: string }
-  | { kind: "restarting"; target: string }
+  | { kind: "installing"; target: string; step?: string }
+  | { kind: "restarting"; target: string; step?: string }
   | { kind: "ready"; target: string }
   | { kind: "error"; message: string };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const STEPS = ["requested", "downloading", "installing", "switching", "verifying", "rolling-back"];
+const stepKey = (step?: string) => step && STEPS.includes(step) ? `updates.step.${step}` as TranslationKey : null;
 
 export function AppUpdates({ onClose }: { onClose: () => void }) {
   const [release, setRelease] = useState<Release | null>(null);
@@ -58,7 +60,8 @@ export function AppUpdates({ onClose }: { onClose: () => void }) {
           return;
         }
         if (state.state.status === "error") { setPhase({ kind: "error", message: state.state.error ?? "" }); return; }
-        if (state.state.status === "restarting" && !restarting) { restarting = true; setPhase({ kind: "restarting", target }); }
+        if (state.state.status === "restarting") { restarting = true; setPhase({ kind: "restarting", target, step: state.state.step }); }
+        else if (state.state.status === "installing") setPhase({ kind: "installing", target, step: state.state.step });
       } catch {
         // Serveur en cours de redémarrage : injoignable quelques secondes.
         if (!restarting) { restarting = true; setPhase({ kind: "restarting", target }); }
@@ -95,7 +98,7 @@ export function AppUpdates({ onClose }: { onClose: () => void }) {
 
       {release?.status === "available" && self?.supported ? <>
         {phase.kind === "idle" || phase.kind === "error" ? <>
-          <p className="muted">{t("updates.applyHint")}</p>
+          <p className="muted">{t(self.mode === "updater" ? "updates.applyHintUpdater" : "updates.applyHint")}</p>
           <button type="button" className="btn btn-primary" onClick={() => void apply(false)}><Icon name="download" size={14} /> {t("updates.apply", { version: release.latest })}</button>
         </> : null}
         {phase.kind === "confirm-busy" ? (
@@ -110,8 +113,8 @@ export function AppUpdates({ onClose }: { onClose: () => void }) {
         {working ? (
           <div className="updates-progress" role="status">
             <span className="updates-spinner" aria-hidden="true" />
-            {phase.kind === "installing" ? t("updates.installing", { version: phase.target })
-              : phase.kind === "restarting" ? t("updates.restarting")
+            {phase.kind === "installing" ? (stepKey(phase.step) ? t(stepKey(phase.step)!) : t("updates.installing", { version: phase.target }))
+              : phase.kind === "restarting" ? (stepKey(phase.step) ? t(stepKey(phase.step)!) : t("updates.restarting"))
               : t("updates.ready", { version: phase.target })}
           </div>
         ) : null}
@@ -124,7 +127,7 @@ export function AppUpdates({ onClose }: { onClose: () => void }) {
           <a href="https://github.com/IgnitionAI/cogitator/blob/dev/docs/vps.md#updating-and-rollback" target="_blank" rel="noreferrer">{t("updates.guide")} ↗</a>
         ) : null}
       </> : null}
-      {release?.status === "available" && self?.supported && phase.kind === "idle" ? <>
+      {release?.status === "available" && self?.supported && self.mode !== "updater" && phase.kind === "idle" ? <>
         <p className="muted updates-manual">{t("updates.manualPi")}</p>
         <pre><code>{PI_UPDATE_COMMAND}</code></pre>
       </> : null}

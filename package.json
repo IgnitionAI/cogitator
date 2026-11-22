@@ -1,6 +1,6 @@
 {
   "name": "@ignitionai/cogitator",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "A web control panel for pi: composable agents, workspaces, interactive conversations, and scheduled tasks. A pi package.",
   "type": "module",
   "keywords": [
@@ -23,7 +23,8 @@
     "node": ">=22.19.0"
   },
   "bin": {
-    "cogitator": "dist/src/cli.js"
+    "cogitator": "dist/src/cli.js",
+    "cogitator-updater": "dist/src/updater/cogitator-updater.js"
   },
   "files": [
     "dist/src",

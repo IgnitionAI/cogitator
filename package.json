@@ -23,7 +23,8 @@
     "node": ">=22.19.0"
   },
   "bin": {
-    "cogitator": "dist/src/cli.js"
+    "cogitator": "dist/src/cli.js",
+    "cogitator-updater": "dist/src/updater/cogitator-updater.js"
   },
   "files": [
     "dist/src",

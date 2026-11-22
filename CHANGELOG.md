@@ -2,6 +2,12 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
+## [Unreleased]
+
+### Added
+
+- **One-click updates on a VPS (cogitator-updater):** a small root service for systemd installations. Cogitator only drops a request (a version number). The service accepts only the latest published release, downloads it, installs it as a new release and verifies npm signatures and provenance. It then switches `/opt/cogitator/current`, restarts Cogitator and checks that the new version is served. If the new version does not start, it automatically returns to the previous one. The code stays protected from the service account. Install it once with `sudo node /opt/cogitator/current/dist/src/updater/cogitator-updater.js install --user cogitator`. See [VPS updates](https://github.com/IgnitionAI/cogitator/blob/dev/docs/updater.md).
+
 ## [0.7.0] - 2026-11-22
 
 **Highlight:** update Cogitator and your pi extensions in one click.

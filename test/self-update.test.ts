@@ -21,7 +21,7 @@ test("support : installation gérée par pi uniquement (ni source, ni service)",
     const managed = join(home, "pi", "npm", "node_modules", "@ignitionai", "cogitator");
     const source = join(home, "opt", "cogitator");
     mkdirSync(managed, { recursive: true }); mkdirSync(source, { recursive: true });
-    assert.deepEqual(selfUpdateSupport(paths, managed, {}), { supported: true });
+    assert.deepEqual(selfUpdateSupport(paths, managed, {}), { supported: true, mode: "pi" });
     assert.deepEqual(selfUpdateSupport(paths, source, {}), { supported: false, reason: "NOT_PI_MANAGED" });
     assert.deepEqual(selfUpdateSupport(paths, null, {}), { supported: false, reason: "SOURCE_BUILD" });
     assert.deepEqual(selfUpdateSupport(paths, managed, { INVOCATION_ID: "x" }), { supported: false, reason: "SERVICE_MANAGED" });

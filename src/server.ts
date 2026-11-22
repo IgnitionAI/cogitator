@@ -82,7 +82,7 @@ import { cloneRepo, isInsideDir, localDirFor } from "./git-import.js";
 import { listSubagents, readSubagentTranscript } from "./subagents.js";
 import { MCP_HTTP_PATH, McpHttpEndpoint } from "./mcp-http.js";
 import { McpOAuth } from "./mcp-oauth.js";
-import { installedPackageVersion, PACKAGE as SELF_PACKAGE, SelfUpdateError, SelfUpdater, selfUpdateSupport, spawnRelauncher, type SelfUpdateDeps } from "./self-update.js";
+import { installedPackageVersion, readUpdaterStatus, requestUpdater, updaterDir, PACKAGE as SELF_PACKAGE, SelfUpdateError, SelfUpdater, selfUpdateSupport, spawnRelauncher, type SelfUpdateDeps } from "./self-update.js";
 import { loadPty, shellLaunch, terminalEnv, TerminalError, TerminalManager, type PtySpawn, type TerminalLaunch } from "./terminal.js";
 import { attachTerminalSocket, terminalRoutes } from "./terminal-http.js";
 import { piComplete, type CompleteFn } from "./terminal-assist.js";
@@ -362,6 +362,8 @@ function registryRoutes(deps: Deps): Route[] {
     install: (source) => runPi("install", source, paths),
     installedVersion: () => installedPackageVersion(),
     relaunch: () => spawnRelauncher(),
+    requestUpdater: (version) => requestUpdater(updaterDir(), version),
+    updaterStatus: () => readUpdaterStatus(updaterDir()),
     shutdown: () => {
       // Arrêt habituel (cli.ts) ; filet de sécurité si une poignée retient le processus.
       setTimeout(() => process.exit(0), 15_000).unref();

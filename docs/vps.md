@@ -155,7 +155,7 @@ In **Extensions**, installation applies to the server's pi profile. Check update
 
 ## Updating and rollback
 
-The footer's **Updates** button checks npm. For a pi-managed installation (package under the pi profile, server started by `/cogitator`), it installs the new release with pi and restarts the server in one click. For this systemd/source deployment, it only shows guidance: it never replaces the release or restarts the service, because the release is protected from the server account. A source build can be newer than npm; do not downgrade it just because npm's latest tag differs.
+The footer's **Updates** button checks npm. For a pi-managed installation (package under the pi profile, server started by `/cogitator`), it installs the new release with pi and restarts the server in one click. For this systemd/source deployment, install [cogitator-updater](updater.md) once: the button then asks that root service to install the latest release, switch `current`, restart and verify, with automatic rollback. Without it, the button only shows guidance, because the release is protected from the server account. A source build can be newer than npm; do not downgrade it just because npm's latest tag differs.
 
 For a pi-managed installation, run `pi update --extensions` under the owning account and matching `PI_CODING_AGENT_DIR`, then load/restart the controller through its actual launch method. For a pinned package, explicitly choose the new version. For the systemd/source layout above:
 

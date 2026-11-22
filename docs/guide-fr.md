@@ -85,7 +85,7 @@ Le bouton **Mises à jour** du pied de page vérifie npm. Si Cogitator est insta
 - **Mettre à jour vers X et redémarrer** installe la nouvelle version, redémarre le serveur et recharge la page ;
 - **Tout mettre à jour** met à jour tes extensions pi, puis les recharge sans couper les conversations en cours.
 
-Si des conversations travaillent encore, Cogitator demande avant de les interrompre. Une release sous `/opt` gérée par systemd n'est pas modifiée depuis l'interface : suis le guide VPS.
+Si des conversations travaillent encore, Cogitator demande avant de les interrompre. Sur un VPS avec une release sous `/opt` gérée par systemd, installe une fois le service [cogitator-updater](updater.md) en root (`sudo node /opt/cogitator/current/dist/src/updater/cogitator-updater.js install --user cogitator`). Le bouton lui demande alors d'installer la dernière version, de redémarrer Cogitator et de vérifier qu'elle répond. Si elle ne démarre pas, il revient automatiquement à la version précédente. Le code reste protégé du compte du serveur.
 
 ## Le terminal
 

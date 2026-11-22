@@ -2,7 +2,9 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
-## [Unreleased]
+## [0.8.0] - 2026-11-22
+
+**Highlight:** the same one-click update on a systemd VPS, with automatic rollback.
 
 ### Added
 

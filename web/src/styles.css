@@ -940,3 +940,28 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 .footer-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .setup-skill-list { max-height: 240px; overflow: auto; }
+
+/* ---------- Updates ---------- */
+.updates-card { display: grid; gap: 8px; padding: 14px; border: 1px solid var(--border-strong); border-radius: var(--radius-pop); margin-bottom: 12px; }
+.updates-card p { margin: 0; }
+.updates-card pre { margin: 0; }
+.updates-card > .btn { justify-self: start; }
+.updates-card-head { display: flex; align-items: center; gap: 8px; }
+.updates-card-head h3 { margin: 0; font-size: 14px; }
+.updates-pill {
+  margin-left: auto; font-size: 12px; font-family: ui-monospace, monospace; padding: 2px 8px; border-radius: 999px;
+  background: var(--raised); color: var(--muted);
+}
+.updates-pill.is-available { background: var(--accent-dim); color: var(--accent-text); }
+.updates-pill.is-current { color: var(--success); }
+.updates-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.updates-list li { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.updates-progress { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg); }
+.updates-spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--accent-dim); border-top-color: var(--accent-text); flex-shrink: 0; }
+@media (prefers-reduced-motion: no-preference) { .updates-spinner { animation: updates-spin 0.8s linear infinite; } }
+@keyframes updates-spin { to { transform: rotate(360deg); } }
+.updates-warning { display: grid; gap: 8px; padding: 10px; border-radius: var(--radius); border: 1px solid color-mix(in srgb, var(--todo) 50%, var(--border-strong)); background: color-mix(in srgb, var(--todo) 10%, transparent); font-size: 13px; }
+.updates-warning svg { color: var(--todo); vertical-align: -2px; }
+.updates-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.updates-success { color: var(--success); font-size: 13px; }
+.updates-manual { font-size: 12px; }

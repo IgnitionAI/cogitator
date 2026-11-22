@@ -447,7 +447,7 @@ export interface ScheduleWrite {
 }
 
 export interface PackageCard { name: string; description: string; types: string[] }
-export interface PackageOperation { name: string; action: "install" | "remove" | "update"; status: "running" | "done" | "error"; error?: string; deferred?: number }
+export interface PackageOperation { name: string; action: "install" | "remove" | "update" | "update-all"; status: "running" | "done" | "error"; error?: string; deferred?: number; total?: number; updated?: string[]; failed?: Array<{ name: string; error: string }> }
 export interface PackageState { installed: Array<{ name: string; source: string; version: string; removable: boolean }>; operation: PackageOperation | null }
 
 export interface GitHubConnectionState { available: boolean; connected: boolean; login?: string; status: "idle" | "starting" | "waiting" | "done" | "error"; code?: string; error?: string }
@@ -457,3 +457,5 @@ export interface PackageUpdate { name: string; version: string; latest?: string;
 export interface TerminalSession { id: string; title: string; kind: "shell" | "agent"; agentId?: string; cwd: string; createdAt: string; exited: boolean; exitCode?: number }
 export interface TerminalAgent { id: string; name: string; provider: string; model: string }
 export interface TerminalStatus { enabled: boolean; reason: string | null; sessions: TerminalSession[]; agents: TerminalAgent[] }
+
+export interface SelfUpdateInfo { supported: boolean; reason?: "SOURCE_BUILD" | "NOT_PI_MANAGED" | "SERVICE_MANAGED"; state: { status: "idle" | "installing" | "restarting" | "error"; target?: string; error?: string } }

@@ -63,7 +63,7 @@ export function installedPackages(paths: Paths) {
     return { source, name: match?.[1] ?? source, version, removable: !!match && packageName.test(match[1]!) };
   });
 }
-export interface PackageOperation { name: string; action: "install" | "remove" | "update"; status: "running" | "done" | "error"; error?: string; deferred?: number }
+export interface PackageOperation { name: string; action: "install" | "remove" | "update" | "update-all"; status: "running" | "done" | "error"; error?: string; deferred?: number; total?: number; updated?: string[]; failed?: Array<{ name: string; error: string }> }
 export class PackageManager {
   operation: PackageOperation | null = null;
   constructor(private paths: Paths, private refresh: () => Promise<number>, private run = runPi) {}
@@ -74,6 +74,31 @@ export class PackageManager {
     this.operation = operation;
     void this.perform(operation);
     return operation;
+  }
+  /** Met à jour toutes les extensions qui ont une version plus récente, puis recharge une seule fois. */
+  startAll(exclude: string[] = []) {
+    if (this.operation?.status === "running") throw new Error("Une installation est déjà en cours.");
+    const operation: PackageOperation = { name: "*", action: "update-all", status: "running", updated: [], failed: [] };
+    this.operation = operation;
+    void this.performAll(operation, new Set(exclude));
+    return operation;
+  }
+  private async performAll(operation: PackageOperation, exclude: Set<string>) {
+    try {
+      const updates = (await packageUpdates(this.paths)).filter(u => u.available && u.latest && !exclude.has(u.name));
+      operation.total = updates.length;
+      for (const update of updates) {
+        try {
+          const meta = JSON.parse(await fetchText(`https://registry.npmjs.org/${encodeURIComponent(update.name)}/latest`));
+          if (meta.name !== update.name || !meta.keywords?.includes("pi-package") || !/^\d+\.\d+\.\d+$/.test(meta.version)) throw new Error("Ce package n’est pas un package pi valide.");
+          await this.run("install", `npm:${update.name}@${meta.version}`, this.paths);
+          operation.updated!.push(update.name);
+        } catch (error) { operation.failed!.push({ name: update.name, error: error instanceof Error ? error.message : "Mise à jour échouée." }); }
+      }
+      if (operation.updated!.length) operation.deferred = await this.refresh();
+      operation.status = operation.failed!.length && !operation.updated!.length ? "error" : "done";
+      if (operation.status === "error") operation.error = operation.failed!.map(f => `${f.name} : ${f.error}`).join("\n");
+    } catch (error) { operation.status = "error"; operation.error = error instanceof Error ? error.message : "Mise à jour échouée."; }
   }
   private async perform(operation: PackageOperation) {
     try {
@@ -99,7 +124,7 @@ export class PackageManager {
     } catch (error) { operation.status = "error"; operation.error = error instanceof Error ? error.message : "Installation échouée."; }
   }
 }
-function runPi(action: string, source: string, paths: Paths): Promise<void> {
+export function runPi(action: string, source: string, paths: Paths): Promise<void> {
   return new Promise((resolve, reject) => {
     // Arguments, never shell text. Same executable environment and profile as chat RPC.
     const child = spawn("pi", [action, source], { cwd: paths.home, env: { ...process.env, PI_CODING_AGENT_DIR: paths.piAgentDir }, stdio: "ignore", detached: process.platform !== "win32" });

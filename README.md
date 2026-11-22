@@ -58,6 +58,7 @@ These are editable agent presets, not separate subscriptions. Select their provi
 - **Conversations:** streaming responses, tool results, code, images, files and diffs. Change the model without discarding history once the current turn finishes.
 - **Projects:** import GitHub repositories, connect a private GitHub account, inspect project files, use a GitHub Issues board and start agent work from a ticket.
 - **Subagents:** install `@gotgenes/pi-subagents` from Extensions to enable delegation. Click a child in the Subagents panel to read its conversation in a large dialog, with live progress and expandable tools. The parent keeps working.
+- **Updates:** update Cogitator and every pi extension in one click from **Updates**; Cogitator restarts and the page reloads (pi-managed installations).
 - **Extensions:** browse the pi catalog, install packages, check their versions, update individually and reload idle conversations. Active parents and background children keep running.
 - **Skills:** import reusable procedures, attach them to agents or invoke `/skill:name` in a message. Ask the Skills Architect to create a missing procedure.
 - **Terminal:** a shell on your server in the browser (protected mode), your agents running interactively in pi, and an assistant that turns `# a request` into a command, suggests the rest of what you type and explains errors. Nothing runs without you. See [Web terminal](https://github.com/IgnitionAI/cogitator/blob/dev/docs/terminal.md).

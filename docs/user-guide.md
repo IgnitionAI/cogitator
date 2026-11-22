@@ -87,6 +87,10 @@ Try:
 
 Open **Subagents**, then click a child to read its conversation in a wide dialog. Messages, tool activity and the final result are available without leaving the parent chat; running children refresh periodically. Scrolling back preserves your position. This is a read-only viewer. Closing it does not stop the child. A missing or truncated transcript is reported explicitly.
 
+## Updates
+
+The footer's **Updates** button checks npm. When pi manages your installation, **Update to X and restart** installs the new release, restarts the server and reloads the page. **Update all** updates your pi extensions and reloads them without interrupting active conversations. When conversations are still working, Cogitator asks before restarting. Systemd/source deployments follow the [VPS guide](vps.md#updating-and-rollback).
+
 ## Terminal
 
 **Terminal** opens a shell on the server, or runs one of your agents in pi's interactive interface. It is available only in protected mode, for the signed-in owner: it is a full shell with the rights of the account that runs Cogitator.

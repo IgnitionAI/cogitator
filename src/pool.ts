@@ -191,6 +191,13 @@ export class PiPool {
     return this.handles.size;
   }
 
+  /** Conversations au travail (tour en cours, compaction ou sous-agent vivant). */
+  async busyCount(): Promise<number> {
+    let busy = 0;
+    for (const handle of [...this.handles.values()]) if (!handle.dead && await this.streaming(handle)) busy++;
+    return busy;
+  }
+
   isLive(convId: string): boolean {
     const h = this.handles.get(convId);
     return Boolean(h && !h.dead);

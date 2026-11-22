@@ -79,6 +79,14 @@ Dans **Extensions**, recherche un package pi, installe-le et suis son état. Pou
 
 Dans une conversation, ouvre **Sous-agents**, puis clique sur un enfant : une grande fenêtre montre ses messages, outils et résultat. Elle s’actualise pendant le travail, laisse consulter les anciens messages et ne bloque pas le parent. Cette vue est en lecture seule.
 
+## Mettre à jour en un clic
+
+Le bouton **Mises à jour** du pied de page vérifie npm. Si Cogitator est installé avec pi :
+- **Mettre à jour vers X et redémarrer** installe la nouvelle version, redémarre le serveur et recharge la page ;
+- **Tout mettre à jour** met à jour tes extensions pi, puis les recharge sans couper les conversations en cours.
+
+Si des conversations travaillent encore, Cogitator demande avant de les interrompre. Une release sous `/opt` gérée par systemd n'est pas modifiée depuis l'interface : suis le guide VPS.
+
 ## Le terminal
 
 La page **Terminal** ouvre un shell sur ton serveur, ou lance un de tes agents directement dans pi, en mode interactif. Elle n'est disponible qu'en mode protégé, pour le propriétaire connecté : c'est un shell complet avec les droits du compte qui fait tourner Cogitator.

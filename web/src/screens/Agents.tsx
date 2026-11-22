@@ -2,7 +2,7 @@ import { ModelFields, type ModelDraft } from "../ModelConfiguration";
 import { t as translate, localizeText, formatNumber, thinkingLabel, getLocale } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import { thinkingLevelsFor } from "../types";
+import { thinkingLevelsFor, usableProviders } from "../types";
 import type { AgentPreset, McpServerEntry, ProviderView, SkillRef, SubagentInput, Workspace } from "../types";
 import { Badge, Empty, ErrorText, Field, Modal, PageHead, useToast } from "../ui";
 import { Icon } from "../icons";
@@ -307,7 +307,7 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
             const nextModel = providers.find((p) => p.id === nextProvider)?.models[0]?.id ?? "";
             setForm((f) => ({ ...f, provider: nextProvider, model: "", thinking: f.thinking && !thinkingLevelsFor(providers, nextProvider, nextModel).some((level) => level === f.thinking) ? "" : f.thinking }));
           }}>
-            {providers.map((p) => <option key={p.id} value={p.id}>{p.id} {p.auth.ready === true ? translate("screens.readyParen") : p.auth.ready === false ? translate("screens.authParen") : translate("screens.unknownParen")}</option>)}
+            {usableProviders(providers, form.provider).map((p) => <option key={p.id} value={p.id}>{p.id} {p.auth.ready === true ? translate("screens.readyParen") : p.auth.ready === false ? translate("screens.authParen") : translate("screens.unknownParen")}</option>)}
           </select>
         </Field>
         <Field label={translate("screens.model")}>
@@ -384,7 +384,7 @@ function AgentEditor(props: { agent: AgentPreset | null; onClose: () => void; on
               <input aria-label={translate("screens.subName", { number: formatNumber(i + 1) })} placeholder={translate("screens.slugPlaceholder")} value={s.name} onChange={(e) => patchSub(i, { name: e.target.value })} />
               <select aria-label={translate("screens.subProvider", { number: formatNumber(i + 1) })} value={s.provider} onChange={(e) => patchSub(i, { provider: e.target.value, model: "" })}>
                 <option value="">{translate("screens.providerPlaceholder")}</option>
-                {providers.map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}
+                {usableProviders(providers, s.provider).map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}
               </select>
               <input aria-label={translate("screens.subModel", { number: formatNumber(i + 1) })} placeholder={translate("screens.modelPlaceholder")} value={s.model} onChange={(e) => patchSub(i, { model: e.target.value, thinking: s.thinking && !thinkingLevelsFor(providers, s.provider, e.target.value).some((level) => level === s.thinking) ? null : s.thinking })} />
             </div>

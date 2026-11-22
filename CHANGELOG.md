@@ -2,6 +2,12 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
+## [0.8.1] - 2026-11-22
+
+### Fixed
+
+- **Provider pickers:** model and agent settings now list only the providers you have configured, instead of every provider pi knows. The current choice stays visible even when it is not configured. When no provider is configured yet, the full list remains available.
+
 ## [0.8.0] - 2026-11-22
 
 **Highlight:** the same one-click update on a systemd VPS, with automatic rollback.

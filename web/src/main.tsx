@@ -6,6 +6,7 @@ import "@fontsource/inter/600.css";
 import AuthGate from "./AuthGate";
 import "./styles.css";
 import "./chat.css";
+import "./shell.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

@@ -8,10 +8,11 @@ import { workspaceMessages } from "./locales/workspace";
 import { chatMessages } from "./locales/chat";
 import { diagnosticMessages } from "./locales/diagnostics";
 import { terminalMessages } from "./locales/terminal";
+import { hubMessages } from "./locales/hub";
 
 export type Locale = "en" | "fr";
 export const LOCALE_STORAGE_KEY = "cogitator.locale";
-export const messages = { ...machineMessages, ...browserMessages, ...authMessages, ...commonMessages, ...screensMessages, ...workspaceMessages, ...chatMessages, ...diagnosticMessages, ...terminalMessages };
+export const messages = { ...machineMessages, ...browserMessages, ...authMessages, ...commonMessages, ...screensMessages, ...workspaceMessages, ...chatMessages, ...diagnosticMessages, ...terminalMessages, ...hubMessages };
 export type TranslationKey = keyof typeof messages;
 type Values = Record<string, string | number>;
 

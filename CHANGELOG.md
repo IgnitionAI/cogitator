@@ -2,6 +2,17 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
+## [0.9.0] - 2026-11-22
+
+**Highlight:** a new home built around your agents, with the model in the composer and ⌘K everywhere.
+
+### Changed
+
+- **New home: your agents, their threads, the chat.** Cogitator now opens on your agents, listed like contacts with their status (working, online, idle). Pick one to see its conversations as threads, then continue one or start a new thread from a single centered question: “What do you want to do?”. Free conversations (a model with no agent) and agent groups stay one click away.
+- **Model in the composer.** The large “Model settings” panel is now a pill next to the message box. It shows the current model and reasoning level and opens the same settings in a small popover. Only configured providers are listed.
+- **A better 3D logo.** The animated mark now matches the app icon: six wide rounded teeth, a gold rim around a slate-blue body, a glowing plasma lens with spiral arms seated in a gold ring, and a violet halo. It also greets you, larger, above “What do you want to do?”.
+- **Icon rail and ⌘K.** The sidebar is now a compact icon rail. Machine status, language, version, updates and what's new open from its menu button. Press ⌘K (Ctrl+K) anywhere to talk to an agent, reopen a thread or go to any screen.
+
 ## [0.8.1] - 2026-11-22
 
 ### Fixed

@@ -79,6 +79,17 @@ Dans **Extensions**, recherche un package pi, installe-le et suis son état. Pou
 
 Dans une conversation, ouvre **Sous-agents**, puis clique sur un enfant : une grande fenêtre montre ses messages, outils et résultat. Elle s’actualise pendant le travail, laisse consulter les anciens messages et ne bloque pas le parent. Cette vue est en lecture seule.
 
+## Le terminal
+
+La page **Terminal** ouvre un shell sur ton serveur, ou lance un de tes agents directement dans pi, en mode interactif. Elle n'est disponible qu'en mode protégé, pour le propriétaire connecté : c'est un shell complet avec les droits du compte qui fait tourner Cogitator.
+
+Un agent t'aide sans jamais rien exécuter à ta place :
+- tape `# trouve les plus gros fichiers de logs`, puis Entrée : la commande s'écrit sur la ligne, à toi de la valider ;
+- pendant la frappe, la suite probable s'affiche en gris, et **→** l'accepte. Tu peux couper ces suggestions dans la barre d'état ;
+- quand une commande échoue, **Expliquer** donne la cause et un correctif à insérer.
+
+Détails et sécurité : [Terminal web](terminal.md).
+
 ## Le serveur MCP intégré
 
 Le **MCP** permet aux agents d’agir dans Cogitator : créer un agent, ajouter un espace de travail, consulter le board ou programmer une tâche. Les agents intégrés reçoivent ce serveur lors de leur création. Sans les outils MCP appropriés, un agent peut expliquer une action sans pouvoir l’effectuer.

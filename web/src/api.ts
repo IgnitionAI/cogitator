@@ -30,6 +30,11 @@ async function req<T>(method: string, url: string, body?: unknown, signal?: Abor
 }
 
 export const api = {
+  terminalStatus: () => req<import("./types").TerminalStatus>("GET", "/api/terminal"),
+  terminalCreate: (body: { agent_id?: string; workspace_id?: string; cols: number; rows: number }) => req<{ session: import("./types").TerminalSession; shellIntegration: boolean }>("POST", "/api/terminal/sessions", body),
+  terminalClose: (id: string) => req<{ ok: true }>("DELETE", `/api/terminal/sessions/${encodeURIComponent(id)}`),
+  terminalAssist: (body: { mode: "command" | "complete" | "explain"; input: string; output?: string; cwd?: string; exit_code?: number; agent_id?: string }, signal?: AbortSignal) =>
+    req<{ text: string; fix?: string; model: string }>("POST", "/api/terminal/assist", body, signal),
   setupContext: (workspaceId: string) => req<{ ready: boolean; error?: string; tools: string[]; agents: Array<{id: string; name: string; slug: string; description: string}>; skills: Array<{name: string; description: string; path: string}> }>("GET", `/api/setup-context?workspace_id=${encodeURIComponent(workspaceId)}`),
   appUpdates: () => req<{ current: string; latest: string; status: "current" | "available" | "ahead" | "unknown" }>("GET", "/api/app-updates"),
   subagentTranscript: (conversationId: string, id: string, signal?: AbortSignal) => req<{ subagent: import("./types").SubagentView; entries: import("./types").HistoryEntry[]; truncated: boolean }>("GET", `/api/conversations/${encodeURIComponent(conversationId)}/subagents/${encodeURIComponent(id)}`, undefined, signal),

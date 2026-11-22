@@ -87,6 +87,12 @@ Try:
 
 Open **Subagents**, then click a child to read its conversation in a wide dialog. Messages, tool activity and the final result are available without leaving the parent chat; running children refresh periodically. Scrolling back preserves your position. This is a read-only viewer. Closing it does not stop the child. A missing or truncated transcript is reported explicitly.
 
+## Terminal
+
+**Terminal** opens a shell on the server, or runs one of your agents in pi's interactive interface. It is available only in protected mode, for the signed-in owner: it is a full shell with the rights of the account that runs Cogitator.
+
+The assistant never runs anything on its own. Type `# a request` and press Enter to get a command written on the line. Accept grey suggestions with **→**. Use **Explain** after a failed command. See [Web terminal](terminal.md).
+
 ## 8. Understand MCP
 
 The bundled server at `dist/src/mcp-server.js` speaks **stdio MCP**. Its tools cover Cogitator agents, workspaces, conversations, schedules, provider/skill discovery and board operations. New built-in presets are seeded with this MCP server.

@@ -1,5 +1,6 @@
 import { MachineStatus } from "./MachineStatus";
 import Browsers from "./BrowserPanel";
+import TerminalScreen from "./TerminalPanel";
 import { AppUpdates } from "./AppUpdates";
 import { markNewsSeen, newsUnseen, WhatsNew } from "./WhatsNew";
 import Extensions from "./screens/Extensions";
@@ -29,6 +30,7 @@ const NAV = [
   { id: "agents", icon: "bot", label: "common.agents" },
   { id: "providers", icon: "plug", label: "common.providers" },
   { id: "browsers", icon: "monitor", label: "browser.title" },
+  { id: "terminal", icon: "terminal", label: "terminal.title" },
   { id: "extensions", icon: "plug", label: "extensions.title" },
   { id: "cron", icon: "clock", label: "common.cron" },
   { id: "settings", icon: "settings", label: "common.settings" },
@@ -117,6 +119,8 @@ export default function App() {
         return <Providers />;
       case "browsers":
         return <Browsers />;
+      case "terminal":
+        return <TerminalScreen />;
       case "extensions":
         return <Extensions />;
       case "cron":

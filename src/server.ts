@@ -82,6 +82,14 @@ import { cloneRepo, isInsideDir, localDirFor } from "./git-import.js";
 import { listSubagents, readSubagentTranscript } from "./subagents.js";
 import { MCP_HTTP_PATH, McpHttpEndpoint } from "./mcp-http.js";
 import { McpOAuth } from "./mcp-oauth.js";
+import { loadPty, shellLaunch, terminalEnv, TerminalError, TerminalManager, type PtySpawn, type TerminalLaunch } from "./terminal.js";
+import { attachTerminalSocket, terminalRoutes } from "./terminal-http.js";
+import { piComplete, type CompleteFn } from "./terminal-assist.js";
+import { buildArgs } from "./spawn.js";
+import { runtimeIntegration, currentMcpServers } from "./project-setup.js";
+import { encodeMcpEnv, MCP_ENV_VAR } from "./mcp-env.js";
+import { homedir } from "node:os";
+import { piCliPath } from "./host-pi.js";
 
 // ---------- Statique ----------
 
@@ -1489,6 +1497,10 @@ export interface AppOptions {
   /** Runner herdr injecté (ADR-012) ; défaut : shell-out réel. */
   /** Création de workspace injectée (tests : forcer l'exception post-clone, M3) ; défaut : réel. */
   createWorkspaceImpl?: typeof createWorkspace;
+  /** Pseudo-terminal injecté (tests) ; défaut : node-pty si disponible. */
+  terminalPty?: PtySpawn | null;
+  /** Appel modèle de l'assistant terminal injecté (tests) ; défaut : pi-ai. */
+  terminalComplete?: CompleteFn;
 }
 
 export function createApp(opts: AppOptions): Server {
@@ -1607,8 +1619,32 @@ export function createApp(opts: AppOptions): Server {
     dispatch: (method, path, body) => dispatchInternal(routes, method, path, body, availability),
   });
 
+  // Terminal web : shells et agents pi interactifs (mode protégé uniquement).
+  const terminals = new TerminalManager(opts.terminalPty === undefined ? loadPty() : opts.terminalPty);
+  routes.push(...terminalRoutes({
+    manager: terminals,
+    protectedMode: !!opts.auth,
+    nonBrowser: (req) => privateRequests.has(req) || syntheticRequests.has(req),
+    send: sendJson,
+    shell: (cwd) => shellLaunch(paths.home, cwd),
+    agent: (agentId, cwd) => agentTerminalLaunch(db, paths, agentId, cwd),
+    workspaceDir: (id) => {
+      const ws = getWorkspace(db, id);
+      if (!ws) throw new TerminalError("TERMINAL_WORKSPACE_NOT_FOUND", 404);
+      return ws.dir;
+    },
+    assistTarget: (agentId) => {
+      const preset = getAgent(db, agentId ?? getDefaultAgentId(db) ?? "");
+      if (!preset) throw new TerminalError("TERMINAL_NO_AGENT", 404);
+      return { provider: preset.provider, model: preset.model };
+    },
+    complete: opts.terminalComplete ?? piComplete(paths),
+    agents: () => listAgents(db).map((a) => ({ id: a.id, name: a.name, provider: a.provider, model: a.model })),
+  }));
+
   const app = opts.server ?? createServer();
   attachBrowserView(app, browser, paths.home, opts.auth);
+  attachTerminalSocket(app, terminals, opts.auth);
   if (opts.auth) { app.requestTimeout = 30_000; app.headersTimeout = 10_000; app.maxHeadersCount = 100; }
   app.once("close", () => {
     deps.logins.dispose();
@@ -1726,11 +1762,36 @@ class CaptureResponse extends EventEmitter {
   text(): string { return Buffer.concat(this.chunks).toString("utf8"); }
 }
 
-/** Requête synthétique : jamais privée (pas de capacité propriétaire OS), jamais navigateur. */
+/** Requêtes synthétiques (dispatch MCP) : jamais privées, jamais navigateur (ex. terminal refusé). */
+const syntheticRequests = new WeakSet<IncomingMessage>();
 function syntheticRequest(method: string, path: string): IncomingMessage {
   const req = new EventEmitter() as unknown as IncomingMessage & { headers: Record<string, string> };
   Object.assign(req, { method, url: path, headers: { "content-type": "application/json" }, socket: { remoteAddress: "mcp" } });
+  syntheticRequests.add(req);
   return req;
+}
+
+/** Agent Cogitator en mode interactif (TUI pi) : même modèle, prompt, skills et MCP que le preset. */
+function agentTerminalLaunch(db: Db, paths: Paths, agentId: string, cwd?: string): TerminalLaunch {
+  const preset = getAgent(db, agentId);
+  if (!preset) throw new TerminalError("TERMINAL_NO_AGENT", 404);
+  let extension: string;
+  try { extension = runtimeIntegration().extension; } catch { throw new TerminalError("TERMINAL_AGENT_UNAVAILABLE", 503); }
+  const spawn = spawnConfigFromPreset(preset);
+  const id = randomUUID();
+  const mcpEnv = encodeMcpEnv(currentMcpServers(spawn.mcpServers ?? []));
+  const env = terminalEnv({
+    COGITATOR_HOME: paths.home,
+    PI_CODING_AGENT_DIR: paths.piAgentDir,
+    ...(mcpEnv ? { [MCP_ENV_VAR]: mcpEnv } : {}),
+    ...(githubConfigured(paths) ? { GH_CONFIG_DIR: githubEnv(paths).GH_CONFIG_DIR! } : {}),
+  });
+  return {
+    title: preset.name, kind: "agent", agentId: preset.id,
+    file: process.execPath,
+    args: [piCliPath, "--extension", extension, ...buildArgs(spawn, join(paths.home, "tmp"), `terminal-${id}`)],
+    cwd: cwd ?? homedir(), env, shellIntegration: false,
+  };
 }
 
 /** Exécute une route /api/* en mémoire et renvoie son JSON (erreur si statut ≥ 400). */

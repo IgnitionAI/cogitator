@@ -453,3 +453,7 @@ export interface PackageState { installed: Array<{ name: string; source: string;
 export interface GitHubConnectionState { available: boolean; connected: boolean; login?: string; status: "idle" | "starting" | "waiting" | "done" | "error"; code?: string; error?: string }
 
 export interface PackageUpdate { name: string; version: string; latest?: string; available: boolean; failed?: boolean }
+
+export interface TerminalSession { id: string; title: string; kind: "shell" | "agent"; agentId?: string; cwd: string; createdAt: string; exited: boolean; exitCode?: number }
+export interface TerminalAgent { id: string; name: string; provider: string; model: string }
+export interface TerminalStatus { enabled: boolean; reason: string | null; sessions: TerminalSession[]; agents: TerminalAgent[] }

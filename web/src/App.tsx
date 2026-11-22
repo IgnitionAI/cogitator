@@ -1,7 +1,7 @@
 import { MachineStatus } from "./MachineStatus";
 import Browsers from "./BrowserPanel";
 import { AppUpdates } from "./AppUpdates";
-import { WhatsNew } from "./WhatsNew";
+import { markNewsSeen, newsUnseen, WhatsNew } from "./WhatsNew";
 import Extensions from "./screens/Extensions";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { api, openEvents } from "./api";
@@ -40,6 +40,7 @@ export default function App() {
   useLocale();
   const [showUpdates, setShowUpdates] = useState(false);
   const [showNews, setShowNews] = useState(false);
+  const [newsSeen, setNewsSeen] = useState(() => !newsUnseen());
   const [screen, setScreen] = useState<ScreenId>("bots");
   const [health, setHealth] = useState<Health | null>(null);
   const toast = useToast();
@@ -162,7 +163,9 @@ export default function App() {
           <span className="running-version">{health ? `v${health.version} · pi ${health.pi_version ?? "?"}` : "…"}</span>
           <div className="footer-actions">
           <button type="button" className="btn btn-sm" onClick={() => { setNavOpen(false); setShowUpdates(true); }}>{t("updates.title")}</button>
-          <button type="button" className="btn btn-sm" onClick={() => { setNavOpen(false); setShowNews(true); }}>{t("news.title")}</button>
+          <button type="button" className="btn btn-sm" onClick={() => { setNavOpen(false); setShowNews(true); markNewsSeen(); setNewsSeen(true); }}>
+            {t("news.title")}{!newsSeen ? <span className="news-dot" role="img" aria-label={t("news.unseen")} /> : null}
+          </button>
           </div>
         </div>
       </aside>

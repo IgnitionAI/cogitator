@@ -1,18 +1,66 @@
-import { t } from "./i18n";
+import { formatDate, t, type TranslationKey } from "./i18n";
+import { Icon, type IconName } from "./icons";
 import { Modal } from "./ui";
+
+/** Version décrite par le dialogue. La changer fait réapparaître le point « non lu ». */
+export const NEWS_VERSION = "0.5.2";
+const NEWS_DATE = "2026-11-21T12:00:00Z";
+const NEWS_SEEN_KEY = "cogitator.newsSeen";
+const CHANGELOG_URL = "https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md";
+const MCP_DOC_URL = "https://github.com/IgnitionAI/cogitator/blob/dev/docs/mcp-http.md";
+
+const ITEMS: Array<{ icon: IconName; title: TranslationKey; text: TranslationKey }> = [
+  { icon: "download", title: "news.extensions", text: "news.extensionsText" },
+  { icon: "users", title: "news.subagents", text: "news.subagentsText" },
+  { icon: "folder", title: "news.github", text: "news.githubText" },
+  { icon: "key", title: "news.setup", text: "news.setupText" },
+  { icon: "activity", title: "news.reliability", text: "news.reliabilityText" },
+];
+
+/** Le propriétaire a-t-il déjà ouvert les notes de cette version ? (préférence locale, best-effort) */
+export function newsUnseen(): boolean {
+  try { return window.localStorage.getItem(NEWS_SEEN_KEY) !== NEWS_VERSION; } catch { return false; }
+}
+
+export function markNewsSeen(): void {
+  try { window.localStorage.setItem(NEWS_SEEN_KEY, NEWS_VERSION); } catch { /* stockage indisponible */ }
+}
 
 export function WhatsNew({ onClose }: { onClose: () => void }) {
   return <Modal title={t("news.title")} onClose={onClose}>
-    <div className="news-version"><strong>{t("news.version")}</strong><span className="muted">{t("news.pending")}</span></div>
-    <p>{t("news.intro")}</p>
-    <div className="news-list">
-      <article><h3>{t("news.extensions")}</h3><p>{t("news.extensionsText")}</p></article>
-      <article><h3>{t("news.subagents")}</h3><p>{t("news.subagentsText")}</p></article>
-      <article><h3>{t("news.github")}</h3><p>{t("news.githubText")}</p></article>
-      <article><h3>{t("news.setup")}</h3><p>{t("news.setupText")}</p></article>
-      <article><h3>{t("news.mcp")}</h3><p>{t("news.mcpText")}</p></article>
-      <article><h3>{t("news.reliability")}</h3><p>{t("news.reliabilityText")}</p></article>
-    </div>
-    <a href="https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md" target="_blank" rel="noreferrer">{t("news.details")} ↗</a>
+    <header className="news-hero">
+      <div className="news-meta">
+        <span className="news-tag">{`v${NEWS_VERSION}`}</span>
+        <span className="news-status"><Icon name="check" size={12} /> {t("news.pending")}</span>
+        <time className="muted" dateTime={NEWS_DATE.slice(0, 10)}>{formatDate(NEWS_DATE, { dateStyle: "long" })}</time>
+      </div>
+      <p className="news-headline">{t("news.intro")}</p>
+    </header>
+
+    <article className="news-feature">
+      <span className="news-feature-icon" aria-hidden="true"><Icon name="plug" size={18} /></span>
+      <div>
+        <span className="news-kicker">{t("news.featured")}</span>
+        <h3>{t("news.mcp")}</h3>
+        <p>{t("news.mcpText")}</p>
+        <a className="news-cta" href={MCP_DOC_URL} target="_blank" rel="noreferrer">{t("news.mcpCta")} <span aria-hidden="true">↗</span></a>
+      </div>
+    </article>
+
+    <h3 className="news-section">{t("news.more")}</h3>
+    <ul className="news-list">
+      {ITEMS.map((item) => <li key={item.title}>
+        <span className="news-icon" aria-hidden="true"><Icon name={item.icon} size={15} /></span>
+        <div>
+          <strong>{t(item.title)}</strong>
+          <p>{t(item.text)}</p>
+        </div>
+      </li>)}
+    </ul>
+
+    <footer className="news-foot">
+      <a href={CHANGELOG_URL} target="_blank" rel="noreferrer">{t("news.details")} <span aria-hidden="true">↗</span></a>
+      <button type="button" className="btn btn-primary" onClick={onClose}>{t("news.done")}</button>
+    </footer>
   </Modal>;
 }

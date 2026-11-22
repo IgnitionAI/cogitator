@@ -15,7 +15,7 @@ No npm token is stored in GitHub. The workflow authenticates with OIDC and publi
 
 ## Each release
 
-1. On `dev`, set `version` in `package.json` and date the matching `CHANGELOG.md` heading (`## [x.y.z] - YYYY-MM-DD`). Update `news.*` in `web/src/locales/screens.ts` (the in-app **What's new** dialog).
+1. On `dev`, set `version` in `package.json` and date the matching `CHANGELOG.md` heading (`## [x.y.z] - YYYY-MM-DD`). Update the in-app **What's new** dialog: `NEWS_VERSION`/`NEWS_DATE` and the featured item in `web/src/WhatsNew.tsx`, texts under `news.*` in `web/src/locales/screens.ts`. Changing `NEWS_VERSION` shows the unread dot again.
 2. Merge to `dev` with a green `npm test`.
 3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 4. The **Publish to npm** workflow checks that the tag matches `package.json`. It skips versions that are already published, then runs `npm publish`, whose `prepublishOnly` builds and tests again.

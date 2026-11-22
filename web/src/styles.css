@@ -886,11 +886,55 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 .github-connection p { margin: 0 0 10px; }
 .github-connection p:last-child { margin-bottom: 0; }
 .github-device-code { display: inline-block; font-family: monospace; font-size: 1.4rem; letter-spacing: .12em; margin: 4px 16px 12px 0; user-select: all; }
-.news-version { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-.news-list { display: grid; gap: 12px; margin: 20px 0; }
-.news-list article { border-left: 3px solid var(--accent); padding: 4px 0 4px 16px; }
-.news-list h3 { margin: 0 0 6px; font-size: 16px; }
-.news-list p { margin: 0; color: var(--muted); line-height: 1.5; }
+/* ---------- What's new ---------- */
+.news-hero { margin-bottom: 16px; }
+.news-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; font-size: 12px; }
+.news-tag {
+  font-family: var(--mono, ui-monospace, monospace); font-weight: 600;
+  padding: 2px 8px; border-radius: 999px; background: var(--accent-dim); color: var(--accent-text);
+}
+.news-status { display: inline-flex; align-items: center; gap: 4px; color: var(--success); }
+.news-headline { margin: 10px 0 0; font-size: 17px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.35; }
+
+.news-feature {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px;
+  padding: 16px; border-radius: var(--radius-pop);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+  background: linear-gradient(135deg, var(--accent-dim), transparent 70%);
+}
+.news-feature-icon, .news-icon {
+  display: grid; place-items: center; flex-shrink: 0; border-radius: var(--radius);
+}
+.news-feature-icon { width: 36px; height: 36px; background: var(--accent); color: #fff; }
+.news-kicker { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-text); }
+.news-feature h3 { margin: 2px 0 6px; font-size: 15px; letter-spacing: -0.01em; }
+.news-feature p { margin: 0; color: var(--muted); line-height: 1.5; }
+.news-cta { display: inline-block; margin-top: 10px; font-weight: 500; color: var(--accent-text); text-decoration: none; }
+.news-cta:hover { text-decoration: underline; }
+
+.news-section {
+  margin: 22px 0 6px; font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--subtle);
+}
+.news-list { list-style: none; margin: 0; padding: 0; }
+.news-list li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; padding: 10px 0; }
+.news-list li + li { border-top: 1px solid var(--border); }
+.news-icon { width: 28px; height: 28px; background: var(--raised); color: var(--muted); }
+.news-list strong { display: block; font-size: 14px; font-weight: 600; }
+.news-list p { margin: 2px 0 0; color: var(--muted); line-height: 1.45; font-size: 13px; }
+
+/* Toujours visible, même quand la liste défile (mobile). */
+.news-foot {
+  position: sticky; bottom: -16px; margin: 12px -18px -16px; padding: 12px 18px;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  background: var(--popover); border-top: 1px solid var(--border);
+}
+.news-foot a { color: var(--accent-text); font-size: 13px; }
+
+.news-dot {
+  display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%;
+  background: var(--accent-text); vertical-align: middle;
+}
 
 .running-version { display: block; margin-bottom: 8px; }
 .footer-actions { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -2,7 +2,7 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
-## [0.6.0] - Unreleased
+## [0.6.0] - 2026-11-22
 
 **Highlight:** a terminal on your server, in the browser, with an agent at your side.
 

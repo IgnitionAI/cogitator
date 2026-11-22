@@ -1,5 +1,7 @@
 # Web terminal
 
+Available since **0.6.0**.
+
 Cogitator includes a terminal in the browser: a shell on the server, and your Cogitator agents running interactively in pi. An assistant agent helps you write commands. It never runs anything on its own.
 
 ![Terminal](images/terminal.png)

@@ -318,7 +318,7 @@ WantedBy=multi-user.target
   };
 }
 
-export function install(cfg: UpdaterConfig, configPath = DEFAULT_CONFIG, opts: { systemd?: boolean; installDir?: string; systemdDir?: string } = {}): string[] {
+export function install(cfg: UpdaterConfig, configPath = DEFAULT_CONFIG, opts: { systemd?: boolean; installDir?: string; systemdDir?: string; owner?: number } = {}): string[] {
   const done: string[] = [];
   const gid = Number(spawnSync("id", ["-g", cfg.user], { encoding: "utf8" }).stdout.trim());
   if (!Number.isInteger(gid)) throw new Error(`Compte inconnu : ${cfg.user}`);
@@ -335,7 +335,7 @@ export function install(cfg: UpdaterConfig, configPath = DEFAULT_CONFIG, opts: {
   const inbox = join(cfg.stateDir, "inbox");
   mkdirSync(inbox, { recursive: true });
   // Le compte du service peut déposer une demande, sans lister ni lire le dossier.
-  chownSync(inbox, 0, gid);
+  chownSync(inbox, opts.owner ?? 0, gid);
   chmodSync(inbox, 0o730);
   if (!existsSync(join(cfg.stateDir, "status.json"))) writeStatus(cfg, { status: "idle" });
   done.push(cfg.stateDir);

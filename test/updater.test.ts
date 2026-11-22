@@ -200,9 +200,11 @@ test("install : script root hors du code, inbox en dépôt seul, unités systemd
     const units = join(root, "systemd"); mkdirSync(units);
     const log = join(root, "systemctl.log");
     const systemctl = join(root, "systemctl"); writeFileSync(systemctl, `#!/bin/sh\necho "$*" >> ${log}\n`); chmodSync(systemctl, 0o755);
-    const cfg = { ...base, user: "root", systemctl };
+    // En CI le test ne tourne pas en root : propriétaire et groupe = l'utilisateur courant.
+    const { userInfo } = await import("node:os");
+    const cfg = { ...base, user: userInfo().username, systemctl };
     const configPath = join(root, "cogitator-updater.json");
-    install(cfg, configPath, { installDir: join(root, "lib"), systemdDir: units });
+    install(cfg, configPath, { installDir: join(root, "lib"), systemdDir: units, owner: uid });
     const script = join(root, "lib", "cogitator-updater.mjs");
     assert.ok(existsSync(script));
     assert.equal(JSON.parse(readFileSync(configPath, "utf8")).unit, "cogitator.service");

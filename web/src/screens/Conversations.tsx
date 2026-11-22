@@ -608,7 +608,6 @@ export function ChatView(props: {
         </div>
       </div> : null}
       {connectProvider ? <ConnectProviderModal providerId={connectProvider} onClose={() => setConnectProvider(null)} onSaved={() => { setConnectProvider(null); retrySession(); }} /> : null}
-      {conversation.runtime_kind !== "durable" && runtimeKind !== "durable" && (conversation.runtime_kind || runtimeKind) ? <LiveConfiguration key={conversation.id} conversation={conversation} onChanged={updateConfiguration} onProviderConnected={retrySession} refreshKey={restart} /> : null}
       <div className="chat-body">
       <div className="chat-main">
       <div className="chat-scroll" ref={scrollRef} role="log" aria-label={t("chat.history")} aria-live="off" tabIndex={0}
@@ -733,6 +732,7 @@ export function ChatView(props: {
             <option value="">{t("chat.skills")}</option>
             {skills.map((skill) => <option key={skill.name} value={skill.name}>{skill.name}</option>)}
           </select>
+          {conversation.runtime_kind !== "durable" && runtimeKind !== "durable" && (conversation.runtime_kind || runtimeKind) ? <LiveConfiguration key={conversation.id} conversation={conversation} onChanged={updateConfiguration} onProviderConnected={retrySession} refreshKey={restart} pill /> : null}
         </div>
         <button type="button" className="btn btn-primary" onClick={() => void send()} disabled={!!sessionIssue || connection !== "connected" || busy || (!input.trim() && images.length === 0)}>
           {busy ? <Spinner /> : <Icon name="send" />} <span className="composer-send-label">{t("chat.send")}</span>
@@ -769,7 +769,7 @@ export function ChatView(props: {
   );
 }
 
-function NewConversationModal(props: {
+export function NewConversationModal(props: {
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {

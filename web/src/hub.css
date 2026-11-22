@@ -1,0 +1,122 @@
+/* ---------- Hub : agents · fils · chat ---------- */
+.main.main:has(> .hub) { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.hub { flex: 1; min-height: 0; display: flex; }
+
+.hub-agents, .hub-threads {
+  display: flex; flex-direction: column; gap: 4px; min-height: 0; overflow-y: auto;
+  padding: 14px 10px; border-right: 1px solid var(--border);
+}
+.hub-agents { flex: 0 0 256px; background: var(--surface); }
+.hub-threads { flex: 0 0 272px; background: color-mix(in srgb, var(--surface) 55%, var(--bg)); }
+.hub-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.hub-main > .chat { flex: 1; min-height: 0; padding: 10px 16px 14px; }
+
+.hub-col-head { display: flex; align-items: center; gap: 10px; padding: 2px 6px 10px; }
+.hub-col-head h1 { margin: 0; font-size: 16px; font-weight: 600; flex: 1; }
+.hub-thread-agent { flex: 1; min-width: 0; }
+.hub-thread-agent h2 { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.hub-thread-agent p { margin: 2px 0 0; font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.hub-round {
+  width: 32px; height: 32px; border-radius: 16px; flex-shrink: 0;
+  border: 1px solid var(--border-strong); background: transparent; color: var(--fg);
+  display: grid; place-items: center; cursor: pointer;
+}
+.hub-round:hover { background: var(--raised); }
+
+.hub-avatar {
+  position: relative; flex-shrink: 0; border-radius: 50%; color: #fff; font-weight: 700;
+  display: inline-grid; place-items: center; line-height: 1;
+}
+.hub-avatar.is-free { width: 38px; height: 38px; background: transparent; border: 1px dashed var(--border-strong); color: var(--muted); }
+.hub-presence {
+  position: absolute; right: -1px; bottom: -1px; width: 11px; height: 11px; border-radius: 50%;
+  border: 2px solid var(--surface); background: var(--subtle);
+}
+.hub-presence.is-ready { background: var(--success); }
+.hub-presence.is-working { background: var(--todo); }
+
+.hub-agent-list, .hub-thread-list { display: flex; flex-direction: column; gap: 2px; }
+.hub-agent, .hub-thread {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border: 0; border-radius: 12px;
+  background: transparent; color: var(--fg); text-align: left; cursor: pointer; font: inherit; min-height: 44px;
+}
+.hub-agent:hover, .hub-thread:hover { background: var(--raised); }
+.hub-agent.is-active, .hub-thread.is-active { background: var(--raised); box-shadow: inset 0 0 0 1px var(--border-strong); }
+.hub-agent-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.hub-agent-line, .hub-thread-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.hub-agent-name { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hub-agent-sub, .hub-thread-sub { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hub-count { font-size: 11px; color: var(--muted); background: var(--bg); border-radius: 999px; padding: 1px 7px; flex-shrink: 0; }
+
+.hub-thread { flex-direction: column; align-items: stretch; gap: 4px; padding: 10px 12px; }
+.hub-thread-title { font-weight: 500; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hub-thread-time { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.hub-thread-sub { display: flex; align-items: center; gap: 6px; }
+.hub-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--subtle); flex-shrink: 0; }
+.hub-dot.is-working { background: var(--todo); }
+
+.hub-new {
+  display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border-radius: 10px;
+  border: 1px dashed var(--border-strong); background: transparent; color: var(--fg); cursor: pointer; font: inherit; font-weight: 500; text-align: left;
+}
+.hub-new:hover, .hub-new.is-active { background: var(--raised); border-style: solid; }
+.hub-label { margin: 14px 6px 4px; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.hub-empty { margin: 8px 6px; color: var(--muted); font-size: 13px; }
+.hub-link {
+  margin-top: auto; display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 10px; border-radius: 10px;
+  border: 0; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 13px;
+}
+.hub-link:hover { background: var(--raised); color: var(--fg); }
+
+/* Accueil : une seule question */
+.hub-home { flex: 1; overflow-y: auto; display: flex; justify-content: center; padding: 12vh 24px 48px; }
+.hub-home-inner { width: 100%; max-width: 720px; display: flex; flex-direction: column; gap: 22px; }
+.hub-hero { text-align: center; }
+.hub-hero h2 { margin: 0; font-size: 32px; font-weight: 600; letter-spacing: -0.02em; }
+.hub-hero p { margin: 8px 0 0; color: var(--muted); font-size: 15px; }
+.hub-composer {
+  display: flex; flex-direction: column; gap: 10px; padding: 14px 14px 12px 18px; border-radius: 24px;
+  background: var(--surface); border: 1px solid var(--border-strong);
+}
+.hub-composer:focus-within { border-color: var(--accent); }
+.hub-composer textarea { resize: none; border: 0; outline: none; background: transparent; color: var(--fg); font: inherit; font-size: 16px; line-height: 1.5; padding: 0; min-height: 0; }
+.hub-composer textarea:focus { box-shadow: none; }
+.hub-composer-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hub-pill, .hub-pill-select {
+  display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 17px;
+  border: 1px solid var(--border-strong); background: transparent; color: var(--fg); font-size: 13px; width: auto;
+}
+.hub-pill-select { color: var(--muted); }
+.hub-spacer { flex: 1; }
+.hub-send {
+  width: 40px; height: 40px; border-radius: 20px; border: 0; background: var(--fg); color: var(--bg);
+  display: grid; place-items: center; cursor: pointer;
+}
+.hub-send:disabled { opacity: 0.35; cursor: default; }
+.hub-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.hub-chips button {
+  min-height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid var(--border-strong);
+  background: transparent; color: var(--fg); opacity: 0.85; cursor: pointer; font: inherit; font-size: 13px;
+}
+.hub-chips button:hover { background: var(--raised); opacity: 1; }
+
+/* Tablette : les fils se replient sous les agents */
+@media (max-width: 1100px) {
+  .hub-agents { flex-basis: 220px; }
+  .hub-threads { flex-basis: 230px; }
+}
+/* Téléphone : une colonne à la fois */
+@media (max-width: 768px) {
+  .hub { flex-direction: column; overflow-y: auto; }
+  .hub-agents, .hub-threads { flex: 0 0 auto; border-right: 0; border-bottom: 1px solid var(--border); overflow: visible; }
+  .hub-agent-list { flex-direction: row; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
+  .hub-agent { flex: 0 0 auto; width: auto; flex-direction: column; gap: 4px; padding: 8px 10px; }
+  .hub-agent-text { align-items: center; }
+  .hub-agent-sub, .hub-count { display: none; }
+  .hub-link { margin-top: 4px; }
+  .hub.is-chat .hub-agents, .hub.is-chat .hub-threads { display: none; }
+  .hub-main { min-height: 70vh; }
+  .hub-home { padding-top: 32px; }
+  .hub-hero h2 { font-size: 26px; }
+}

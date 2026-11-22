@@ -42,8 +42,10 @@ export function ModelFields({ value, providers, onChange, preserve = false }: {
   </div>;
 }
 
-export function LiveConfiguration({ conversation, onChanged, name, onProviderConnected, refreshKey }: {
+export function LiveConfiguration({ conversation, onChanged, name, onProviderConnected, refreshKey, pill = false }: {
   conversation: Conversation; onChanged: (conversation: Conversation) => void; name?: string; onProviderConnected?: () => void; refreshKey?: number;
+  /** Pastille compacte dans le composer : réglages en popover au-dessus. */
+  pill?: boolean;
 }) {
   const [providers, setProviders] = useState<ProviderView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,8 +109,14 @@ export function LiveConfiguration({ conversation, onChanged, name, onProviderCon
   };
 
   if (conversation.runtime_kind === "durable") return null;
-  return <details className="live-configuration">
-    <summary>{name ? `${name} · ` : ""}{t("configuration.title")}</summary>
+  return <details className={`live-configuration${pill ? " is-pill" : ""}`}>
+    {pill
+      ? <summary aria-label={`${t("configuration.title")} : ${conversation.provider} / ${conversation.model}`} title={`${conversation.provider} / ${conversation.model}`}>
+          <span className="mono">{conversation.model}</span>
+          <span className="pill-thinking">· {conversation.thinking ? thinkingLabel(conversation.thinking) : t("screens.defaultParen")}</span>
+          {pending?.status === "pending" ? <span className="pill-thinking">…</span> : null}
+        </summary>
+      : <summary>{name ? `${name} · ` : ""}{t("configuration.title")}</summary>}
     <div className="configuration-content">
       <p className="configuration-effective">{t("configuration.effective")}: <span className="mono">{conversation.provider} / {conversation.model} · {conversation.thinking ? thinkingLabel(conversation.thinking) : t("screens.defaultParen")}</span></p>
       <div role="status">

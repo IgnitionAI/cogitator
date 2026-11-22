@@ -4,6 +4,8 @@ import TerminalScreen from "./TerminalPanel";
 import { AppUpdates } from "./AppUpdates";
 import { markNewsSeen, newsUnseen, WhatsNew } from "./WhatsNew";
 import Extensions from "./screens/Extensions";
+import Hub, { type HubTarget } from "./Hub";
+import { CommandPalette } from "./CommandPalette";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { api, openEvents } from "./api";
 import type { Health } from "./types";
@@ -15,7 +17,7 @@ import Providers from "./screens/Providers";
 import Cron from "./screens/Cron";
 import Settings from "./screens/Settings";
 import WorkspacePage from "./WorkspacePage";
-import type { AgentPreset, Workspace } from "./types";
+import type { AgentPreset, Conversation, Workspace } from "./types";
 import { Icon, type IconName } from "./icons";
 import { LanguagePicker, useToast } from "./ui";
 import { localizeText, statusLabel, t, useLocale, type TranslationKey } from "./i18n";
@@ -23,27 +25,37 @@ import { localizeText, statusLabel, t, useLocale, type TranslationKey } from "./
 // three.js is ~600kB: keep it out of the first paint, the static favicon holds the slot meanwhile.
 const BrandLogo3D = lazy(() => import("./BrandLogo3D"));
 
+/** Rail : l'essentiel. Le reste (conversations, groupes) reste accessible par ⌘K. */
 const NAV = [
-  { id: "bots", icon: "bot", label: "common.bots" },
-  { id: "conversations", icon: "chat", label: "common.conversations" },
+  { id: "home", icon: "chat", label: "hub.title" },
   { id: "workspaces", icon: "folder", label: "common.workspaces" },
   { id: "agents", icon: "bot", label: "common.agents" },
-  { id: "providers", icon: "plug", label: "common.providers" },
+  { id: "providers", icon: "key", label: "common.providers" },
   { id: "browsers", icon: "monitor", label: "browser.title" },
   { id: "terminal", icon: "terminal", label: "terminal.title" },
   { id: "extensions", icon: "plug", label: "extensions.title" },
   { id: "cron", icon: "clock", label: "common.cron" },
   { id: "settings", icon: "settings", label: "common.settings" },
 ] as const satisfies ReadonlyArray<{ id: string; icon: IconName; label: TranslationKey }>;
+const EXTRA = [
+  { id: "conversations", icon: "feed", label: "common.conversations" },
+  { id: "bots", icon: "users", label: "hub.groups" },
+] as const satisfies ReadonlyArray<{ id: string; icon: IconName; label: TranslationKey }>;
 
-type ScreenId = (typeof NAV)[number]["id"];
+const PALETTE_SHORTCUT = "⌘K";
+
+type ScreenId = (typeof NAV)[number]["id"] | (typeof EXTRA)[number]["id"];
 
 export default function App() {
   useLocale();
   const [showUpdates, setShowUpdates] = useState(false);
   const [showNews, setShowNews] = useState(false);
   const [newsSeen, setNewsSeen] = useState(() => !newsUnseen());
-  const [screen, setScreen] = useState<ScreenId>("bots");
+  const [screen, setScreen] = useState<ScreenId>("home");
+  const [hubTarget, setHubTarget] = useState<HubTarget | null>(null);
+  const [palette, setPalette] = useState(false);
+  const [paletteConversations, setPaletteConversations] = useState<Conversation[]>([]);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [health, setHealth] = useState<Health | null>(null);
   const toast = useToast();
   const [openWorkspace, setOpenWorkspace] = useState<Workspace | null>(null);
@@ -100,9 +112,38 @@ export default function App() {
     setScreen(id);
     setNavOpen(false);
   };
+  const openHub = (target: Omit<HubTarget, "nonce">) => {
+    setOpenWorkspace(null);
+    setHubTarget({ ...target, nonce: Date.now() });
+    go("home");
+  };
+
+  // ⌘K / Ctrl+K : palette de commandes, depuis n'importe quel écran.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPalette((open) => !open);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+  useEffect(() => {
+    if (!palette) return;
+    api.conversations().then((r) => setPaletteConversations(r.conversations.filter((c) => !c.group_id))).catch(() => undefined);
+  }, [palette]);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setMoreOpen(false); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [moreOpen]);
 
   const screenNode = (() => {
     switch (screen) {
+      case "home":
+        return <Hub target={hubTarget} onNavigate={(id) => go(id)} />;
       case "bots":
         return <Bots />;
       case "conversations":
@@ -149,25 +190,33 @@ export default function App() {
           <button type="button" className="icon-btn nav-close" aria-label={t("common.closeMenu")} onClick={() => setNavOpen(false)}><Icon name="close" /></button>
         </div>
         <nav aria-label={t("common.main")}>
+          <button type="button" className="nav-item nav-search" title={`${t("hub.search")} (${PALETTE_SHORTCUT})`} onClick={() => { setNavOpen(false); setPalette(true); }}>
+            <Icon name="spark" /> <span className="nav-label">{t("hub.search")}</span> <kbd className="nav-kbd">{PALETTE_SHORTCUT}</kbd>
+          </button>
           {NAV.map((n) => (
             <button
               key={n.id}
               type="button"
+              title={t(n.label)}
               className={`nav-item ${activeScreen === n.id ? "active" : ""}`}
               aria-current={activeScreen === n.id ? "page" : undefined}
               onClick={() => { setOpenWorkspace(null); go(n.id); }}
             >
-              <Icon name={n.icon} /> {t(n.label)}
+              <Icon name={n.icon} /> <span className="nav-label">{t(n.label)}</span>
             </button>
           ))}
         </nav>
-        <div className="foot">
+        <button type="button" className="nav-item rail-more" title={t("hub.more")} aria-label={t("hub.more")} aria-expanded={moreOpen} aria-controls="sidebar-foot" onClick={() => setMoreOpen((open) => !open)}>
+          <Icon name="menu" />{!newsSeen ? <span className="news-dot rail-dot" role="img" aria-label={t("news.unseen")} /> : null}
+        </button>
+        {moreOpen ? <div className="rail-scrim" onClick={() => setMoreOpen(false)} /> : null}
+        <div id="sidebar-foot" className={`foot${moreOpen ? " is-open" : ""}`}>
           <MachineStatus />
           <LanguagePicker />
           <span className="running-version">{health ? `v${health.version} · pi ${health.pi_version ?? "?"}` : "…"}</span>
           <div className="footer-actions">
-          <button type="button" className="btn btn-sm" onClick={() => { setNavOpen(false); setShowUpdates(true); }}>{t("updates.title")}</button>
-          <button type="button" className="btn btn-sm" onClick={() => { setNavOpen(false); setShowNews(true); markNewsSeen(); setNewsSeen(true); }}>
+          <button type="button" className="btn btn-sm" onClick={() => { setNavOpen(false); setMoreOpen(false); setShowUpdates(true); }}>{t("updates.title")}</button>
+          <button type="button" className="btn btn-sm" onClick={() => { setNavOpen(false); setMoreOpen(false); setShowNews(true); markNewsSeen(); setNewsSeen(true); }}>
             {t("news.title")}{!newsSeen ? <span className="news-dot" role="img" aria-label={t("news.unseen")} /> : null}
           </button>
           </div>
@@ -179,12 +228,21 @@ export default function App() {
             workspace={openWorkspace}
             agents={agents}
             onBack={() => setOpenWorkspace(null)}
-            onOpenConversation={(id) => { setPendingConv(id); setOpenWorkspace(null); setScreen("conversations"); }}
+            onOpenConversation={(id) => openHub({ conversationId: id })}
           />
         ) : screenNode}
       </main>
       {showUpdates && <AppUpdates onClose={() => setShowUpdates(false)} />}
       {showNews && <WhatsNew onClose={() => setShowNews(false)} />}
+      {palette ? <CommandPalette
+        screens={[...NAV, ...EXTRA].map((n) => ({ id: n.id, label: t(n.label), icon: n.icon }))}
+        agents={agents}
+        conversations={paletteConversations}
+        onScreen={(id) => { setOpenWorkspace(null); go(id as ScreenId); }}
+        onAgent={(id) => openHub({ agentId: id })}
+        onConversation={(id) => openHub({ conversationId: id })}
+        onClose={() => setPalette(false)}
+      /> : null}
     </div>
   );
 }

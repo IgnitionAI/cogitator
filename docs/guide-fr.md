@@ -4,7 +4,7 @@
 
 Cogitator est **l’interface web de tes agents pi**. Tu l’installes sur ton ordinateur ou sur ton propre VPS. Chacun possède son installation ; ce n’est pas un service avec inscription publique. L’interface est disponible en français et en anglais.
 
-> Cette documentation décrit le code actuel de `dev`. La version 0.5.2 est publiée sur npm. Une entrée marquée **Unreleased** dans le changelog nécessite encore une installation depuis les sources.
+> Cette documentation décrit le code actuel de `dev`. La version 0.6.0 est publiée sur npm. Une entrée marquée **Unreleased** dans le changelog nécessite encore une installation depuis les sources.
 
 ![Les trois agents intégrés](images/bots.jpg)
 
@@ -78,6 +78,17 @@ Dans **Extensions**, recherche un package pi, installe-le et suis son état. Pou
 - **Recharger les extensions** recharge les conversations au repos. Les parents et enfants actifs continuent ; recommence après leur fin si nécessaire.
 
 Dans une conversation, ouvre **Sous-agents**, puis clique sur un enfant : une grande fenêtre montre ses messages, outils et résultat. Elle s’actualise pendant le travail, laisse consulter les anciens messages et ne bloque pas le parent. Cette vue est en lecture seule.
+
+## Le terminal
+
+La page **Terminal** ouvre un shell sur ton serveur, ou lance un de tes agents directement dans pi, en mode interactif. Elle n'est disponible qu'en mode protégé, pour le propriétaire connecté : c'est un shell complet avec les droits du compte qui fait tourner Cogitator.
+
+Un agent t'aide sans jamais rien exécuter à ta place :
+- tape `# trouve les plus gros fichiers de logs`, puis Entrée : la commande s'écrit sur la ligne, à toi de la valider ;
+- pendant la frappe, la suite probable s'affiche en gris, et **→** l'accepte. Tu peux couper ces suggestions dans la barre d'état ;
+- quand une commande échoue, **Expliquer** donne la cause et un correctif à insérer.
+
+Détails et sécurité : [Terminal web](terminal.md).
 
 ## Le serveur MCP intégré
 

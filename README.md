@@ -14,7 +14,7 @@
 
 Cogitator is a **pi package and web UI**, not a separate hosted AI service. Connect your model providers, open a bot, and work through conversations, projects, skills and subagents. Your installation keeps its own data and credentials. The interface is available in **English and French**, including on mobile.
 
-> **Release status:** this README describes the current `dev` build. **0.5.2** is published on npm, and the badge above shows the latest published version. Any later entry marked **Unreleased** in the [changelog](https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md) requires a source build until it is published.
+> **Release status:** this README describes the current `dev` build. **0.6.0** is published on npm, and the badge above shows the latest published version. Any later entry marked **Unreleased** in the [changelog](https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md) requires a source build until it is published.
 
 ![Cogitator bots: Majordome, Project Manager and Skills Architect](https://raw.githubusercontent.com/IgnitionAI/cogitator/dev/docs/images/bots.jpg)
 
@@ -60,6 +60,7 @@ These are editable agent presets, not separate subscriptions. Select their provi
 - **Subagents:** install `@gotgenes/pi-subagents` from Extensions to enable delegation. Click a child in the Subagents panel to read its conversation in a large dialog, with live progress and expandable tools. The parent keeps working.
 - **Extensions:** browse the pi catalog, install packages, check their versions, update individually and reload idle conversations. Active parents and background children keep running.
 - **Skills:** import reusable procedures, attach them to agents or invoke `/skill:name` in a message. Ask the Skills Architect to create a missing procedure.
+- **Terminal:** a shell on your server in the browser (protected mode), your agents running interactively in pi, and an assistant that turns `# a request` into a command, suggests the rest of what you type and explains errors. Nothing runs without you. See [Web terminal](https://github.com/IgnitionAI/cogitator/blob/dev/docs/terminal.md).
 - **Schedules:** repeat a task with cron, inspect run history and review its outcome. The server must remain running; model usage is billed by your provider.
 - **MCP:** the bundled stdio MCP server lets agents operate Cogitator. External agents (Claude Code, the Claude/OpenAI APIs, your own bots) can use the same tools over **Streamable HTTP** at `/mcp`, with a revocable Bearer token (`cogitator mcp token create`), or via OAuth for ChatGPT/Claude.ai custom connectors on a protected VPS. See [Remote MCP](https://github.com/IgnitionAI/cogitator/blob/dev/docs/mcp-http.md). Agent presets can also use other MCP servers; **Settings** exposes global MCP configuration.
 

@@ -2,6 +2,23 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
+## [0.6.0] - 2026-11-22
+
+**Highlight:** a terminal on your server, in the browser, with an agent at your side.
+
+### Added
+
+- **Web terminal:** shells on the server and your Cogitator agents running in pi's interactive interface, in tabs, from your home folder or a workspace. Sessions survive a closed tab or a lost connection (recent output is replayed), up to 8 at once. On phones, a key bar provides Esc, Tab, Ctrl C and the arrow keys. See [Web terminal](https://github.com/IgnitionAI/cogitator/blob/dev/docs/terminal.md).
+- **Terminal assistant:** type `# your request` to get a command written on the line, see live grey suggestions (accept with →), and get an explanation and fix for a failed command. It uses the model of the agent you choose. Commands are never run without you.
+
+### Security
+
+- The terminal is a full shell with the server account's rights. It is available only in protected mode to the signed-in owner, never to MCP tokens or OAuth connectors. Its WebSocket checks the exact origin and re-checks the owner session every second, and signing out cuts open terminals. Disable it with `COGITATOR_TERMINAL=0`.
+
+### Requirements
+
+- The pseudo-terminal uses the optional `@lydell/node-pty` dependency, with prebuilt binaries for Linux, macOS and Windows (no compilation).
+
 ## [0.5.2] - 2026-11-21
 
 **Highlights:** drive Cogitator from Claude, ChatGPT or your own bots over MCP · manage pi extensions from the interface · read what subagents are doing · import GitHub projects from a link · simpler owner login for a VPS.

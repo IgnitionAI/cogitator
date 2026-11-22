@@ -41,6 +41,8 @@ export function attachBrowserView(app: Server, browser: SharedBrowser, home: str
   const dispose = async () => { for (const peer of ws.clients) peer.terminate(); ws.close(); await browser.dispose(); };
   cleanup.set(app,dispose); app.once('close',() => { void dispose(); });
   app.on('upgrade', async (req,socket,head) => {
+    // The terminal registers its own upgrade handler for this prefix.
+    if ((req.url ?? '').startsWith('/api/terminal/ws/')) return;
     try {
       const match = /^\/api\/browser\/view\/([a-f0-9-]{36})\/([a-f0-9-]{36})$/.exec(req.url ?? '');
       if (!match) throw new Error('route');

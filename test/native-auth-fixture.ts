@@ -37,7 +37,7 @@ export class Browser {
   }
   login() { return this.call("/api/auth/sign-in/email", { email, password }); }
 }
-export async function fixture(authentication: "password" | "password-mfa" = "password-mfa") {
+export async function fixture(authentication: "password" | "password-mfa" = "password-mfa", extra: Partial<Parameters<typeof createApp>[0]> = {}) {
   const home = mkdtempSync(join(AUTH_TEST_TMP, "cog-auth-http-"));
   const unlock = lockHome(home);
   const key = await initializeOwner(home, origin, email, password, authentication);
@@ -47,7 +47,7 @@ export async function fixture(authentication: "password" | "password-mfa" = "pas
   let spawns = 0;
   const pool = new PiPool({ factory: () => { spawns++; throw new Error("Unexpected real provider spawn"); } });
   const events = new EventEmitter();
-  const app = createApp({ db, dbPath: paths.db, dbVersion: version, paths, pool, events, auth: state });
+  const app = createApp({ db, dbPath: paths.db, dbVersion: version, paths, pool, events, auth: state, ...extra });
   await new Promise<void>(done => app.listen(0, "127.0.0.1", done));
   const port = (app.address() as AddressInfo).port;
   const resetRates = () => state.db.exec("DELETE FROM rateLimit; DELETE FROM authThrottle;");

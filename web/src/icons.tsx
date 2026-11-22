@@ -21,6 +21,7 @@ const ICONS = {
   feed: <><path d="M4 6h16M4 12h10M4 18h13" /></>,
   spark: <><path d="M12 3v4M12 17v4M5 12H3M21 12h-2M6.3 6.3 4.9 4.9M19.1 19.1l-1.4-1.4M17.7 6.3l1.4-1.4M4.9 19.1l1.4-1.4" /><circle cx="12" cy="12" r="3" /></>,
   menu: <><path d="M4 7h16M4 12h16M4 17h16" /></>,
+  terminal: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 9l3 3-3 3M12 15h5" /></>,
   chevron: <><path d="M9 6l6 6-6 6" /></>,
   check: <><path d="M5 12.5 9.5 17 19 7" /></>,
   warning: <><path d="M12 3 2 20h20z" /><path d="M12 9v5M12 17h.01" /></>,

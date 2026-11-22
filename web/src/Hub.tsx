@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+
 import { api } from "./api";
 import { formatDate, localizeText, t } from "./i18n";
 import { Icon } from "./icons";
@@ -6,6 +7,9 @@ import { ErrorText, useToast } from "./ui";
 import { ChatView, NewConversationModal } from "./screens/Conversations";
 import type { AgentPreset, Conversation, Workspace } from "./types";
 import "./hub.css";
+
+// Le logo 3D (three.js) reste hors du premier rendu : même découpage que la barre latérale.
+const BrandLogo3D = lazy(() => import("./BrandLogo3D"));
 
 /** Écran d'accueil : agents comme des contacts (B), leurs fils, le chat (A). */
 export type HubTarget = { agentId?: string | null; conversationId?: string | null; nonce: number };
@@ -215,6 +219,9 @@ function HubHome(props: {
   return <div className="hub-home">
     <div className="hub-home-inner">
       <div className="hub-hero">
+        <div className="hub-logo" aria-hidden="true">
+          <Suspense fallback={<img src="/icon.png" alt="" width={96} height={96} />}><BrandLogo3D size={96} /></Suspense>
+        </div>
         <h2>{t("hub.ask")}</h2>
         <p>{props.agent ? t("hub.askWith", { name: props.agent.name }) : t("hub.askFree")}</p>
       </div>

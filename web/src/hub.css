@@ -72,7 +72,14 @@
 /* Accueil : une seule question */
 .hub-home { flex: 1; overflow-y: auto; display: flex; justify-content: center; padding: 12vh 24px 48px; }
 .hub-home-inner { width: 100%; max-width: 720px; display: flex; flex-direction: column; gap: 22px; }
-.hub-hero { text-align: center; }
+.hub-hero { text-align: center; display: flex; flex-direction: column; align-items: center; }
+.hub-logo { position: relative; width: 96px; height: 96px; margin-bottom: 18px; }
+.hub-logo::before {
+  content: ""; position: absolute; inset: -36px; border-radius: 50%; z-index: 0; pointer-events: none;
+  background: radial-gradient(circle, rgba(94, 106, 210, 0.42) 0%, rgba(80, 52, 220, 0.16) 42%, transparent 70%);
+}
+.hub-logo > * { position: relative; z-index: 1; }
+.hub-logo img { border-radius: 22px; }
 .hub-hero h2 { margin: 0; font-size: 32px; font-weight: 600; letter-spacing: -0.02em; }
 .hub-hero p { margin: 8px 0 0; color: var(--muted); font-size: 15px; }
 .hub-composer {

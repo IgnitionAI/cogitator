@@ -127,12 +127,18 @@ void main() {
   float n = fbm(swirl * 2.6 + vec3(0.0, 0.0, uTime * 0.25));
   float n2 = fbm(swirl * 6.5 - vec3(uTime * 0.18));
 
-  vec3 col = mix(vec3(0.03, 0.03, 0.13), vec3(0.24, 0.19, 0.88), smoothstep(0.22, 0.78, n));
-  col = mix(col, vec3(0.76, 0.82, 1.0), pow(smoothstep(0.46, 0.98, n2), 2.0));
+  // Spiral arms: angle around the view axis, twisted with radius, as on the app icon.
+  float r = length(p.xy);
+  float arms = 0.5 + 0.5 * sin(atan(p.y, p.x) * 5.0 - r * 9.0 + uTime * 1.3 + n * 2.4);
+  vec3 col = mix(vec3(0.05, 0.04, 0.22), vec3(0.27, 0.22, 0.95), smoothstep(0.15, 0.75, n));
+  col = mix(col, vec3(0.62, 0.58, 1.0), smoothstep(0.55, 0.95, arms) * (0.55 + 0.45 * n2));
+  col = mix(col, vec3(0.86, 0.9, 1.0), pow(smoothstep(0.5, 0.98, n2), 2.0) * 0.6);
   float facing = abs(dot(normalize(vNormal), normalize(vView)));
-  col += vec3(0.62, 0.66, 1.0) * pow(facing, 6.0) * 0.5;
-  col += vec3(0.38, 0.32, 0.95) * pow(1.0 - facing, 2.2);
-  col *= 0.72 + 0.68 * n;
+  // White-hot centre fixed on the lens (object space), violet at the rim.
+  col += vec3(1.0, 0.95, 1.0) * pow(max(0.0, 1.0 - r * 1.35), 5.0) * 1.1;
+  col += vec3(0.62, 0.66, 1.0) * pow(facing, 5.0) * 0.18;
+  col += vec3(0.42, 0.34, 1.0) * pow(1.0 - facing, 2.0) * 0.9;
+  col *= 0.8 + 0.5 * n;
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -151,10 +157,10 @@ uniform float uTime;
 varying vec2 vUv;
 void main() {
   float d = length(vUv - 0.5) * 2.0;
-  float glow = pow(smoothstep(1.0, 0.0, d), 3.0);
-  float pulse = 0.9 + 0.1 * sin(uTime * 1.7);
-  vec3 col = mix(vec3(0.32, 0.27, 0.95), vec3(0.86, 0.88, 1.0), glow) * glow * pulse;
-  gl_FragColor = vec4(col, glow * 0.8 * pulse);
+  float glow = pow(smoothstep(1.0, 0.0, d), 2.2);
+  float pulse = 0.92 + 0.08 * sin(uTime * 1.7);
+  vec3 col = mix(vec3(0.26, 0.15, 1.0), vec3(0.6, 0.55, 1.0), pow(glow, 2.0)) * glow * pulse * 1.6;
+  gl_FragColor = vec4(col, glow * 0.9 * pulse);
 }
 `;
 
@@ -164,8 +170,9 @@ function gearGeometry(teeth: number, rootRadius: number, tipRadius: number, hole
   const points: THREE.Vector2[] = [];
   for (let i = 0; i < segments; i++) {
     const angle = (i / segments) * Math.PI * 2;
+    // Wide, rounded teeth: a flattened cosine keeps the tips broad and the roots soft.
     const wave = Math.cos(teeth * angle);
-    const radius = THREE.MathUtils.lerp(rootRadius, tipRadius, THREE.MathUtils.smoothstep(wave, -0.45, 0.45));
+    const radius = THREE.MathUtils.lerp(rootRadius, tipRadius, THREE.MathUtils.smoothstep(wave, -0.15, 0.6));
     points.push(new THREE.Vector2(Math.cos(angle) * radius, Math.sin(angle) * radius));
   }
   const shape = new THREE.Shape(points);
@@ -175,9 +182,9 @@ function gearGeometry(teeth: number, rootRadius: number, tipRadius: number, hole
   const geometry = new THREE.ExtrudeGeometry(shape, {
     depth,
     bevelEnabled: true,
-    bevelThickness: 0.07,
-    bevelSize: 0.06,
-    bevelSegments: 3,
+    bevelThickness: 0.09,
+    bevelSize: 0.08,
+    bevelSegments: 5,
     curveSegments: 24,
   });
   geometry.translate(0, 0, -depth / 2);
@@ -190,7 +197,7 @@ function Cog({ reduced }: { reduced: boolean }) {
   const pointer = useRef({ x: 0, y: 0 });
 
   const uniforms = useMemo(() => ({ uTime: { value: 0 } }), []);
-  const gear = useMemo(() => gearGeometry(8, 0.86, 1.06, 0.58, 0.32), []);
+  const gear = useMemo(() => gearGeometry(6, 0.84, 1.08, 0.6, 0.3), []);
   useEffect(() => () => gear.dispose(), [gear]);
 
   useEffect(() => {
@@ -218,21 +225,22 @@ function Cog({ reduced }: { reduced: boolean }) {
   return (
     <group ref={group}>
       <mesh geometry={gear}>
-        <meshStandardMaterial color="#e9b457" metalness={1} roughness={0.18} envMapIntensity={2.4} />
+        <meshStandardMaterial color="#e6ad5c" metalness={1} roughness={0.2} envMapIntensity={2.4} />
       </mesh>
-      {/* Same profile scaled down: leaves the gold rim and the inner bezel showing. */}
-      <mesh geometry={gear} position={[0, 0, 0.02]} scale={[0.87, 0.87, 1.08]}>
-        <meshStandardMaterial color="#161c2e" metalness={0.85} roughness={0.34} envMapIntensity={1.4} />
+      {/* Same profile scaled down: a wide gold rim around a slate-blue body, as on the app icon. */}
+      <mesh geometry={gear} position={[0, 0, 0.03]} scale={[0.86, 0.86, 1.1]}>
+        <meshStandardMaterial color="#2e3654" metalness={0.45} roughness={0.46} envMapIntensity={1.4} />
       </mesh>
-      <mesh position={[0, 0, 0.2]}>
-        <torusGeometry args={[0.44, 0.055, 20, 64]} />
-        <meshStandardMaterial color="#f5d183" metalness={1} roughness={0.14} envMapIntensity={2.6} />
+      <mesh position={[0, 0, 0.27]}>
+        <torusGeometry args={[0.5, 0.085, 24, 72]} />
+        <meshStandardMaterial color="#f1c47a" metalness={1} roughness={0.15} envMapIntensity={2.6} />
       </mesh>
-      <mesh>
-        <sphereGeometry args={[0.45, 64, 64]} />
+      {/* The plasma core is a flattened lens seated inside the gold ring. */}
+      <mesh position={[0, 0, 0.12]} scale={[1, 1, 0.42]}>
+        <sphereGeometry args={[0.46, 64, 64]} />
         <shaderMaterial uniforms={uniforms} vertexShader={PLASMA_VERTEX} fragmentShader={PLASMA_FRAGMENT} toneMapped={false} />
       </mesh>
-      <mesh position={[0, 0, -0.5]} scale={[3.4, 3.4, 1]}>
+      <mesh position={[0, 0, -0.6]} scale={[4.8, 4.8, 1]}>
         <planeGeometry args={[1, 1]} />
         <shaderMaterial
           uniforms={uniforms}
@@ -248,7 +256,7 @@ function Cog({ reduced }: { reduced: boolean }) {
   );
 }
 
-export default function BrandLogo3D() {
+export default function BrandLogo3D({ size }: { size?: number } = {}) {
   const wrap = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(true);
   const reduced = usePrefersReducedMotion();
@@ -266,7 +274,7 @@ export default function BrandLogo3D() {
   if (!webgl) return <BrandLogoFallback />;
 
   return (
-    <div ref={wrap} className="brand-3d" aria-hidden="true">
+    <div ref={wrap} className="brand-3d" aria-hidden="true" style={size ? { width: size, height: size, margin: 0 } : undefined}>
       <Canvas
         camera={{ position: [0, 0, 3.7], fov: 40 }}
         dpr={[1, 2]}

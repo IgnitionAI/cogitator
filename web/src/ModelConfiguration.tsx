@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ConnectProviderModal } from "./screens/Providers";
 import { api } from "./api";
 import { t, thinkingLabel } from "./i18n";
-import { THINKING_LEVELS, thinkingLevelsFor } from "./types";
+import { THINKING_LEVELS, thinkingLevelsFor, usableProviders } from "./types";
 import type { Conversation, ProviderView, ThinkingLevel } from "./types";
 import { ErrorText, Field } from "./ui";
 
@@ -24,7 +24,7 @@ export function ModelFields({ value, providers, onChange, preserve = false }: {
         onChange({ ...value, provider, model, thinking: clampThinking(value.thinking, provider, model) });
       }}>
         {!providers.some((provider) => provider.id === value.provider) ? <option value={value.provider}>{value.provider || t("screens.providerPlaceholder")}</option> : null}
-        {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.id}</option>)}
+        {usableProviders(providers, value.provider).map((provider) => <option key={provider.id} value={provider.id}>{provider.id}</option>)}
       </select>
     </Field>
     <Field label={t("screens.model")}>

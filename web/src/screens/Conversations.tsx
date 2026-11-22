@@ -6,7 +6,7 @@ import { SubagentsPanel } from "../SubagentsPanel";
 import { t, formatNumber, statusLabel, thinkingLabel, localizeText } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, openEvents, type EventConnectionState } from "../api";
-import { thinkingLevelsFor } from "../types";
+import { thinkingLevelsFor, usableProviders } from "../types";
 import type {
   AgentPreset, Conversation, FileChange, HistoryEntry, ImageContentInput, ProviderView, SkillRef, SseEvent, Workspace,
  } from "../types";
@@ -870,7 +870,7 @@ function NewConversationModal(props: {
               setModel("");
               setThinking((current) => clampThinking(current, nextProvider, nextModel));
             }}>
-              {providers.map((p) => <option key={p.id} value={p.id}>{p.id} {p.auth.ready ? "✓" : "⚠"}</option>)}
+              {usableProviders(providers, providerId).map((p) => <option key={p.id} value={p.id}>{p.id} {p.auth.ready ? "✓" : "⚠"}</option>)}
             </select>
           </Field>
           <Field label={t("chat.model")}>

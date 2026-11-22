@@ -1,5 +1,5 @@
 import * as i18n from "../web/src/i18n.js";
-import { THINKING_LEVELS, thinkingLevelsFor } from "../web/src/types.js";
+import { THINKING_LEVELS, thinkingLevelsFor, usableProviders } from "../web/src/types.js";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
@@ -36,7 +36,7 @@ function harness(screen: string, api: object, fetch?: unknown, component = "defa
         }).outputText, { exports: shared, require: requireModule });
         return shared;
       }
-      if (name === "./types" || name === "../types") return { THINKING_LEVELS, thinkingLevelsFor };
+      if (name === "./types" || name === "../types") return { THINKING_LEVELS, thinkingLevelsFor, usableProviders };
       if (name === "./i18n" || name === "../i18n") return i18n;
       if (name === "react/jsx-runtime") return { jsx, jsxs: jsx };
       if (name === "react") return {
@@ -237,4 +237,12 @@ test("single-method provider opened from its row always offers a working login a
   assert.equal(find(tree, e => e.type === "ErrorText")?.props.error, "réessaie");
   assert.ok(find(tree, e => e.type === "button" && e.props.children === "Utiliser une clé API"), "retry must remain available");
   assert.ok(find(tree, e => e.type === "button" && e.props.children === "Annuler"));
+});
+
+test("provider pickers only offer configured providers, keep the current choice, fall back when none is configured", () => {
+  const p = (id: string, configured: boolean) => ({ id, source: "builtin" as const, models: [], auth: { configured, type: null, ready: configured } });
+  const all = [p("anthropic", true), p("openai", true), p("azure", false), p("baseten", false)];
+  assert.deepEqual(usableProviders(all).map((x) => x.id), ["anthropic", "openai"]);
+  assert.deepEqual(usableProviders(all, "azure").map((x) => x.id), ["anthropic", "openai", "azure"], "current selection stays visible");
+  assert.deepEqual(usableProviders([p("azure", false), p("baseten", false)]).map((x) => x.id), ["azure", "baseten"], "nothing configured: full list");
 });

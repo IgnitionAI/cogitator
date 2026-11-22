@@ -4,6 +4,16 @@
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
 
+/**
+ * Fournisseurs proposés dans les sélecteurs : seulement ceux qui sont configurés, plus la
+ * sélection actuelle (même non configurée) pour ne jamais la masquer. Sans aucun fournisseur
+ * configuré, la liste complète reste disponible.
+ */
+export function usableProviders(providers: ProviderView[], ...current: Array<string | null | undefined>): ProviderView[] {
+  if (!providers.some((p) => p.auth?.configured)) return providers;
+  return providers.filter((p) => p.auth?.configured || current.includes(p.id));
+}
+
 export interface ProviderView {
   id: string;
   source: "builtin" | "custom";

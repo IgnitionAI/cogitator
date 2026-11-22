@@ -2,6 +2,14 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
+## [0.7.0] - 2026-11-22
+
+**Highlight:** update Cogitator and your pi extensions in one click.
+
+### Added
+
+- **One-click updates:** in **Updates**, “Update to X and restart” installs the new Cogitator release with pi, restarts the server and reloads the page. If conversations are still working, Cogitator asks before interrupting them. “Update all” updates every pi extension that has a newer release, then reloads extensions once, without interrupting active conversations. This works for installations managed by pi (`pi install`, server started with `/cogitator`). Source releases and system services (systemd) keep the VPS guide procedure: their code is protected from the server account. Set `COGITATOR_SELF_UPDATE=0` to turn it off.
+
 ## [0.6.0] - 2026-11-22
 
 **Highlight:** a terminal on your server, in the browser, with an agent at your side.

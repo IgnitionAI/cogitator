@@ -36,7 +36,10 @@ export const api = {
   terminalAssist: (body: { mode: "command" | "complete" | "explain"; input: string; output?: string; cwd?: string; exit_code?: number; agent_id?: string }, signal?: AbortSignal) =>
     req<{ text: string; fix?: string; model: string }>("POST", "/api/terminal/assist", body, signal),
   setupContext: (workspaceId: string) => req<{ ready: boolean; error?: string; tools: string[]; agents: Array<{id: string; name: string; slug: string; description: string}>; skills: Array<{name: string; description: string; path: string}> }>("GET", `/api/setup-context?workspace_id=${encodeURIComponent(workspaceId)}`),
-  appUpdates: () => req<{ current: string; latest: string; status: "current" | "available" | "ahead" | "unknown" }>("GET", "/api/app-updates"),
+  appUpdates: () => req<{ current: string; latest: string; status: "current" | "available" | "ahead" | "unknown"; selfUpdate: import("./types").SelfUpdateInfo }>("GET", "/api/app-updates"),
+  appUpdateState: (signal?: AbortSignal) => req<import("./types").SelfUpdateInfo & { version: string }>("GET", "/api/app-updates/state", undefined, signal),
+  applyAppUpdate: (force: boolean) => req<import("./types").SelfUpdateInfo["state"]>("POST", "/api/app-updates/apply", { force }),
+  updateAllPackages: () => req<import("./types").PackageOperation>("POST", "/api/packages/update-all", {}),
   subagentTranscript: (conversationId: string, id: string, signal?: AbortSignal) => req<{ subagent: import("./types").SubagentView; entries: import("./types").HistoryEntry[]; truncated: boolean }>("GET", `/api/conversations/${encodeURIComponent(conversationId)}/subagents/${encodeURIComponent(id)}`, undefined, signal),
   githubConnection: () => req<GitHubConnectionState>("GET", "/api/github/connection"),
   connectGithub: () => req<GitHubConnectionState>("POST", "/api/github/connection"),

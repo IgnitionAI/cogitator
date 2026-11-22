@@ -4,7 +4,7 @@
 
 Cogitator est **l’interface web de tes agents pi**. Tu l’installes sur ton ordinateur ou sur ton propre VPS. Chacun possède son installation ; ce n’est pas un service avec inscription publique. L’interface est disponible en français et en anglais.
 
-> Cette documentation décrit le code actuel de `dev`. La version 0.6.0 est publiée sur npm. Une entrée marquée **Unreleased** dans le changelog nécessite encore une installation depuis les sources.
+> Cette documentation décrit le code actuel de `dev`. La version 0.7.0 est publiée sur npm. Une entrée marquée **Unreleased** dans le changelog nécessite encore une installation depuis les sources.
 
 ![Les trois agents intégrés](images/bots.jpg)
 
@@ -78,6 +78,14 @@ Dans **Extensions**, recherche un package pi, installe-le et suis son état. Pou
 - **Recharger les extensions** recharge les conversations au repos. Les parents et enfants actifs continuent ; recommence après leur fin si nécessaire.
 
 Dans une conversation, ouvre **Sous-agents**, puis clique sur un enfant : une grande fenêtre montre ses messages, outils et résultat. Elle s’actualise pendant le travail, laisse consulter les anciens messages et ne bloque pas le parent. Cette vue est en lecture seule.
+
+## Mettre à jour en un clic
+
+Le bouton **Mises à jour** du pied de page vérifie npm. Si Cogitator est installé avec pi :
+- **Mettre à jour vers X et redémarrer** installe la nouvelle version, redémarre le serveur et recharge la page ;
+- **Tout mettre à jour** met à jour tes extensions pi, puis les recharge sans couper les conversations en cours.
+
+Si des conversations travaillent encore, Cogitator demande avant de les interrompre. Une release sous `/opt` gérée par systemd n'est pas modifiée depuis l'interface : suis le guide VPS.
 
 ## Le terminal
 

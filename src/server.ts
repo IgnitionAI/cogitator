@@ -5,7 +5,7 @@ import { resourceInventory, probeCogitatorTools } from "./project-setup.js";
 import { importSkillUpload } from "./skills-upload.js";
 import { appUpdateStatus } from "./app-updates.js";
 import { GitHubLogin, githubEnv, githubConfigured } from "./github-login.js";
-import { catalog, installedPackages, packageUpdates, PackageManager } from "./packages.js";
+import { catalog, installedPackages, packageUpdates, PackageManager, runPi } from "./packages.js";
 import { changeConfiguration, dismissConfiguration, ConfigurationError, recoverConfigurations } from "./classic-configuration.js";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -82,6 +82,7 @@ import { cloneRepo, isInsideDir, localDirFor } from "./git-import.js";
 import { listSubagents, readSubagentTranscript } from "./subagents.js";
 import { MCP_HTTP_PATH, McpHttpEndpoint } from "./mcp-http.js";
 import { McpOAuth } from "./mcp-oauth.js";
+import { installedPackageVersion, PACKAGE as SELF_PACKAGE, SelfUpdateError, SelfUpdater, selfUpdateSupport, spawnRelauncher, type SelfUpdateDeps } from "./self-update.js";
 import { loadPty, shellLaunch, terminalEnv, TerminalError, TerminalManager, type PtySpawn, type TerminalLaunch } from "./terminal.js";
 import { attachTerminalSocket, terminalRoutes } from "./terminal-http.js";
 import { piComplete, type CompleteFn } from "./terminal-assist.js";
@@ -280,6 +281,7 @@ function checkAuthReadyFor(provider: string): Promise<boolean | null> {
 // ---------- Dépendances des routes ----------
 
 interface Deps {
+  selfUpdate?: Partial<SelfUpdateDeps>;
   db: Db;
   dbPath: string;
   dbVersion: number;
@@ -353,6 +355,20 @@ function requireAgent(deps: Deps, ctx: Ctx): AgentPreset | null {
 function registryRoutes(deps: Deps): Route[] {
   const { paths } = deps;
   const packages = new PackageManager(paths, () => deps.pool.refreshExtensions());
+  const selfUpdater = new SelfUpdater({
+    support: () => selfUpdateSupport(paths),
+    release: () => appUpdateStatus(),
+    busy: () => deps.pool.busyCount(),
+    install: (source) => runPi("install", source, paths),
+    installedVersion: () => installedPackageVersion(),
+    relaunch: () => spawnRelauncher(),
+    shutdown: () => {
+      // Arrêt habituel (cli.ts) ; filet de sécurité si une poignée retient le processus.
+      setTimeout(() => process.exit(0), 15_000).unref();
+      process.kill(process.pid, "SIGTERM");
+    },
+    ...deps.selfUpdate,
+  });
   const sampleMachine = machineMetrics(paths.home);
   return [
     ["GET", "/api/machine", async (ctx) => {
@@ -368,8 +384,28 @@ function registryRoutes(deps: Deps): Route[] {
       ctx.check(); deps.githubLogin.cancel(); sendJson(ctx.res, 200, { ok: true });
     }],
     ["GET", "/api/app-updates", async (ctx) => {
-      try { sendJson(ctx.res, 200, await appUpdateStatus()); }
-      catch { sendJson(ctx.res, 502, { error: "Release check unavailable" }); }
+      const selfUpdate = { ...selfUpdateSupport(paths), state: selfUpdater.state };
+      try { sendJson(ctx.res, 200, { ...await appUpdateStatus(), selfUpdate }); }
+      catch { sendJson(ctx.res, 502, { error: "Release check unavailable", selfUpdate }); }
+    }],
+    ["GET", "/api/app-updates/state", (ctx) => {
+      sendJson(ctx.res, 200, { ...selfUpdateSupport(paths), state: selfUpdater.state, version: packageVersion() });
+    }],
+    ["POST", "/api/app-updates/apply", async (ctx) => {
+      ctx.check();
+      if (packages.operation?.status === "running") return sendJson(ctx.res, 409, { error: "Une installation est déjà en cours." });
+      const force = (ctx.body as { force?: unknown } | null)?.force === true;
+      try { sendJson(ctx.res, 202, await selfUpdater.start(force)); }
+      catch (error) {
+        if (error instanceof SelfUpdateError) return sendJson(ctx.res, error.status, { error: error.code, ...error.detail });
+        sendJson(ctx.res, 502, { error: error instanceof Error ? error.message : "Release check unavailable" });
+      }
+    }],
+    ["POST", "/api/packages/update-all", (ctx) => {
+      ctx.check();
+      if (selfUpdater.state.status === "installing") return sendJson(ctx.res, 409, { error: "Une installation est déjà en cours." });
+      try { sendJson(ctx.res, 202, packages.startAll([SELF_PACKAGE])); }
+      catch (error) { sendJson(ctx.res, 409, { error: (error as Error).message }); }
     }],
     ["GET", "/api/packages", (ctx) => {
       sendJson(ctx.res, 200, { installed: installedPackages(paths), operation: packages.operation });
@@ -1497,6 +1533,8 @@ export interface AppOptions {
   /** Runner herdr injecté (ADR-012) ; défaut : shell-out réel. */
   /** Création de workspace injectée (tests : forcer l'exception post-clone, M3) ; défaut : réel. */
   createWorkspaceImpl?: typeof createWorkspace;
+  /** Mise à jour de Cogitator injectée (tests) ; défaut : pi install + relance. */
+  selfUpdate?: Partial<SelfUpdateDeps>;
   /** Pseudo-terminal injecté (tests) ; défaut : node-pty si disponible. */
   terminalPty?: PtySpawn | null;
   /** Appel modèle de l'assistant terminal injecté (tests) ; défaut : pi-ai. */
@@ -1585,6 +1623,7 @@ export function createApp(opts: AppOptions): Server {
     durable,
     createWorkspaceImpl: opts.createWorkspaceImpl,
     team,
+    selfUpdate: opts.selfUpdate,
   };
 
   const browser = new SharedBrowser(paths.home, db, opts.auth?.config.origin);

@@ -5,6 +5,7 @@ import { formatDate, localizeText, t } from "./i18n";
 import { Icon } from "./icons";
 import { ErrorText, useToast } from "./ui";
 import { ChatView, NewConversationModal } from "./screens/Conversations";
+import { AgentFace, AgentHead3D, useAgentGenome } from "./AgentFace";
 import type { AgentPreset, Conversation, Workspace } from "./types";
 import "./hub.css";
 
@@ -14,21 +15,6 @@ const BrandLogo3D = lazy(() => import("./BrandLogo3D"));
 /** Écran d'accueil : agents comme des contacts (B), leurs fils, le chat (A). */
 export type HubTarget = { agentId?: string | null; conversationId?: string | null; nonce: number };
 const FREE = "__free__";
-const AVATAR_COLORS = ["#5e6ad2", "#b0702a", "#2f7d5c", "#7a4aa8", "#a8455a", "#2b7a99", "#6b7a2f", "#8a5a2b"];
-
-function avatarColor(id: string): string {
-  let h = 0;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length]!;
-}
-
-function Avatar({ name, id, size = 38, status }: { name: string; id: string; size?: number; status?: "working" | "ready" | "idle" }) {
-  return <span className="hub-avatar" style={{ width: size, height: size, background: avatarColor(id), fontSize: Math.round(size * 0.4) }} aria-hidden="true">
-    {name.trim().charAt(0).toUpperCase() || "?"}
-    {status ? <span className={`hub-presence is-${status}`} /> : null}
-  </span>;
-}
-
 function relativeTime(iso: string): string {
   const then = Date.parse(iso.includes("T") ? iso : `${iso.replace(" ", "T")}Z`);
   if (!Number.isFinite(then)) return "";
@@ -103,6 +89,8 @@ export default function Hub(props: {
     if (threads.some((c) => c.streaming)) return "working";
     return threads.some((c) => c.status === "active") ? "ready" : "idle";
   };
+  // Un fil en échec récent fait passer la tête de l'agent en rouge.
+  const failingOf = (key: string) => (byAgent.get(key) ?? []).some((c) => !c.streaming && (c.status === "error" || c.status === "failed" || c.pending_configuration?.status === "failed"));
 
   const selectedAgent = agents.find((a) => a.id === agentId) ?? null;
   const threads = byAgent.get(agentId ?? FREE) ?? [];
@@ -128,7 +116,7 @@ export default function Hub(props: {
           const status = statusOf(a.id);
           const count = byAgent.get(a.id)?.length ?? 0;
           return <button key={a.id} type="button" className={`hub-agent${agentId === a.id ? " is-active" : ""}`} aria-current={agentId === a.id ? "true" : undefined} onClick={() => pickAgent(a.id)}>
-            <Avatar name={a.name} id={a.id} status={status} />
+            <AgentFace agent={a} status={status} />
             <span className="hub-agent-text">
               <span className="hub-agent-line"><span className="hub-agent-name">{a.name}</span>{count ? <span className="hub-count">{count}</span> : null}</span>
               <span className="hub-agent-sub">{t(`hub.status.${status}`)} · {a.model}</span>
@@ -148,7 +136,7 @@ export default function Hub(props: {
 
     <section className="hub-threads" aria-label={t("hub.threadsOf", { name: agentName })}>
       <div className="hub-col-head">
-        {selectedAgent ? <Avatar name={selectedAgent.name} id={selectedAgent.id} size={32} /> : <span className="hub-avatar is-free" style={{ width: 32, height: 32 }} aria-hidden="true">#</span>}
+        {selectedAgent ? <AgentFace agent={selectedAgent} size={32} /> : <span className="hub-avatar is-free" style={{ width: 32, height: 32 }} aria-hidden="true">#</span>}
         <div className="hub-thread-agent"><h2>{agentName}</h2><p className="mono">{selectedAgent ? `${selectedAgent.provider} · ${selectedAgent.model}` : t("hub.freeSub")}</p></div>
       </div>
       <button type="button" className={`hub-new${view === "home" ? " is-active" : ""}`} onClick={() => agentId === FREE ? setShowFreeModal(true) : setThreadId(null)}>
@@ -175,6 +163,8 @@ export default function Hub(props: {
       ) : (
         <HubHome
           agent={selectedAgent}
+          working={selectedAgent ? statusOf(selectedAgent.id) === "working" : false}
+          failing={selectedAgent ? failingOf(selectedAgent.id) : false}
           free={agentId === FREE}
           workspaces={workspaces}
           onNavigate={props.onNavigate}
@@ -190,6 +180,8 @@ export default function Hub(props: {
 
 function HubHome(props: {
   agent: AgentPreset | null;
+  working: boolean;
+  failing: boolean;
   free: boolean;
   workspaces: Workspace[];
   onNavigate: (screen: "agents" | "workspaces" | "terminal" | "cron") => void;
@@ -201,6 +193,7 @@ function HubHome(props: {
   const [workspaceId, setWorkspaceId] = useState(props.agent?.default_workspace_id ?? "");
   const [busy, setBusy] = useState(false);
   const area = useRef<HTMLTextAreaElement>(null);
+  const genome = useAgentGenome(props.agent);
   useEffect(() => { setWorkspaceId(props.agent?.default_workspace_id ?? ""); area.current?.focus(); }, [props.agent?.id]);
 
   const start = async () => {
@@ -219,9 +212,11 @@ function HubHome(props: {
   return <div className="hub-home">
     <div className="hub-home-inner">
       <div className="hub-hero">
-        <div className="hub-logo" aria-hidden="true">
+        {genome ? <div className="hub-logo is-agent" aria-hidden="true">
+          <Suspense fallback={<img src="/icon.png" alt="" width={96} height={96} />}><AgentHead3D genome={genome} working={props.working} error={props.failing} size={150} /></Suspense>
+        </div> : <div className="hub-logo" aria-hidden="true">
           <Suspense fallback={<img src="/icon.png" alt="" width={96} height={96} />}><BrandLogo3D size={96} /></Suspense>
-        </div>
+        </div>}
         <h2>{t("hub.ask")}</h2>
         <p>{props.agent ? t("hub.askWith", { name: props.agent.name }) : t("hub.askFree")}</p>
       </div>
@@ -230,7 +225,7 @@ function HubHome(props: {
         <textarea id="hub-prompt" ref={area} rows={3} value={prompt} placeholder={t("hub.placeholder")} onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void start(); } }} />
         <div className="hub-composer-row">
-          {props.agent ? <span className="hub-pill"><Avatar name={props.agent.name} id={props.agent.id} size={18} />{props.agent.name}</span> : null}
+          {props.agent ? <span className="hub-pill"><AgentFace agent={props.agent} size={20} />{props.agent.name}</span> : null}
           {!props.free ? <select className="hub-pill-select" aria-label={t("hub.project")} value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)}>
             <option value="">{t("hub.noProject")}</option>
             {props.workspaces.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}

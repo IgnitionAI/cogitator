@@ -80,6 +80,11 @@
 }
 .hub-logo > * { position: relative; z-index: 1; }
 .hub-logo img { border-radius: 22px; }
+.hub-logo.is-agent { width: 150px; height: 150px; margin-bottom: 8px; }
+.hub-logo.is-agent::before { inset: -10px; background: radial-gradient(circle, rgba(94, 106, 210, 0.28) 0%, rgba(80, 52, 220, 0.1) 45%, transparent 70%); }
+.hub-logo.is-agent img { border-radius: 50%; }
+.hub-avatar.is-machine { overflow: visible; background: radial-gradient(circle at 50% 38%, #262a3c, #0c0d12 72%); box-shadow: inset 0 0 0 1px var(--border); }
+.hub-avatar.is-machine > img { width: 100%; height: 100%; border-radius: 50%; display: block; }
 .hub-hero h2 { margin: 0; font-size: 32px; font-weight: 600; letter-spacing: -0.02em; }
 .hub-hero p { margin: 8px 0 0; color: var(--muted); font-size: 15px; }
 .hub-composer {

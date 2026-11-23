@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { t } from "../i18n";
+import { localizeText, t } from "../i18n";
+import { Icon } from "../icons";
 import { ErrorText, PageHead } from "../ui";
 import type { PackageCard, PackageState, PackageUpdate } from "../types";
 
@@ -57,7 +58,7 @@ export default function Extensions() {
     catch (e) { setError((e as Error).message); }
     finally { setSending(false); }
   }
-  return <>
+  return <div className="settings-page">
     <PageHead title={t("extensions.title")} sub={t("extensions.subtitle")} actions={<>
       <button className="btn" disabled={busy || checking || !loaded} onClick={() => void checkUpdates()}>{t(checking ? "extensions.checking" : "extensions.checkUpdates")}</button>
       <button className="btn" disabled={busy || checking || !loaded} onClick={() => void reload()}>{t("extensions.reloadNow")}</button>
@@ -93,8 +94,11 @@ export default function Extensions() {
         <option value="skill">{t("extensions.skills")}</option><option value="theme">{t("extensions.themes")}</option><option value="prompt">{t("extensions.prompts")}</option>
       </select><button className="btn" type="submit">{t("extensions.searchButton")}</button>
     </form>
-    <ErrorText error={catalogError} />
-    {catalogError && <button className="btn" onClick={() => setRevision(r => r + 1)}>{t("screens.retry")}</button>}
+    {catalogError ? <div className="catalog-down" role="alert">
+      <span className="catalog-down-icon" aria-hidden="true"><Icon name="warning" size={16} /></span>
+      <div><p className="catalog-down-title">{t("extensions.catalogDown")}</p><p className="muted">{t("extensions.catalogDownHint")}</p><p className="muted mono catalog-down-detail">{localizeText(catalogError)}</p></div>
+      <button className="btn" onClick={() => setRevision(r => r + 1)}>{t("screens.retry")}</button>
+    </div> : null}
     {loading ? <p role="status">{t("screens.loading")}</p> : !catalogError && <>
       {!cards.length && <p>{t("extensions.empty")}</p>}
       <div className="extensions-grid">{cards.map(p => {
@@ -107,5 +111,5 @@ export default function Extensions() {
       })}</div>
       <div className="extensions-search"><button className="btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>{t("extensions.previous")}</button><span>{page}</span><button className="btn" disabled={!next} onClick={() => setPage(p => p + 1)}>{t("extensions.next")}</button></div>
     </>}
-  </>;
+  </div>;
 }

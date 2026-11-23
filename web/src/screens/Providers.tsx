@@ -26,11 +26,18 @@ export default function Providers() {
   }, []);
 
   useEffect(refresh, [refresh]);
-  const visible = providers.filter(p => p.id.includes(query.trim().toLowerCase()))
-    .sort((a, b) => Number(b.auth.configured || b.auth.ready) - Number(a.auth.configured || a.auth.ready) || a.id.localeCompare(b.id));
+  const connected = providers.filter((p) => p.auth.configured || p.auth.ready);
+  const needle = query.trim().toLowerCase();
+  const catalog = providers.filter((p) => !(p.auth.configured || p.auth.ready) && p.id.includes(needle))
+    .sort((a, b) => Number((b.authMethods?.length ?? 0) > 0) - Number((a.authMethods?.length ?? 0) > 0) || a.id.localeCompare(b.id));
+  const remove = (p: ProviderView) => {
+    if (confirm(translate("screens.deleteProvider", { name: p.id }))) {
+      api.deleteProvider(p.id).then(refresh).catch((e: Error) => toast(e.message, true));
+    }
+  };
 
   return (
-    <>
+    <div className="settings-page">
       <PageHead
         title={translate("screens.providers")}
         sub={translate("screens.providersSub")}
@@ -39,41 +46,53 @@ export default function Providers() {
       <ErrorText error={error} />
       {error ? <button type="button" className="btn" onClick={refresh}>{translate("screens.retry")}</button> : null}
       {saved ? <p role="status">{translate("screens.providerSaved", { name: saved })}</p> : null}
-      <Field label={translate("screens.searchProviders")}>
-        <input type="search" value={query} onChange={e => setQuery(e.target.value)} />
-      </Field>
-      <p className="muted">{translate("screens.providerAvailabilityHint")}</p>
-      {loading ? <Skeleton rows={5} /> : error && providers.length === 0 ? null : visible.length === 0 ? (
-        <Empty title={translate("screens.noProviderMatch")} action={<button type="button" className="btn" onClick={() => setShowAdd(true)}>{translate("screens.customProvider")}</button>}>
-          {translate("screens.providerSearchHint")}
-        </Empty>
-      ) : (
-        <div className="list" aria-label={translate("screens.providers")}>
-          {visible.map(p => (
-            <div className="list-row provider-row" key={p.id}>
-              <div className="provider-name">
+      {loading ? <Skeleton rows={5} /> : error && providers.length === 0 ? null : <>
+        <section className="prov-section" aria-label={translate("providers.connected")}>
+          <h2 className="prov-label">{translate("providers.connected")} · {formatNumber(connected.length)}</h2>
+          {connected.length === 0 ? <p className="muted">{translate("providers.noneConnected")}</p> : <div className="prov-cards">
+            {connected.map((p) => <article key={p.id} className={`prov-card${p.auth.ready === true ? "" : " is-pending"}`}>
+              <div className="prov-card-head">
+                <span className="prov-initial" aria-hidden="true">{p.id.charAt(0).toUpperCase()}</span>
                 <strong>{p.id}</strong>
-                <span className="muted">{translate("screens.providerModelCount", { count: formatNumber(p.models.length) })} · {p.source === "custom" ? translate("screens.custom") : translate("screens.builtin")}</span>
+                <span className={`prov-status${p.auth.ready === true ? " is-ok" : ""}`}><span aria-hidden="true" />{p.auth.ready === true ? translate("screens.providerConfigured") : translate("screens.providerCheckNeeded")}</span>
               </div>
-              <Badge color={p.auth.ready === true ? "var(--success)" : "var(--muted)"}>
-                {p.auth.ready === true ? translate("screens.providerConfigured") : p.auth.configured ? translate("screens.providerCheckNeeded") : translate("screens.configure")}
-              </Badge>
-              <div className="provider-actions">
-                {(p.authMethods?.length ?? 0) > 0 ? (
-                  <button type="button" className={`btn btn-sm ${p.auth.configured || p.auth.ready ? "" : "btn-primary"}`} onClick={() => setShowLogin(p.id)}>
-                    {p.auth.configured || p.auth.ready ? translate("screens.providerReconnect") : translate("screens.signIn")}
-                  </button>
-                ) : p.source === "custom" ? <button type="button" className="btn btn-sm" onClick={() => setShowLogin(p.id)}>{translate("screens.apiKey")}</button> : <span className="muted">{translate("screens.providerEnvironment")}</span>}
-                {p.source === "custom" ? <button type="button" className="btn btn-sm btn-danger" onClick={() => {
-                  if (confirm(translate("screens.deleteProvider", { name: p.id }))) {
-                    api.deleteProvider(p.id).then(refresh).catch((e: Error) => toast(e.message, true));
-                  }
-                }}>{translate("screens.delete")}</button> : null}
+              <p className="muted">{translate("screens.providerModelCount", { count: formatNumber(p.models.length) })} · {p.source === "custom" ? translate("screens.custom") : translate("screens.builtin")}</p>
+              <div className="prov-actions">
+                {(p.authMethods?.length ?? 0) > 0 || p.source === "custom" ? (
+                  <button type="button" className="btn btn-sm" onClick={() => setShowLogin(p.id)}>{p.source === "custom" && !p.authMethods?.length ? translate("screens.apiKey") : translate("screens.providerReconnect")}</button>
+                ) : <span className="muted prov-env">{translate("screens.providerEnvironment")}</span>}
+                {p.source === "custom" ? <button type="button" className="btn btn-sm btn-danger" onClick={() => remove(p)}>{translate("screens.delete")}</button> : null}
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            </article>)}
+          </div>}
+        </section>
+
+        <section className="prov-section" aria-label={translate("providers.add")}>
+          <h2 className="prov-label">{translate("providers.add")}</h2>
+          <div className="prov-search">
+            <label className="sr-only" htmlFor="prov-search">{translate("screens.searchProviders")}</label>
+            <input id="prov-search" type="search" value={query} placeholder={translate("providers.searchCount", { count: formatNumber(providers.length - connected.length) })} onChange={(e) => setQuery(e.target.value)} />
+          </div>
+          <p className="muted prov-hint">{translate("screens.providerAvailabilityHint")}</p>
+          {catalog.length === 0 ? (
+            <Empty title={translate("screens.noProviderMatch")} action={<button type="button" className="btn" onClick={() => setShowAdd(true)}>{translate("screens.customProvider")}</button>}>
+              {translate("screens.providerSearchHint")}
+            </Empty>
+          ) : <div className="prov-grid">
+            {catalog.map((p) => <button key={p.id} type="button" className="prov-tile" onClick={() => setShowLogin(p.id)}>
+              <span className="prov-initial" aria-hidden="true">{p.id.charAt(0).toUpperCase()}</span>
+              <span className="prov-tile-text">
+                <span className="prov-tile-name">{p.id}</span>
+                <span className="muted">{p.authMethods?.some((m) => m.type === "oauth") ? translate("providers.viaAccount") : (p.authMethods?.length ?? 0) > 0 ? translate("providers.viaKey") : translate("screens.providerModelCount", { count: formatNumber(p.models.length) })}</span>
+              </span>
+            </button>)}
+            <button type="button" className="prov-tile is-custom" onClick={() => setShowAdd(true)}>
+              <span className="prov-initial" aria-hidden="true"><Icon name="plus" size={14} /></span>
+              <span className="prov-tile-text"><span className="prov-tile-name">{translate("screens.customProvider")}</span></span>
+            </button>
+          </div>}
+        </section>
+      </>}
       {typeof showLogin === "string" && providers.find(p => p.id === showLogin)?.source === "custom" && !providers.find(p => p.id === showLogin)?.authMethods?.length ? (
         <KeyModal providerId={showLogin} onClose={() => setShowLogin(null)} onSaved={() => { setShowLogin(null); setSaved(showLogin as string); refresh(); }} />
       ) : showLogin ? (
@@ -86,7 +105,7 @@ export default function Providers() {
         />
       ) : null}
       {showAdd ? <AddProviderModal onClose={() => setShowAdd(false)} onSaved={name => { setShowAdd(false); setSaved(name); refresh(); }} /> : null}
-    </>
+    </div>
   );
 }
 

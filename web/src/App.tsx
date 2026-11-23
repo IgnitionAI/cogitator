@@ -152,7 +152,7 @@ export default function App() {
           api.agents().then((r) => setAgents(r.agents)).catch((error: unknown) => toast(t("common.refreshAgentsError", { error: localizeText(String(error)) }), true));
         }} />;
       case "agents":
-        return <Agents />;
+        return <Agents onOpenAgent={(id) => openHub({ agentId: id })} />;
       case "terminal":
         return <TerminalScreen />;
       case "updates":

@@ -1,13 +1,15 @@
 import { ModelFields, type ModelDraft } from "../ModelConfiguration";
-import { t as translate, localizeText, formatNumber, thinkingLabel, getLocale } from "../i18n";
-import { useCallback, useEffect, useState } from "react";
+import { t as translate, localizeText, formatNumber, thinkingLabel, getLocale, type TranslationKey } from "../i18n";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { AgentFace, AgentHead3D } from "../AgentFace";
+import { agentGenome, avatarType } from "../avatar/genome";
 import { api } from "../api";
 import { thinkingLevelsFor, usableProviders } from "../types";
 import type { AgentPreset, McpServerEntry, ProviderView, SkillRef, SubagentInput, Workspace } from "../types";
 import { Badge, Empty, ErrorText, Field, Modal, PageHead, useToast } from "../ui";
 import { Icon } from "../icons";
 
-export default function Agents() {
+export default function Agents(props: { onOpenAgent?: (id: string) => void } = {}) {
   const toast = useToast();
   const [agents, setAgents] = useState<AgentPreset[]>([]);
   const [providers, setProviders] = useState<ProviderView[]>([]);
@@ -15,6 +17,8 @@ export default function Agents() {
   const [showImport, setShowImport] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const refresh = useCallback(() => {
     Promise.all([api.agents(), api.providers()]).then(([a, p]) => { setAgents(a.agents); setProviders(p.providers); setError(null); }).catch((e: Error) => setError(e.message)).finally(() => setLoading(false));
@@ -22,68 +26,101 @@ export default function Agents() {
 
   useEffect(refresh, [refresh]);
 
+  const needle = query.trim().toLowerCase();
+  const shown = needle ? agents.filter((a) => `${a.name} ${a.description} ${a.model}`.toLowerCase().includes(needle)) : agents;
+  const selected = agents.find((a) => a.id === selectedId) ?? agents.find((a) => a.is_default) ?? agents[0] ?? null;
+
   return (
-    <>
-      <PageHead
-        title={translate("screens.agents")}
-        sub={translate("screens.agentsSub")}
-        actions={
-          <>
-            <button type="button" className="btn" onClick={() => setShowImport(true)}><Icon name="download" /> {translate("screens.importSkills")}</button>
-            <button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> {translate("screens.newAgent")}</button>
-          </>
-        }
-      />
-      <ErrorText error={error} />
-      {error ? <button type="button" className="btn" onClick={refresh}>{translate("screens.retry")}</button> : null}
-      {loading ? <p role="status">{translate("screens.loading")}</p> : error && agents.length === 0 ? null : agents.length === 0 ? (
-        <Empty title={translate("screens.noAgents")} action={<button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> {translate("screens.newAgent")}</button>}>
-          {translate("screens.agentEmpty")}
-        </Empty>
-      ) : (
-        <div className="cards">
-          {agents.map((a) => (
-            <div key={a.id} className="card" style={{ cursor: "default" }}>
-              <h2>{a.name} {a.is_default ? <Badge color="var(--todo)">{translate("screens.default")}</Badge> : null}</h2>
-              <div className="meta">
-                <span>{translate("screens.agentCounts", { skills: formatNumber(a.skills.length), mcp: formatNumber(a.mcp_servers.length), subagents: formatNumber(a.subagents?.length ?? 0) })}</span>
-                {a.description ? <span>{a.description.slice(0, 90)}</span> : null}
-              </div>
-              <QuickModel
-                agent={a}
-                providers={providers}
-                onChanged={() => { refresh(); toast(translate("screens.modelUpdated", { name: a.name })); }}
-              />
-              <div className="actions">
-                <button className="btn btn-sm" onClick={() => setEditing(a)}>{translate("screens.edit")}</button>{" "}
-                {!a.is_default ? (
-                  <button className="btn btn-sm" onClick={() => api.setDefaultAgent(a.id).then(refresh).catch((e: Error) => toast(e.message, true))}>{translate("screens.setDefault")}</button>
-                ) : null}{" "}
-                <button
-                  className="btn btn-sm btn-danger"
-                  onClick={() => {
-                    if (confirm(translate("screens.deleteAgent", { name: a.name }))) {
-                      api.deleteAgent(a.id).then(refresh).catch((e: Error) => toast(e.message, true));
-                    }
-                  }}
-                >
-                  {translate("screens.delete")}
-                </button>
-              </div>
-            </div>
-          ))}
+    <div className="agents-page">
+      <div className="agents-main">
+        <PageHead
+          title={translate("screens.agents")}
+          sub={translate("agents.count", { count: formatNumber(agents.length) })}
+          actions={
+            <>
+              <label className="sr-only" htmlFor="agents-search">{translate("agents.search")}</label>
+              <input id="agents-search" className="agents-search" type="search" value={query} placeholder={translate("agents.search")} onChange={(e) => setQuery(e.target.value)} />
+              <button type="button" className="btn" onClick={() => setShowImport(true)}><Icon name="download" /> {translate("screens.importSkills")}</button>
+              <button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> {translate("screens.newAgent")}</button>
+            </>
+          }
+        />
+        <ErrorText error={error} />
+        {error ? <button type="button" className="btn" onClick={refresh}>{translate("screens.retry")}</button> : null}
+        {loading ? <p role="status">{translate("screens.loading")}</p> : error && agents.length === 0 ? null : agents.length === 0 ? (
+          <Empty title={translate("screens.noAgents")} action={<button type="button" className="btn btn-primary" onClick={() => setEditing("new")}><Icon name="plus" /> {translate("screens.newAgent")}</button>}>
+            {translate("screens.agentEmpty")}
+          </Empty>
+        ) : (
+          <div className="agent-gallery">
+            {shown.map((a) => (
+              <button key={a.id} type="button" className={`agent-tile${selected?.id === a.id ? " is-active" : ""}`} aria-pressed={selected?.id === a.id} onClick={() => setSelectedId(a.id)}>
+                <AgentFace agent={a} size={84} />
+                <span className="agent-tile-name">{a.name}</span>
+                <span className="agent-type">{translate(`avatar.type.${avatarType(a)}` as TranslationKey)}</span>
+                <span className="agent-tile-model mono">{a.model}</span>
+                {a.is_default ? <Badge color="var(--todo)">{translate("screens.default")}</Badge> : null}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {selected ? <aside className="agent-sheet" aria-label={translate("agents.sheet", { name: selected.name })}>
+        <div className="agent-sheet-head">
+          <div className="agent-sheet-face" aria-hidden="true">
+            <Suspense fallback={<AgentFace agent={selected} size={120} />}><AgentHead3D genome={agentGenome(selected)} size={150} /></Suspense>
+          </div>
+          <h2>{selected.name}</h2>
+          <p className="muted">{translate(`avatar.type.${avatarType(selected)}` as TranslationKey)} · <span className="mono">{selected.provider} · {selected.model}</span></p>
+          {selected.description ? <p className="agent-sheet-desc">{selected.description}</p> : null}
+          <div className="agent-sheet-actions">
+            {props.onOpenAgent ? <button type="button" className="btn btn-primary" onClick={() => props.onOpenAgent!(selected.id)}><Icon name="chat" size={14} /> {translate("agents.talk")}</button> : null}
+            <button type="button" className="btn" onClick={() => setEditing(selected)}>{translate("screens.edit")}</button>
+          </div>
         </div>
-      )}
+        <section className="agent-sheet-section">
+          <h3>{translate("agents.brain")}</h3>
+          <QuickModel
+            agent={selected}
+            providers={providers}
+            onChanged={() => { refresh(); toast(translate("screens.modelUpdated", { name: selected.name })); }}
+          />
+        </section>
+        <section className="agent-sheet-section">
+          <h3>{translate("agents.skills")} <span className="muted">{formatNumber(selected.skills.length)}</span></h3>
+          {selected.skills.length ? <div className="agent-chips">{selected.skills.map((skill) => <span key={skill} className="agent-chip">{skill}</span>)}</div> : <p className="muted">{translate("agents.noSkills")}</p>}
+          {selected.mcp_servers.length ? <div className="agent-chips">{selected.mcp_servers.map((m) => <span key={m.name} className="agent-chip is-mcp">{m.name}</span>)}</div> : null}
+        </section>
+        <section className="agent-sheet-section">
+          <h3>{translate("agents.subagents")} <span className="muted">{formatNumber(selected.subagents?.length ?? 0)}</span></h3>
+          {selected.subagents?.length ? <ul className="agent-subs">{selected.subagents.map((sub) => <li key={sub.id}><span>{sub.name}</span><span className="muted mono">{sub.model}</span></li>)}</ul> : <p className="muted">{translate("agents.noSubagents")}</p>}
+        </section>
+        <div className="agent-sheet-foot">
+          {!selected.is_default ? (
+            <button type="button" className="btn btn-sm" onClick={() => api.setDefaultAgent(selected.id).then(refresh).catch((e: Error) => toast(e.message, true))}>{translate("screens.setDefault")}</button>
+          ) : null}
+          <button
+            type="button"
+            className="btn btn-sm btn-danger"
+            onClick={() => {
+              if (confirm(translate("screens.deleteAgent", { name: selected.name }))) {
+                api.deleteAgent(selected.id).then(() => { setSelectedId(null); refresh(); }).catch((e: Error) => toast(e.message, true));
+              }
+            }}
+          >
+            {translate("screens.delete")}
+          </button>
+        </div>
+      </aside> : null}
       {editing ? (
         <AgentEditor
           agent={editing === "new" ? null : editing}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); refresh(); }}
-         
         />
       ) : null}
       {showImport ? <ImportSkillsModal onClose={() => setShowImport(false)} /> : null}
-    </>
+    </div>
   );
 }
 

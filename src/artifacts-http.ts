@@ -70,6 +70,13 @@ export function artifactRoutes(opts: {
         ctx.check();
         const url = new URL(ctx.req.url ?? "/", "http://local");
         const v = url.searchParams.get("v");
+        const boardIndex = url.searchParams.get("board");
+        if (boardIndex !== null) {
+          const board = artifacts.board(ctx.params.id!, Number(boardIndex), v ? Number(v) : undefined);
+          ctx.res.writeHead(200, { ...artifactHeaders("html", "text/html; charset=utf-8"), "content-length": String(board.bytes.length) });
+          ctx.res.end(board.bytes);
+          return;
+        }
         const content = artifacts.content(ctx.params.id!, v ? Number(v) : undefined);
         const headers = artifactHeaders(content.kind, content.mime);
         const download = url.searchParams.get("download") === "1";

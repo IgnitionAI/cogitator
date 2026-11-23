@@ -14,6 +14,20 @@ Agents publish deliverables with the `cogitator_artifact` tool; you find them in
 - Same title in the same conversation, or `id`, adds a version. Another conversation cannot add versions to it.
 - HTML should be self-contained (inline CSS/JS). External resources load only if the page itself fetches them.
 
+## Design canvases
+
+For design work, pass `boards` instead of a single file: one self-contained HTML page per screen or variant.
+
+```json
+{ "title": "Landing — 2 options", "boards": [
+  { "title": "Accueil", "group": "Option A", "path": "a/home.html" },
+  { "title": "Mobile", "group": "Option A", "path": "a/mobile.html", "width": 390, "height": 844 },
+  { "title": "Accueil", "group": "Option B", "content": "<!doctype html>…" }
+] }
+```
+
+1 to 24 boards, default size 1280×800. Boards of a group share a row. The viewer shows all boards on a zoomable canvas (drag to pan, Ctrl + wheel to zoom, Fit all) and opens a board full size on click, where it is interactive. Each board is served on its own URL (`/raw?board=N`) with the same sandbox as HTML artifacts.
+
 ## Viewing
 
 The gallery lists every artifact with its type, versions and agent. The viewer renders pages in a frame, Markdown as a document, CSV as a table, images and text as is; PDFs open in a tab or download. You can pick a version, open it in a tab, download, rename or delete it, and jump back to its thread.

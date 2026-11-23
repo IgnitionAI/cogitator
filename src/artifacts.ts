@@ -37,8 +37,23 @@ export const ARTIFACT_TYPES: Record<string, { mime: string; kind: ArtifactKind }
   ".json": { mime: "application/json; charset=utf-8", kind: "code" },
   ".txt": { mime: "text/plain; charset=utf-8", kind: "code" },
   ".pdf": { mime: "application/pdf", kind: "pdf" },
+  // Canevas de design : plusieurs maquettes HTML (planches) sur une surface zoomable.
+  ".canvas": { mime: "application/json; charset=utf-8", kind: "canvas" },
 };
-export type ArtifactKind = "html" | "markdown" | "image" | "table" | "code" | "pdf";
+export type ArtifactKind = "html" | "markdown" | "image" | "table" | "code" | "pdf" | "canvas";
+
+export const canvasSchema = z.object({
+  v: z.literal(1),
+  boards: z.array(z.object({
+    title: z.string().trim().min(1).max(120),
+    /** Ligne du canevas : les planches d'un même groupe sont côte à côte. */
+    group: z.string().trim().max(120).optional(),
+    width: z.number().int().min(200).max(3000).default(1280),
+    height: z.number().int().min(200).max(6000).default(800),
+    html: z.string().min(1).max(2_000_000),
+  }).strict()).min(1).max(24),
+}).strict();
+export type CanvasDoc = z.infer<typeof canvasSchema>;
 
 export interface ArtifactVersion { n: number; file: string; size: number; created_at: string; note?: string }
 export interface Artifact {
@@ -105,6 +120,10 @@ export class Artifacts {
     const bytes = Buffer.from(input.content, "base64");
     if (!bytes.length) throw new ArtifactProblem("ARTIFACT_EMPTY");
     if (bytes.length > MAX_ARTIFACT_BYTES) throw new ArtifactProblem("ARTIFACT_TOO_LARGE");
+    if (type.kind === "canvas") {
+      try { canvasSchema.parse(JSON.parse(bytes.toString("utf8"))); }
+      catch { throw new ArtifactProblem("ARTIFACT_CANVAS_INVALID"); }
+    }
     const now = new Date().toISOString();
     let item: Artifact | undefined;
     if (input.id) {
@@ -140,6 +159,15 @@ export class Artifacts {
     if (!version) throw new ArtifactProblem("ARTIFACT_VERSION_NOT_FOUND", 404);
     const safeTitle = item.title.replace(/[^\p{L}\p{N} ._-]+/gu, "").trim().slice(0, 80) || "artifact";
     return { bytes: readFileSync(join(this.dir, item.id, version.file)), mime: item.mime, filename: `${safeTitle}${item.ext}`, kind: item.kind };
+  }
+
+  /** Une planche d'un canevas, servie comme une page HTML isolée. */
+  board(id: string, index: number, n?: number): { bytes: Buffer; title: string } {
+    const content = this.content(id, n);
+    if (content.kind !== "canvas") throw new ArtifactProblem("ARTIFACT_NOT_CANVAS");
+    const board = canvasSchema.parse(JSON.parse(content.bytes.toString("utf8"))).boards[index];
+    if (!board) throw new ArtifactProblem("ARTIFACT_BOARD_NOT_FOUND", 404);
+    return { bytes: Buffer.from(board.html, "utf8"), title: board.title };
   }
 
   rename(id: string, raw: unknown): Artifact {

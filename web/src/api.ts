@@ -250,7 +250,7 @@ export const vaultApi = {
 /** Artifacts publiés par les agents (lecture et gestion par le propriétaire). */
 export interface ArtifactVersion { n: number; file: string; size: number; created_at: string; note?: string }
 export interface ArtifactItem {
-  id: string; title: string; ext: string; kind: "html" | "markdown" | "image" | "table" | "code" | "pdf"; mime: string;
+  id: string; title: string; ext: string; kind: "html" | "markdown" | "image" | "table" | "code" | "pdf" | "canvas"; mime: string;
   conversation_id: string | null; agent_id: string | null; created_at: string; updated_at: string; versions: ArtifactVersion[];
 }
 export const artifactsApi = {

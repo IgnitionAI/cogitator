@@ -244,3 +244,30 @@
   .artifacts-page.has-selection .artifacts-preview { display: flex; }
   .artifacts-preview > .artifacts-back { display: inline-flex; }
 }
+
+/* ---------- Canevas de design ---------- */
+.canvas-wrap { position: relative; flex: 1; min-height: 420px; display: flex; flex-direction: column; background: #0b0c0f; }
+.canvas-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: grab; touch-action: none; background-image: radial-gradient(circle, #23252c 1px, transparent 1px); background-size: 22px 22px; }
+.canvas-stage:active { cursor: grabbing; }
+.canvas-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.canvas-row-label { position: absolute; font-size: 44px; font-weight: 700; color: var(--fg); white-space: nowrap; line-height: 1; }
+.canvas-board { position: absolute; border-radius: 6px; background: #ffffff; box-shadow: 0 0 0 2px #2c2e33, 0 20px 60px rgba(0, 0, 0, 0.5); }
+.canvas-board:hover { box-shadow: 0 0 0 6px var(--accent), 0 20px 60px rgba(0, 0, 0, 0.5); }
+.canvas-board-name { position: absolute; left: 0; bottom: calc(100% + 10px); font-size: 26px; color: var(--muted); white-space: nowrap; }
+.canvas-board iframe { width: 100%; height: 100%; border: 0; border-radius: 6px; pointer-events: none; display: block; }
+.canvas-tools { position: absolute; right: 12px; top: 12px; display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 12px; border: 1px solid var(--border-strong); background: var(--popover); box-shadow: var(--shadow-pop); }
+.canvas-zoom { min-width: 52px; text-align: center; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.canvas-jump select { min-height: 30px; width: auto; max-width: 190px; font-size: 12.5px; }
+.canvas-hint { position: absolute; left: 12px; bottom: 8px; margin: 0; font-size: 11.5px; pointer-events: none; }
+.canvas-focus { flex: 1; min-height: 420px; display: flex; flex-direction: column; background: #0b0c0f; }
+.canvas-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.canvas-bar a.btn { text-decoration: none; }
+.canvas-bar-title { flex: 1; min-width: 120px; font-weight: 600; font-size: 13.5px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.canvas-bar-title .muted { font-weight: 400; font-size: 12px; }
+.canvas-next svg { transform: scaleX(-1); }
+.canvas-focus-box { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; padding: 12px; }
+.canvas-focus-box.is-actual { overflow: auto; place-items: start center; }
+.canvas-focus-size { position: relative; flex-shrink: 0; box-shadow: 0 0 0 1px #2c2e33, 0 20px 60px rgba(0, 0, 0, 0.5); border-radius: 6px; overflow: hidden; background: #ffffff; }
+.canvas-focus-size iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; }
+.canvas-actual { position: absolute; right: 12px; top: 12px; z-index: 2; }
+@media (max-width: 768px) { .canvas-hint { display: none; } }

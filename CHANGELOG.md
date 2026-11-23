@@ -2,7 +2,9 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
-## Unreleased
+## [0.13.0] - 2026-11-23
+
+**Highlight:** Artifacts — what your agents make now has a home, with versions.
 
 ### Added
 

@@ -2,7 +2,9 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
-## Unreleased
+## [0.10.0] - 2026-11-23
+
+**Highlight:** every agent gets its own 3D machine head, built from what the agent is and does.
 
 ### Added
 

@@ -1,9 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { getPaths } from "../src/paths.js";
 import { spawn } from "node:child_process";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BASE_URL } from "../src/config.js";
 import { decodeMcpEnv, MCP_ENV_VAR } from "../src/mcp-env.js";
@@ -53,6 +53,38 @@ export default function (pi: ExtensionAPI) {
       if (!conversationId) throw new Error("Open this tool from a Cogitator conversation.");
       const result = await ownerRequest<{ image?: string; mimeType?: string }>("POST", "/api/browser/agent", {conversationId,...params});
       return result.image ? {content:[{type:"image",data:result.image,mimeType:"image/jpeg"}],details:{}} : {content:[{type:"text",text:JSON.stringify(result)}],details:{}};
+    },
+  });
+
+  pi.registerTool({
+    name: "cogitator_artifact", label: "Publish artifact",
+    description: "Publish a deliverable to the user's Artifacts gallery in Cogitator: an HTML page (self-contained: inline CSS/JS, no external files), a Markdown report, an SVG/PNG/JPG/GIF/WebP image, a CSV table, JSON, text or PDF (10 MB max). Give either path (a file in the working directory) or content plus filename (text only). Publishing again with the same title in this conversation, or with id, adds a new version instead of a duplicate. Use it for anything the user will want to open, review, share or keep (reports, dashboards, mockups, diagrams), then mention it briefly in your reply; the user sees a card in the chat. HTML runs in a strict sandbox without cookies or access to Cogitator.",
+    parameters: Type.Object({
+      title: Type.String({ description: "Short human name, e.g. 'Rapport SEO octobre'" }),
+      path: Type.Optional(Type.String({ description: "File to publish, relative to the working directory" })),
+      content: Type.Optional(Type.String({ description: "Text content when there is no file" })),
+      filename: Type.Optional(Type.String({ description: "File name with extension when using content, e.g. rapport.md" })),
+      id: Type.Optional(Type.String({ description: "Existing artifact id to add a version to" })),
+      note: Type.Optional(Type.String({ description: "What changed in this version" })),
+    }),
+    execute: async (_id, params) => {
+      const conversationId = process.env.COGITATOR_CONVERSATION_ID;
+      if (!conversationId) throw new Error("Open this tool from a Cogitator conversation.");
+      let filename = params.filename;
+      let content: string;
+      if (params.path) {
+        const file = resolve(process.cwd(), params.path);
+        if (statSync(file).size > 10 * 1024 * 1024) throw new Error("ARTIFACT_TOO_LARGE");
+        content = readFileSync(file).toString("base64");
+        filename ??= basename(file);
+      } else if (params.content !== undefined && filename) {
+        content = Buffer.from(params.content, "utf8").toString("base64");
+      } else throw new Error("Give path, or content with filename.");
+      const result = await ownerRequest<Record<string, unknown>>("POST", "/api/artifacts/agent", {
+        conversationId, title: params.title, filename, content,
+        ...(params.id ? { id: params.id } : {}), ...(params.note ? { note: params.note } : {}),
+      });
+      return { content: [{ type: "text", text: JSON.stringify(result) }], details: {} };
     },
   });
 

@@ -3,6 +3,7 @@ import Browsers from "./BrowserPanel";
 import TerminalScreen from "./TerminalPanel";
 import Updates from "./screens/Updates";
 import Vault from "./screens/Vault";
+import Artifacts from "./screens/Artifacts";
 import { isSettingsSection, SETTINGS_SECTIONS, SettingsHub } from "./SettingsHub";
 import { markNewsSeen, newsUnseen, WhatsNew } from "./WhatsNew";
 import Extensions from "./screens/Extensions";
@@ -32,6 +33,7 @@ const NAV = [
   { id: "home", icon: "chat", label: "hub.title" },
   { id: "workspaces", icon: "folder", label: "common.workspaces" },
   { id: "agents", icon: "bot", label: "common.agents" },
+  { id: "artifacts", icon: "layers", label: "artifact.title" },
   { id: "terminal", icon: "terminal", label: "terminal.title" },
 ] as const satisfies ReadonlyArray<{ id: string; icon: IconName; label: TranslationKey }>;
 const EXTRA = [
@@ -46,6 +48,7 @@ type ScreenId = (typeof NAV)[number]["id"] | (typeof EXTRA)[number]["id"] | (typ
 export default function App() {
   useLocale();
   const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [artifactTarget, setArtifactTarget] = useState<string | null>(null);
   const [showNews, setShowNews] = useState(false);
   const [newsSeen, setNewsSeen] = useState(() => !newsUnseen());
   const [screen, setScreen] = useState<ScreenId>("home");
@@ -116,6 +119,21 @@ export default function App() {
     go("home");
   };
 
+  // #artifact=<id> : les cartes d'artifact du chat ouvrent la galerie sur cet artifact.
+  useEffect(() => {
+    const onHash = () => {
+      const match = /^#artifact=([0-9a-f-]{36})$/.exec(window.location.hash);
+      if (!match) return;
+      setArtifactTarget(match[1]!);
+      setOpenWorkspace(null);
+      setScreen("artifacts");
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+    };
+    onHash();
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
   // ⌘K / Ctrl+K : palette de commandes, depuis n'importe quel écran.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -154,6 +172,8 @@ export default function App() {
         }} />;
       case "agents":
         return <Agents onOpenAgent={(id) => openHub({ agentId: id })} />;
+      case "artifacts":
+        return <Artifacts initialId={artifactTarget} onOpenThread={(id) => openHub({ conversationId: id })} />;
       case "terminal":
         return <TerminalScreen />;
       case "updates":

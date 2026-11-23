@@ -2,6 +2,16 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
+## [0.13.0] - 2026-11-23
+
+**Highlight:** Artifacts — what your agents make now has a home, with versions.
+
+### Added
+
+- **Artifacts.** Agents can publish what they make (an HTML page, a Markdown report, an image or SVG, a CSV table, JSON, text or a PDF) with the new `cogitator_artifact` tool. Publishing again with the same title adds a version. A new **Artifacts** icon in the rail opens the gallery: search, filters by type, preview, version picker, open in a tab, download, rename, delete, and a link back to the thread.
+- **Artifacts in the thread.** A publication shows up as a card in the chat, and the thread panel gets an **Artifacts** tab that opens by itself on the newest one.
+- **Safe by design.** Artifact content is served in a strict sandbox (`Content-Security-Policy: sandbox`, opaque origin) and shown in a sandboxed frame: a published page can run its own scripts but cannot read your session or call Cogitator.
+
 ## [0.12.0] - 2026-11-23
 
 **Highlight:** your agents can log into websites without ever seeing your passwords.

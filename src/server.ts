@@ -3,6 +3,8 @@ import { SharedBrowser } from "./shared-browser.js";
 import { browserRoutes, attachBrowserView } from "./browser-http.js";
 import { Vault } from "./vault.js";
 import { vaultRoutes } from "./vault-http.js";
+import { Artifacts } from "./artifacts.js";
+import { artifactRoutes } from "./artifacts-http.js";
 import { resourceInventory, probeCogitatorTools } from "./project-setup.js";
 import { importSkillUpload } from "./skills-upload.js";
 import { appUpdateStatus } from "./app-updates.js";
@@ -1638,6 +1640,14 @@ export function createApp(opts: AppOptions): Server {
   const routes: Route[] = [
     ...browserRoutes(browser, req => privateRequests.has(req), sendJson, !!opts.auth),
     ...vaultRoutes(vault, (req) => privateRequests.has(req) || syntheticRequests.has(req), sendJson),
+    ...artifactRoutes({
+      artifacts: new Artifacts(paths.home, db),
+      privateRequest: (req) => privateRequests.has(req),
+      nonBrowser: (req) => privateRequests.has(req) || syntheticRequests.has(req),
+      protectedMode: !!opts.auth,
+      send: sendJson,
+      published: (event) => events.emit("event", { type: "artifact_published", ...event }),
+    }),
     healthRoute(deps),
     ...registryRoutes(deps),
     ...agentRoutes(deps),

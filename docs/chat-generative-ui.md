@@ -37,6 +37,10 @@ A response contains `version: 1`, `request` (the exact validated specification),
 
 Controls are disabled while sending and while the agent is working. A reconnection rereads the pi process's `isStreaming` state through the pool and JSONL history; a running process is not necessarily producing a response. Local message keys remain stable when replay inserts reasoning, so forms are not reset. Failures remain inline, preserve values, and allow retries. After success, the summary is read-only. Text entered in the composer is not replaced by a form response. Responses are considered present only when they appear in user messages, never in a tool result or assistant message.
 
+### Secret requests
+
+`kind: "secret"` (`site`, optional `username`, optional `submitLabel`) shows a credentials form instead of a regular one. On submit, the browser saves the login in the vault through the owner API, then sends the agent a normal `cogitator-response` whose values are only `secret` (a `secret:<uuid>` reference) and `username`. Any other value key is rejected by the contract, so a password cannot be echoed back. See [Saved logins](browsers.md#saved-logins-vault).
+
 ## Visual composition
 
 - Compact header: title, provider/model, understandable status, access to files and secondary actions.

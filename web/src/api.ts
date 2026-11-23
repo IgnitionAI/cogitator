@@ -229,3 +229,20 @@ export const browserApi = {
   action: (id: string, command: Record<string,unknown>) => req<{tabs: BrowserTab[]}>('POST',`/api/browser/profiles/${id}/action`,command),
   stop: (id: string) => req('POST',`/api/browser/profiles/${id}/stop`,{}),
 };
+
+/** Coffre d'identifiants des navigateurs (propriétaire uniquement). Les mots de passe ne sont lus qu'à la demande. */
+export interface VaultEntry {
+  id: string; name: string; url: string; host: string; username: string; hasNote: boolean;
+  allAgents: boolean; agentIds: string[]; source: "manual" | "chat" | "import";
+  created_at: string; updated_at: string; last_used_at: string | null;
+}
+export interface VaultWrite { name?: string; url?: string; username?: string; password?: string; note?: string; allAgents?: boolean; agentIds?: string[]; source?: "manual" | "chat" }
+export const vaultApi = {
+  list: () => req<{ entries: VaultEntry[] }>("GET", "/api/vault"),
+  create: (body: VaultWrite & { url: string; password: string }) => req<{ entry: VaultEntry }>("POST", "/api/vault", body),
+  update: (id: string, body: VaultWrite) => req<{ entry: VaultEntry }>("PUT", `/api/vault/${id}`, body),
+  remove: (id: string) => req<Record<string, never>>("DELETE", `/api/vault/${id}`),
+  reveal: (id: string) => req<{ password: string; note: string }>("POST", `/api/vault/${id}/reveal`, {}),
+  importGoogle: (body: { csv: string; overwrite: boolean; allAgents: boolean; agentIds: string[] }) =>
+    req<{ added: number; updated: number; skipped: number; invalid: number }>("POST", "/api/vault/import", body),
+};

@@ -1,6 +1,6 @@
 import { t } from "./i18n";
 import { UI_INSTRUCTIONS, parseUI, parseUIResponse, splitUIBlocks, uiRequestKey, type UIResponse } from "../../src/generative-ui";
-import { GenerativeUI, UIResponseSummary } from "./GenerativeUI";
+import { GenerativeUI, UIResponseSummary, type SecretStore } from "./GenerativeUI";
 import { Markdown } from "./markdown";
 
 // Keep old manually requested interfaces readable when replaying existing transcripts.
@@ -12,12 +12,13 @@ export function AssistantContent(props: {
   disabled: boolean;
   streaming?: boolean;
   onSubmit: (text: string) => Promise<void>;
+  secrets?: SecretStore;
 }) {
   return splitUIBlocks(props.text).map((block, index) => {
     if (block.kind === "markdown") return <Markdown key={index} text={block.text} />;
     const parsed = block.complete ? parseUI(block.source) : null;
     const response = parsed?.ok ? props.responses.get(uiRequestKey(parsed.value)) : undefined;
-    return <GenerativeUI key={index} source={block.source} complete={block.complete} streaming={props.streaming} response={response} disabled={props.disabled} onSubmit={props.onSubmit} />;
+    return <GenerativeUI key={index} source={block.source} complete={block.complete} streaming={props.streaming} response={response} disabled={props.disabled} onSubmit={props.onSubmit} secrets={props.secrets} />;
   });
 }
 

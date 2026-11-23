@@ -6,6 +6,7 @@ import { Icon, type IconName } from "./icons";
 export const SETTINGS_SECTIONS = [
   { id: "updates", icon: "download", label: "settings.updates" },
   { id: "providers", icon: "key", label: "common.providers" },
+  { id: "vault", icon: "lock", label: "vault.title" },
   { id: "extensions", icon: "plug", label: "extensions.title" },
   { id: "browsers", icon: "monitor", label: "browser.title" },
   { id: "cron", icon: "clock", label: "common.cron" },

@@ -9,6 +9,13 @@ interface Props {
   response?: UIResponse;
   disabled?: boolean;
   onSubmit: (text: string) => Promise<void>;
+  /** Coffre du propriétaire, fourni par le fil : nécessaire au formulaire de secret. */
+  secrets?: SecretStore;
+}
+
+export interface SecretStore {
+  agentId: string | null;
+  save: (input: { name: string; url: string; username: string; password: string; allAgents: boolean; agentIds: string[] }) => Promise<{ id: string }>;
 }
 
 function RawSource({ source }: { source: string }) {
@@ -17,6 +24,11 @@ function RawSource({ source }: { source: string }) {
 
 export function UIResponseSummary({ response }: { response: UIResponse }) {
   const { request, values } = response;
+  if (request.kind === "secret") return <section className="gen-ui-summary gen-ui-secret-saved" aria-label={t("chat.response")}><strong>{request.title}</strong><span className="gen-ui-status">{t("secret.saved")}</span><dl>
+    <div><dt>{t("secret.site")}</dt><dd>{request.site}</dd></div>
+    {typeof values.username === "string" && values.username ? <div><dt>{t("secret.username")}</dt><dd>{values.username}</dd></div> : null}
+    <div><dt>{t("secret.password")}</dt><dd>{t("secret.inVault")}</dd></div>
+  </dl></section>;
   const entries = request.kind === "form"
     ? request.fields.map((field) => {
       const value = values[field.id];
@@ -45,7 +57,7 @@ function UITable({ spec }: { spec: Extract<UISpec, { kind: "table" }> }) {
   </div>;
 }
 
-function UIInputs({ spec, values, setValue, prefix }: { spec: Exclude<UISpec, { kind: "table" }>; values: UIValues; setValue: (id: string, value: UIValues[string]) => void; prefix: string }) {
+function UIInputs({ spec, values, setValue, prefix }: { spec: Exclude<UISpec, { kind: "table" | "secret" }>; values: UIValues; setValue: (id: string, value: UIValues[string]) => void; prefix: string }) {
   if (spec.kind === "form") return <>{spec.fields.map((field) => <label className="gen-ui-field" key={field.id}>
     <span>{field.label}{field.required ? t("chat.required") : ""}</span>
     {field.type === "select" ? <select required={field.required} value={String(values[field.id] ?? "")} onChange={(event) => setValue(field.id, event.target.value)}><option value="">{t("chat.choose")}</option>{field.options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select>
@@ -64,7 +76,7 @@ function UIInputs({ spec, values, setValue, prefix }: { spec: Exclude<UISpec, { 
   </label>)}</>;
 }
 
-function ValidUI({ spec, source, response, disabled, onSubmit }: Omit<Props, "complete"> & { spec: UISpec }) {
+function ValidUI({ spec, source, response, disabled, onSubmit, secrets }: Omit<Props, "complete"> & { spec: UISpec }) {
   const prefix = useId();
   const [values, setValues] = useState<UIValues>(spec.kind === "checklist" ? { selection: [] } : {});
   const [pending, setPending] = useState(false);
@@ -82,10 +94,11 @@ function ValidUI({ spec, source, response, disabled, onSubmit }: Omit<Props, "co
       resultRef.current?.focus();
     }
   }, [saved]);
+  if (!saved && spec.kind === "secret") return <SecretRequest spec={spec} source={source} disabled={disabled} store={secrets} onSubmit={onSubmit} onSaved={(text) => { focusResult.current = true; setSubmitted(parseUIResponse(text)); }} />;
   if (saved) return <div ref={resultRef} tabIndex={-1} aria-label={t("chat.responseTitle", { title: spec.title })} className="gen-ui" data-ui-kind={spec.kind} data-ui-id={spec.id}><UIResponseSummary response={saved} /><RawSource source={source} /></div>;
   return <section className="gen-ui" data-ui-kind={spec.kind} data-ui-id={spec.id} aria-labelledby={`${prefix}-title`}>
     <h3 id={`${prefix}-title`}>{spec.title}</h3>{spec.description && <p className="gen-ui-description">{spec.description}</p>}
-    {spec.kind === "table" ? <UITable spec={spec} /> : <form onSubmit={async (event) => {
+    {spec.kind === "table" ? <UITable spec={spec} /> : spec.kind === "secret" ? null : <form onSubmit={async (event) => {
       event.preventDefault();
       if (sending.current || disabled) return;
       setError(null);
@@ -116,6 +129,59 @@ function ValidUI({ spec, source, response, disabled, onSubmit }: Omit<Props, "co
       {pending && <p className="gen-ui-status" role="status">{t("chat.submitting")}</p>}
       {error && <p ref={errorRef} tabIndex={-1} className="gen-ui-error" role="alert">{localizeText(error)}{t("chat.valuesKept")}</p>}
     </form>}
+    <RawSource source={source} />
+  </section>;
+}
+
+/**
+ * Prise de secret demandée par un agent : le mot de passe part directement au coffre (API propriétaire)
+ * et ne figure jamais dans le message transmis à l'agent, qui ne reçoit qu'une référence « secret:<id> ».
+ */
+function SecretRequest({ spec, source, disabled, store, onSubmit, onSaved }: { spec: Extract<UISpec, { kind: "secret" }>; source: string; disabled?: boolean; store?: SecretStore; onSubmit: (text: string) => Promise<void>; onSaved: (text: string) => void }) {
+  const agentId = store?.agentId ?? null;
+  const prefix = useId();
+  const host = (() => { try { return new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(spec.site) ? spec.site : `https://${spec.site}`).hostname; } catch { return spec.site; } })();
+  const [username, setUsername] = useState(spec.username ?? "");
+  const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+  const [scope, setScope] = useState<"agent" | "all">(agentId ? "agent" : "all");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return <section className="gen-ui gen-ui-secret" data-ui-kind="secret" data-ui-id={spec.id} aria-labelledby={`${prefix}-title`}>
+    <h3 id={`${prefix}-title`}>{spec.title}</h3>{spec.description && <p className="gen-ui-description">{spec.description}</p>}
+    <form autoComplete="off" onSubmit={async (event) => {
+      event.preventDefault();
+      if (pending || disabled || !password) return;
+      if (!store) { setError(t("secret.unavailable")); return; }
+      setPending(true); setError(null);
+      try {
+        const entry = await store.save({ name: spec.title, url: spec.site, username, password, allAgents: scope === "all", agentIds: scope === "agent" && agentId ? [agentId] : [] });
+        setPassword("");
+        const text = serializeUIResponse(spec, { secret: `secret:${entry.id}`, ...(username ? { username } : {}) });
+        await onSubmit(text);
+        onSaved(text);
+      } catch (cause) { setError(cause instanceof Error ? cause.message : t("chat.sendFailed")); }
+      finally { setPending(false); }
+    }}>
+      <fieldset disabled={disabled || pending}>
+        <legend>{t("secret.legend", { site: host })}</legend>
+        <label className="gen-ui-field"><span>{t("secret.username")}</span><input type="text" autoComplete="off" maxLength={500} value={username} onChange={(e) => setUsername(e.target.value)} /></label>
+        <label className="gen-ui-field"><span>{t("secret.password")}{t("chat.required")}</span>
+          <span className="gen-ui-secret-row">
+            <input type={show ? "text" : "password"} autoComplete="new-password" required maxLength={4096} value={password} onChange={(e) => setPassword(e.target.value)} />
+            <button type="button" className="btn btn-sm" aria-pressed={show} onClick={() => setShow((v) => !v)}>{t(show ? "secret.hide" : "secret.show")}</button>
+          </span>
+        </label>
+        {agentId ? <div className="gen-ui-secret-scope" role="radiogroup" aria-label={t("secret.access")}>
+          <label className="gen-ui-option"><input type="radio" name={`${prefix}-scope`} checked={scope === "agent"} onChange={() => setScope("agent")} /><span>{t("secret.thisAgent")}</span></label>
+          <label className="gen-ui-option"><input type="radio" name={`${prefix}-scope`} checked={scope === "all"} onChange={() => setScope("all")} /><span>{t("secret.allAgents")}</span></label>
+        </div> : null}
+        <p className="gen-ui-hint">{t("secret.safety", { site: host })}</p>
+        <button type="submit" className="gen-ui-submit">{t("secret.submit")}</button>
+      </fieldset>
+      {pending && <p className="gen-ui-status" role="status">{t("chat.submitting")}</p>}
+      {error && <p className="gen-ui-error" role="alert">{localizeText(error)}</p>}
+    </form>
     <RawSource source={source} />
   </section>;
 }

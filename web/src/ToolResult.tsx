@@ -50,6 +50,22 @@ export function ToolResult(props: {
   isError?: boolean;
   state: "running" | "done";
 }) {
+  // Artifact publié : une carte cliquable plutôt que le JSON brut.
+  if (props.name === "cogitator_artifact" && props.state === "done" && !props.isError) {
+    const out = parseJson(props.result);
+    const artifact = isRecord(out) && isRecord(out.artifact) ? out.artifact : null;
+    if (artifact && typeof artifact.id === "string" && typeof artifact.title === "string") {
+      const kind = typeof artifact.kind === "string" ? artifact.kind : "code";
+      return <a className="artifact-card" href={`#artifact=${artifact.id}`}>
+        <span className="artifact-card-icon" aria-hidden="true"><Icon name={kind === "image" ? "image" : kind === "table" ? "board" : kind === "html" ? "monitor" : "files"} size={18} /></span>
+        <span className="artifact-card-text">
+          <span className="artifact-card-title">{artifact.title}</span>
+          <span className="muted">{t("artifact.cardMeta", { version: formatNumber(Number(artifact.version ?? 1)), kind: t(`artifact.kind.${kind}` as Parameters<typeof t>[0]) })}</span>
+        </span>
+        <span className="artifact-card-open">{t("artifact.open")}</span>
+      </a>;
+    }
+  }
   const parsed = parseJson(props.args);
   const args = isRecord(parsed) ? parsed : {};
   const target = props.name === "bash" ? args.command : ["read", "write", "edit"].includes(props.name) ? args.path ?? args.file_path : undefined;

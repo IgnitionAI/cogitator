@@ -246,3 +246,17 @@ export const vaultApi = {
   importGoogle: (body: { csv: string; overwrite: boolean; allAgents: boolean; agentIds: string[] }) =>
     req<{ added: number; updated: number; skipped: number; invalid: number }>("POST", "/api/vault/import", body),
 };
+
+/** Artifacts publiés par les agents (lecture et gestion par le propriétaire). */
+export interface ArtifactVersion { n: number; file: string; size: number; created_at: string; note?: string }
+export interface ArtifactItem {
+  id: string; title: string; ext: string; kind: "html" | "markdown" | "image" | "table" | "code" | "pdf"; mime: string;
+  conversation_id: string | null; agent_id: string | null; created_at: string; updated_at: string; versions: ArtifactVersion[];
+}
+export const artifactsApi = {
+  list: (conversationId?: string) => req<{ artifacts: ArtifactItem[] }>("GET", `/api/artifacts${conversationId ? `?conversation=${encodeURIComponent(conversationId)}` : ""}`),
+  get: (id: string) => req<{ artifact: ArtifactItem }>("GET", `/api/artifacts/${id}`),
+  rename: (id: string, title: string) => req<{ artifact: ArtifactItem }>("PATCH", `/api/artifacts/${id}`, { title }),
+  remove: (id: string) => req<Record<string, never>>("DELETE", `/api/artifacts/${id}`),
+  rawUrl: (id: string, version?: number, download = false) => `/api/artifacts/${id}/raw?${new URLSearchParams({ ...(version ? { v: String(version) } : {}), ...(download ? { download: "1" } : {}) })}`,
+};

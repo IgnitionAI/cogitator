@@ -4,6 +4,7 @@ import { ConnectProviderModal } from "./Providers";
 import { LiveConfiguration } from "../ModelConfiguration";
 import { SubagentsPanel } from "../SubagentsPanel";
 import { AgentFace } from "../AgentFace";
+import { ThreadArtifacts } from "../ThreadArtifacts";
 import { t, formatNumber, statusLabel, thinkingLabel, localizeText } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, openEvents, vaultApi, type EventConnectionState } from "../api";
@@ -350,7 +351,9 @@ export function ChatView(props: {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [openThinking, setOpenThinking] = useState<Set<number>>(new Set());
   // Panneau latéral unique : fichiers, sous-agents, navigateur (un onglet à la fois).
-  const [dock, setDock] = useState<"files" | "subs" | "browser" | null>(null);
+  const [dock, setDock] = useState<"files" | "subs" | "artifacts" | "browser" | null>(null);
+  const [artifactCount, setArtifactCount] = useState(0);
+  const [artifactRevision, setArtifactRevision] = useState(0);
   const [moreOpen, setMoreOpen] = useState(false);
   const [subagentCount, setSubagentCount] = useState(0);
   const [files, setFiles] = useState<FileChange[]>([]);
@@ -490,6 +493,17 @@ export function ChatView(props: {
     };
   }, [conversation.id, loadHistory, refreshMission, updateConfiguration, restart]);
 
+  // Un agent vient de publier un artifact : le panneau s'ouvre dessus, comme sur Claude.
+  const publishedCount = timeline.filter((m) => m.kind === "tool" && m.text === "cogitator_artifact" && m.state === "done" && !m.isError).length;
+  const seenPublished = useRef<number | null>(null);
+  useEffect(() => {
+    if (!historyReady) return;
+    if (seenPublished.current !== null && publishedCount > seenPublished.current) {
+      setDock("artifacts");
+      setArtifactRevision((n) => n + 1);
+    }
+    seenPublished.current = publishedCount;
+  }, [publishedCount, historyReady]);
   useEffect(() => {
     if (nearBottom.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [timeline.length, timeline[timeline.length - 1]?.text.length]);
@@ -744,7 +758,7 @@ export function ChatView(props: {
       {dock ? (
         <aside className="chat-dock" aria-label={t("chat.dockToggle")}>
           <div className="chat-dock-tabs" role="tablist" aria-label={t("chat.dockToggle")}>
-            {([["files", t("chat.files"), files.length], ["subs", t("chat.subagents"), subagentCount], ["browser", t("browser.title"), 0]] as const).map(([id, label, count]) => (
+            {([["files", t("chat.files"), files.length], ["subs", t("chat.subagents"), subagentCount], ["artifacts", t("artifact.title"), artifactCount], ["browser", t("browser.title"), 0]] as const).map(([id, label, count]) => (
               <button key={id} type="button" role="tab" aria-selected={dock === id} className={dock === id ? "is-active" : ""} onClick={() => { setDock(id); if (id === "files") refreshFiles(); }}>
                 {label}{count > 0 ? <span className="chat-dock-badge">{formatNumber(count)}</span> : null}
               </button>
@@ -767,6 +781,7 @@ export function ChatView(props: {
               ) : null}
             </> : null}
             {dock === "subs" ? <SubagentsPanel conversationId={conversation.id} onCountChange={setSubagentCount} embedded /> : null}
+            {dock === "artifacts" ? <ThreadArtifacts conversationId={conversation.id} refreshKey={artifactRevision} onCount={setArtifactCount} /> : null}
             {dock === "browser" ? <Browsers compact /> : null}
           </div>
         </aside>

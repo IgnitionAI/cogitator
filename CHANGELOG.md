@@ -2,7 +2,9 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
-## Unreleased
+## [0.11.0] - 2026-11-23
+
+**Highlight:** a five-icon rail, settings in one place, and an update center that tells you exactly how to turn on one-click updates on your server.
 
 ### Changed
 

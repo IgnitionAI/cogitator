@@ -232,4 +232,7 @@ export const chatMessages = {
   "chat.imagesToSend": {"fr": "{count} images à envoyer", "en": "{count} images to send"},
   "chat.keyboardHint": {"fr": "Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne", "en": "Enter to send · Shift + Enter for a new line"},
   "chat.tool": {"fr": "Outil", "en": "Tool"},
+  "chat.dockToggle": {"fr": "Panneau du fil : fichiers, sous-agents, navigateur", "en": "Thread panel: files, subagents, browser"},
+  "chat.dockClose": {"fr": "Fermer le panneau", "en": "Close the panel"},
+  "chat.moreActions": {"fr": "Plus d’actions sur ce fil", "en": "More actions on this thread"},
 } as const;

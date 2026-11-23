@@ -2,6 +2,19 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
+## [0.11.0] - 2026-11-23
+
+**Highlight:** a five-icon rail, settings in one place, and an update center that tells you exactly how to turn on one-click updates on your server.
+
+### Changed
+
+- **A five-icon rail.** The rail now holds Home, Projects, Agents and Terminal, with Settings at the bottom. Providers, extensions, browsers, scheduled tasks and general settings live in Settings, behind one sub-menu. ⌘K still reaches every screen.
+- **An update center instead of a dialog.** Settings › Updates shows the new release, then each step of the update (request, download and signatures, installation, switch, health check) and the result. When one-click updates are not set up yet on a systemd server, the page shows the `cogitator-updater` install command already filled in for this server (user, service unit, data folder, port), plus a button to check again. The Settings icon gets a dot when a release is available.
+- **A cleaner thread.** The thread header keeps the state, Stop, a panel button and a "more" menu (delete). Changed files, subagents and the browser now share one side panel with tabs. Agent messages are signed with the agent's machine head and name.
+- **Agents as a gallery.** The Agents page shows every agent as a portrait card with its type and model. Selecting one opens its profile on the side: animated head, description, model settings, skills and tools, subagents, and a button to start chatting.
+- **Providers, sorted.** Connected providers appear first as cards with their status. The others form a searchable catalog that tells whether you sign in with an account or an API key.
+- **Clearer extension errors.** When the pi catalog cannot be reached, the Extensions page says so plainly and reminds you that installed extensions keep working.
+
 ## [0.10.0] - 2026-11-23
 
 **Highlight:** every agent gets its own 3D machine head, built from what the agent is and does.

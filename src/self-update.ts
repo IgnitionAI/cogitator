@@ -61,6 +61,32 @@ export function selfUpdateSupport(paths: Paths, root: string | null = findPackag
   return { supported: true, mode: "pi" };
 }
 
+/**
+ * Commande d'installation du service cogitator-updater, pré-remplie pour CE serveur
+ * (affichée par l'UI quand la mise à jour en un clic n'est pas encore possible sur un VPS systemd).
+ */
+export function updaterSetupCommand(input: {
+  support: SelfUpdateSupport; root: string | null; home: string; port: number; user: string;
+  env?: NodeJS.ProcessEnv; cgroup?: () => string; platform?: NodeJS.Platform;
+}): string | null {
+  const { support, root } = input;
+  if (support.supported || !root) return null;
+  if (support.reason !== "NOT_PI_MANAGED" && support.reason !== "SERVICE_MANAGED") return null;
+  if ((input.platform ?? process.platform) !== "linux") return null;
+  const env = input.env ?? process.env;
+  let unit = env.COGITATOR_SERVICE_UNIT ?? "";
+  if (!unit) {
+    try {
+      const text = (input.cgroup ?? (() => readFileSync("/proc/self/cgroup", "utf8")))();
+      unit = [...text.matchAll(/([\w@.-]+\.service)\b/g)].pop()?.[1] ?? "";
+    } catch { /* pas de cgroup lisible */ }
+  }
+  if (!unit || unit.startsWith("user@") || unit.startsWith("session-")) unit = "cogitator.service";
+  const quote = (v: string) => /^[\w@%+=:,./-]+$/.test(v) ? v : `'${v.replace(/'/g, `'\\''`)}'`;
+  const script = join(root, "dist", "src", "updater", "cogitator-updater.js");
+  return `sudo node ${quote(script)} install --user ${quote(input.user)} --unit ${quote(unit)} --home ${quote(input.home)} --port ${input.port}`;
+}
+
 export interface SelfUpdateState {
   status: "idle" | "installing" | "restarting" | "error";
   target?: string;

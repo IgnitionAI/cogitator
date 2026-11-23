@@ -1,7 +1,8 @@
 import { MachineStatus } from "./MachineStatus";
 import Browsers from "./BrowserPanel";
 import TerminalScreen from "./TerminalPanel";
-import { AppUpdates } from "./AppUpdates";
+import Updates from "./screens/Updates";
+import { isSettingsSection, SETTINGS_SECTIONS, SettingsHub } from "./SettingsHub";
 import { markNewsSeen, newsUnseen, WhatsNew } from "./WhatsNew";
 import Extensions from "./screens/Extensions";
 import Hub, { type HubTarget } from "./Hub";
@@ -30,12 +31,7 @@ const NAV = [
   { id: "home", icon: "chat", label: "hub.title" },
   { id: "workspaces", icon: "folder", label: "common.workspaces" },
   { id: "agents", icon: "bot", label: "common.agents" },
-  { id: "providers", icon: "key", label: "common.providers" },
-  { id: "browsers", icon: "monitor", label: "browser.title" },
   { id: "terminal", icon: "terminal", label: "terminal.title" },
-  { id: "extensions", icon: "plug", label: "extensions.title" },
-  { id: "cron", icon: "clock", label: "common.cron" },
-  { id: "settings", icon: "settings", label: "common.settings" },
 ] as const satisfies ReadonlyArray<{ id: string; icon: IconName; label: TranslationKey }>;
 const EXTRA = [
   { id: "conversations", icon: "feed", label: "common.conversations" },
@@ -44,11 +40,11 @@ const EXTRA = [
 
 const PALETTE_SHORTCUT = "⌘K";
 
-type ScreenId = (typeof NAV)[number]["id"] | (typeof EXTRA)[number]["id"];
+type ScreenId = (typeof NAV)[number]["id"] | (typeof EXTRA)[number]["id"] | (typeof SETTINGS_SECTIONS)[number]["id"];
 
 export default function App() {
   useLocale();
-  const [showUpdates, setShowUpdates] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
   const [showNews, setShowNews] = useState(false);
   const [newsSeen, setNewsSeen] = useState(() => !newsUnseen());
   const [screen, setScreen] = useState<ScreenId>("home");
@@ -68,6 +64,7 @@ export default function App() {
 
   useEffect(() => {
     api.health().then(setHealth).catch(() => undefined);
+    api.appUpdates().then((r) => setUpdateAvailable(r.status === "available")).catch(() => undefined);
     api.agents().then((r) => setAgents(r.agents)).catch(() => undefined);
     const close = openEvents("/api/events", (e) => {
       const ev = e as { type?: string; name?: string; status?: string; error?: string };
@@ -155,21 +152,26 @@ export default function App() {
           api.agents().then((r) => setAgents(r.agents)).catch((error: unknown) => toast(t("common.refreshAgentsError", { error: localizeText(String(error)) }), true));
         }} />;
       case "agents":
-        return <Agents />;
-      case "providers":
-        return <Providers />;
-      case "browsers":
-        return <Browsers />;
+        return <Agents onOpenAgent={(id) => openHub({ agentId: id })} />;
       case "terminal":
         return <TerminalScreen />;
+      case "updates":
+      case "providers":
+      case "browsers":
       case "extensions":
-        return <Extensions />;
       case "cron":
-        return <Cron />;
       case "settings":
-        return <Settings />;
+        return <SettingsHub section={screen} updateAvailable={updateAvailable} onSection={(id) => go(id)}>
+          {screen === "updates" ? <Updates />
+            : screen === "providers" ? <Providers />
+            : screen === "browsers" ? <Browsers />
+            : screen === "extensions" ? <Extensions />
+            : screen === "cron" ? <Cron />
+            : <Settings />}
+        </SettingsHub>;
     }
   })();
+  const inSettings = !openWorkspace && isSettingsSection(screen);
 
   return (
     <div className={`app ${navOpen ? "nav-open" : ""}`}>
@@ -205,6 +207,16 @@ export default function App() {
               <Icon name={n.icon} /> <span className="nav-label">{t(n.label)}</span>
             </button>
           ))}
+          <button
+            type="button"
+            title={t("settings.title")}
+            className={`nav-item nav-settings ${inSettings ? "active" : ""}`}
+            aria-current={inSettings ? "page" : undefined}
+            onClick={() => { setOpenWorkspace(null); go(inSettings ? screen : updateAvailable ? "updates" : "settings"); }}
+          >
+            <Icon name="settings" /> <span className="nav-label">{t("settings.title")}</span>
+            {updateAvailable ? <span className="news-dot rail-dot" role="img" aria-label={t("settings.updateBadge")} /> : null}
+          </button>
         </nav>
         <button type="button" className="nav-item rail-more" title={t("hub.more")} aria-label={t("hub.more")} aria-expanded={moreOpen} aria-controls="sidebar-foot" onClick={() => setMoreOpen((open) => !open)}>
           <Icon name="menu" />{!newsSeen ? <span className="news-dot rail-dot" role="img" aria-label={t("news.unseen")} /> : null}
@@ -215,7 +227,7 @@ export default function App() {
           <LanguagePicker />
           <span className="running-version">{health ? `v${health.version} · pi ${health.pi_version ?? "?"}` : "…"}</span>
           <div className="footer-actions">
-          <button type="button" className="btn btn-sm" onClick={() => { setNavOpen(false); setMoreOpen(false); setShowUpdates(true); }}>{t("updates.title")}</button>
+          <button type="button" className="btn btn-sm" onClick={() => { setNavOpen(false); setMoreOpen(false); setOpenWorkspace(null); go("updates"); }}>{t("updates.title")}</button>
           <button type="button" className="btn btn-sm" onClick={() => { setNavOpen(false); setMoreOpen(false); setShowNews(true); markNewsSeen(); setNewsSeen(true); }}>
             {t("news.title")}{!newsSeen ? <span className="news-dot" role="img" aria-label={t("news.unseen")} /> : null}
           </button>
@@ -232,10 +244,9 @@ export default function App() {
           />
         ) : screenNode}
       </main>
-      {showUpdates && <AppUpdates onClose={() => setShowUpdates(false)} />}
       {showNews && <WhatsNew onClose={() => setShowNews(false)} />}
       {palette ? <CommandPalette
-        screens={[...NAV, ...EXTRA].map((n) => ({ id: n.id, label: t(n.label), icon: n.icon }))}
+        screens={[...NAV, ...EXTRA, ...SETTINGS_SECTIONS].map((n) => ({ id: n.id, label: t(n.label), icon: n.icon }))}
         agents={agents}
         conversations={paletteConversations}
         onScreen={(id) => { setOpenWorkspace(null); go(id as ScreenId); }}

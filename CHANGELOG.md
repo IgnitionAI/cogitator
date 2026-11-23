@@ -2,6 +2,14 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
+## [0.10.0] - 2026-11-23
+
+**Highlight:** every agent gets its own 3D machine head, built from what the agent is and does.
+
+### Added
+
+- **A 3D machine head for every agent.** Each agent now has its own avatar, generated from the agent itself: the same metal skull and riveted mask for everyone, with the Cogitator gear as ears. Its type changes the mask: a telescopic monocle for developers, a slit visor with a sweeping eye for QA, a lens cluster for experts and reviewers, a mast and gyroscope for project leads, a third eye and floating halo for designers, a polished mask for the butler. The type is guessed from the agent's name, description and skills. The finish follows the provider (copper, steel, gold), the crest gets one light per skill and the head one antenna per subagent. The selected agent's head is animated on the home screen and lights up while it works. Lists show still portraits rendered once, so many agents cost a single 3D context.
+
 ## [0.9.0] - 2026-11-22
 
 **Highlight:** a new home built around your agents, with the model in the composer and ⌘K everywhere.

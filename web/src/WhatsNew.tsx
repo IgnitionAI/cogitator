@@ -3,16 +3,16 @@ import { Icon, type IconName } from "./icons";
 import { Modal } from "./ui";
 
 /** Version décrite par le dialogue. La changer fait réapparaître le point « non lu ». */
-export const NEWS_VERSION = "0.11.0";
+export const NEWS_VERSION = "0.12.0";
 const NEWS_DATE = "2026-11-23T12:00:00Z";
 const NEWS_SEEN_KEY = "cogitator.newsSeen";
 const CHANGELOG_URL = "https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md";
 const FEATURE_DOC_URL = "https://github.com/IgnitionAI/cogitator/blob/dev/CHANGELOG.md";
 
 const ITEMS: Array<{ icon: IconName; title: TranslationKey; text: TranslationKey }> = [
-  { icon: "panel", title: "news.updateAll", text: "news.updateAllText" },
-  { icon: "bot", title: "news.safeRestart", text: "news.safeRestartText" },
-  { icon: "key", title: "news.vps", text: "news.vpsText" },
+  { icon: "download", title: "news.updateAll", text: "news.updateAllText" },
+  { icon: "chat", title: "news.safeRestart", text: "news.safeRestartText" },
+  { icon: "monitor", title: "news.vps", text: "news.vpsText" },
 ];
 
 /** Le propriétaire a-t-il déjà ouvert les notes de cette version ? (préférence locale, best-effort) */
@@ -36,7 +36,7 @@ export function WhatsNew({ onClose }: { onClose: () => void }) {
     </header>
 
     <article className="news-feature">
-      <span className="news-feature-icon" aria-hidden="true"><Icon name="download" size={18} /></span>
+      <span className="news-feature-icon" aria-hidden="true"><Icon name="lock" size={18} /></span>
       <div>
         <span className="news-kicker">{t("news.featured")}</span>
         <h3>{t("news.updates")}</h3>

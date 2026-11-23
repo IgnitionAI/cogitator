@@ -2,6 +2,15 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
+## [0.12.0] - 2026-11-23
+
+**Highlight:** your agents can log into websites without ever seeing your passwords.
+
+### Added
+
+- **Saved logins for shared browsers.** Settings › Logins keeps website logins, encrypted on your server. Import the CSV export of Google Password Manager in a few clicks, add logins by hand, and choose for each one whether all agents or only some may use it. Agents never see a password: they ask the shared browser to log in with a reference, and the server types the login itself, only on the saved site. Page reads hide password values, and screenshots are refused when a saved password is visible.
+- **Agents can ask you for a login in the chat.** When a site needs credentials an agent does not have, it shows a secure form. What you type goes straight to the vault; the agent only gets a reference to use for logging in.
+
 ## [0.11.0] - 2026-11-23
 
 **Highlight:** a five-icon rail, settings in one place, and an update center that tells you exactly how to turn on one-click updates on your server.

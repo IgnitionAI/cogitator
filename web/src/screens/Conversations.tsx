@@ -6,7 +6,7 @@ import { SubagentsPanel } from "../SubagentsPanel";
 import { AgentFace } from "../AgentFace";
 import { t, formatNumber, statusLabel, thinkingLabel, localizeText } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, openEvents, type EventConnectionState } from "../api";
+import { api, openEvents, vaultApi, type EventConnectionState } from "../api";
 import { thinkingLevelsFor, usableProviders } from "../types";
 import type {
   AgentPreset, Conversation, FileChange, HistoryEntry, ImageContentInput, ProviderView, SkillRef, SseEvent, Workspace,
@@ -555,6 +555,8 @@ export function ChatView(props: {
     }
   };
 
+  // Formulaire de secret : enregistre dans le coffre (API propriétaire), l'agent ne reçoit qu'une référence.
+  const secretStore = { agentId: conversation.agent_id, save: async (input: { name: string; url: string; username: string; password: string; allAgents: boolean; agentIds: string[] }) => (await vaultApi.create({ ...input, source: "chat" })).entry };
   const Title = props.embedded ? "h2" : "h1";
   return (
     <div className="chat">
@@ -656,7 +658,7 @@ export function ChatView(props: {
           return (
             <div key={m.key ?? i} className={`msg msg-${m.kind}`} role="article" aria-label={m.kind === "user" ? t("chat.userMessage") : t("chat.agentMessage")}>
               <div className="message-label">{m.kind !== "user" && props.agent ? <AgentFace agent={props.agent} size={22} /> : <Icon name={m.kind === "user" ? "users" : "bot"} size={14} />}{m.kind === "user" ? t("chat.you") : props.agent?.name ?? t("chat.agent")}</div>
-              {m.kind === "assistant" ? <AssistantContent text={m.text} responses={responses} disabled={!!sessionIssue || busy || running} streaming={streaming && i === streamRef.current.assistantIndex} onSubmit={sendInteraction} /> : m.attachmentCount ? <span>{t(m.attachmentCount === 1 ? "chat.attachedImage" : "chat.attachedImages", { count: formatNumber(m.attachmentCount) })}</span> : <UserContent text={m.text} />}
+              {m.kind === "assistant" ? <AssistantContent text={m.text} responses={responses} disabled={!!sessionIssue || busy || running} streaming={streaming && i === streamRef.current.assistantIndex} onSubmit={sendInteraction} secrets={secretStore} /> : m.attachmentCount ? <span>{t(m.attachmentCount === 1 ? "chat.attachedImage" : "chat.attachedImages", { count: formatNumber(m.attachmentCount) })}</span> : <UserContent text={m.text} />}
               {isLastAssistant && streaming ? <span className="caret" /> : null}
             </div>
           );

@@ -1,6 +1,8 @@
 import { machineMetrics } from "./machine-metrics.js";
 import { SharedBrowser } from "./shared-browser.js";
 import { browserRoutes, attachBrowserView } from "./browser-http.js";
+import { Vault } from "./vault.js";
+import { vaultRoutes } from "./vault-http.js";
 import { resourceInventory, probeCogitatorTools } from "./project-setup.js";
 import { importSkillUpload } from "./skills-upload.js";
 import { appUpdateStatus } from "./app-updates.js";
@@ -1631,9 +1633,11 @@ export function createApp(opts: AppOptions): Server {
     selfUpdate: opts.selfUpdate,
   };
 
-  const browser = new SharedBrowser(paths.home, db, opts.auth?.config.origin);
+  const vault = new Vault(paths.home, db);
+  const browser = new SharedBrowser(paths.home, db, opts.auth?.config.origin, vault);
   const routes: Route[] = [
     ...browserRoutes(browser, req => privateRequests.has(req), sendJson, !!opts.auth),
+    ...vaultRoutes(vault, (req) => privateRequests.has(req) || syntheticRequests.has(req), sendJson),
     healthRoute(deps),
     ...registryRoutes(deps),
     ...agentRoutes(deps),

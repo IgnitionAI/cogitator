@@ -2,6 +2,7 @@ import { MachineStatus } from "./MachineStatus";
 import Browsers from "./BrowserPanel";
 import TerminalScreen from "./TerminalPanel";
 import Updates from "./screens/Updates";
+import Vault from "./screens/Vault";
 import { isSettingsSection, SETTINGS_SECTIONS, SettingsHub } from "./SettingsHub";
 import { markNewsSeen, newsUnseen, WhatsNew } from "./WhatsNew";
 import Extensions from "./screens/Extensions";
@@ -157,6 +158,7 @@ export default function App() {
         return <TerminalScreen />;
       case "updates":
       case "providers":
+      case "vault":
       case "browsers":
       case "extensions":
       case "cron":
@@ -164,6 +166,7 @@ export default function App() {
         return <SettingsHub section={screen} updateAvailable={updateAvailable} onSection={(id) => go(id)}>
           {screen === "updates" ? <Updates />
             : screen === "providers" ? <Providers />
+            : screen === "vault" ? <Vault />
             : screen === "browsers" ? <Browsers />
             : screen === "extensions" ? <Extensions />
             : screen === "cron" ? <Cron />

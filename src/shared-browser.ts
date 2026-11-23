@@ -6,14 +6,17 @@ import { z } from 'zod';
 import { readJson, atomicWriteJson } from './json-files.js';
 import type { Db } from './db.js';
 import { checkRequestAuthorization } from './request-authorization.js';
+import { VaultProblem, type Vault } from './vault.js';
 
 export const profileInput = z.object({ name: z.string().trim().min(1).max(60), agentIds: z.array(z.string().uuid()).max(50).default([]) }).strict();
 export const browserAction = z.object({
-  action: z.enum(['tabs','open','navigate','read','screenshot','click','fill','press','scroll','back','forward','reload','close']),
+  action: z.enum(['tabs','open','navigate','read','screenshot','click','fill','press','scroll','back','forward','reload','close','secrets','login']),
   tabId: z.string().uuid().optional(), url: z.string().max(4096).optional(),
   selector: z.string().min(1).max(500).optional(), text: z.string().max(16000).optional(),
   key: z.string().max(80).optional(), x: z.number().min(0).max(1).optional(), y: z.number().min(0).max(1).optional(),
   delta: z.number().min(-2000).max(2000).optional(),
+  /** login : référence d'un identifiant du coffre (« secret:<id> »), jamais sa valeur. */
+  secret: z.string().max(100).optional(), submit: z.boolean().optional(),
 }).strict();
 export type BrowserAction = z.infer<typeof browserAction>;
 export interface BrowserProfile { id: string; name: string; agentIds: string[] }
@@ -30,7 +33,9 @@ export class SharedBrowser {
   private readonly human = new Set<string>();
   private readonly epochs = new Map<string, number>();
   private closing = false;
-  constructor(home: string, private readonly db: Db, private readonly controllerOrigin?: string) {
+  /** Secrets remplis par le coffre dans chaque page : masqués dans toute lecture d'agent. */
+  private readonly filledSecrets = new WeakMap<Page, Set<string>>();
+  constructor(home: string, private readonly db: Db, private readonly controllerOrigin?: string, private readonly vault?: Vault) {
     this.directory = join(home, 'browsers');
     mkdirSync(this.directory, { recursive: true, mode: 0o700 }); chmodSync(this.directory, 0o700);
     const stored = readJson<unknown>(join(this.directory, 'profiles.json'), []);
@@ -137,6 +142,12 @@ export class SharedBrowser {
     return this.serial(id, async () => {
       check();
       if (input.action === 'tabs') return { tabs: await this.tabs(id) };
+      if (input.action === 'secrets') {
+        if (!conversationId || !this.vault) throw new BrowserProblem('BROWSER_SECRETS_AGENT_ONLY');
+        const page = input.tabId ? this.running.get(id)?.pages.get(input.tabId) : undefined;
+        try { return { secrets: this.vault.forConversation(conversationId, page?.url()) }; }
+        catch (error) { if (error instanceof VaultProblem) throw new BrowserProblem(`BROWSER_${error.message}`); throw error; }
+      }
       const run = await this.launch(id); check();
       let page = input.tabId ? run.pages.get(input.tabId) : undefined;
       if (input.action === 'open') {
@@ -153,8 +164,9 @@ export class SharedBrowser {
           case 'forward': await page.goForward({ waitUntil: 'domcontentloaded' }); break;
           case 'reload': await page.reload({ waitUntil: 'domcontentloaded' }); break;
           case 'close': await page.close(); break;
-          case 'read': { const text = await page.locator('body').ariaSnapshot({ timeout: 3000 }); check(); return { text: text.slice(0, 24000) }; }
-          case 'screenshot': { const bytes = await page.screenshot({ type: 'jpeg', quality: 65, timeout: 5000 }); check(); return { image: bytes.toString('base64'), mimeType: 'image/jpeg' }; }
+          case 'read': { const text = await this.redact(page, await page.locator('body').ariaSnapshot({ timeout: 3000 })); check(); return { text: text.slice(0, 24000) }; }
+          case 'login': return { ...await this.login(page, input, conversationId, check), tabs: await this.tabs(id) };
+          case 'screenshot': { if (conversationId) await this.assertNoVisibleSecret(page); const bytes = await page.screenshot({ type: 'jpeg', quality: 65, timeout: 5000 }); check(); return { image: bytes.toString('base64'), mimeType: 'image/jpeg' }; }
           case 'click':
             if (locator) await locator.click({ timeout: 2000 });
             else if (input.x !== undefined && input.y !== undefined) await page.mouse.click(input.x * 1280, input.y * 800);
@@ -169,6 +181,52 @@ export class SharedBrowser {
       }
       check(); return { tabs: await this.tabs(id) };
     });
+  }
+  /** Valeurs de mot de passe présentes dans la page (champs password + secrets remplis par le coffre). */
+  private async secretValues(page: Page): Promise<string[]> {
+    const typed = await page.$$eval('input[type="password"]', (inputs) => inputs.map((input) => (input as unknown as { value: string }).value)).catch(() => [] as string[]);
+    return [...new Set([...typed, ...(this.filledSecrets.get(page) ?? [])])].filter((value) => value.length > 0);
+  }
+  private async redact(page: Page, text: string): Promise<string> {
+    let out = text;
+    // Les plus longs d'abord : un secret qui en contient un autre reste entièrement masqué.
+    for (const value of (await this.secretValues(page)).sort((a, b) => b.length - a.length)) out = out.split(value).join('••••••');
+    return out;
+  }
+  private async assertNoVisibleSecret(page: Page) {
+    const filled = [...(this.filledSecrets.get(page) ?? [])];
+    if (!filled.length) return;
+    const visible = await page.$$eval('input:not([type="password"]), textarea', (inputs) => inputs.map((input) => (input as unknown as { value: string }).value)).catch(() => [] as string[]);
+    if (visible.some((value) => filled.some((secret) => value.includes(secret)))) throw new BrowserProblem('BROWSER_SECRET_VISIBLE');
+  }
+  /** Remplit identifiant et mot de passe depuis le coffre : la valeur ne quitte jamais le serveur. */
+  private async login(page: Page, input: BrowserAction, conversationId: string | undefined, check: () => void) {
+    if (!conversationId || !this.vault) throw new BrowserProblem('BROWSER_LOGIN_AGENT_ONLY');
+    if (!input.secret) throw new BrowserProblem('BROWSER_SECRET_REQUIRED');
+    let credential: { username: string; password: string };
+    try { credential = this.vault.credentialFor(input.secret, conversationId, page.url()); }
+    catch (error) { if (error instanceof VaultProblem) throw new BrowserProblem(`BROWSER_${error.message}`); throw error; }
+    const filled: string[] = [];
+    const password = page.locator('input[type="password"]:visible').first();
+    let user: ReturnType<Page['locator']> | undefined;
+    if (credential.username) {
+      user = (input.selector ? page.locator(input.selector) : page.locator([
+        'input[autocomplete="username"]', 'input[type="email"]', 'input[name*="user" i]', 'input[name*="login" i]',
+        'input[name*="email" i]', 'input[id*="user" i]', 'input[id*="email" i]', 'input[id*="login" i]', 'input[type="text"]',
+      ].map((selector) => `${selector}:visible`).join(', '))).first();
+      if (await user.count()) {
+        if (await user.getAttribute('type') === 'password') throw new BrowserProblem('BROWSER_SECRET_TAKEOVER');
+        check(); await user.fill(credential.username); filled.push('username');
+      } else user = undefined;
+    }
+    if (await password.count()) {
+      check(); await password.fill(credential.password); filled.push('password');
+      const known = this.filledSecrets.get(page) ?? new Set<string>();
+      known.add(credential.password); this.filledSecrets.set(page, known);
+    }
+    if (!filled.length) throw new BrowserProblem('BROWSER_LOGIN_FIELDS_NOT_FOUND');
+    if (input.submit) { check(); await (filled.includes('password') ? password : user!).press('Enter'); }
+    return { filled };
   }
   /** Human input only; never available as an agent tool. */
   async type(id: string, tabId: string, text: string) {

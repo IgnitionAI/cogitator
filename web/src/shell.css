@@ -178,3 +178,38 @@
 .catalog-down-title { font-weight: 600; }
 .catalog-down-detail { font-size: 12px; margin-top: 4px !important; }
 .catalog-down-icon { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: color-mix(in srgb, var(--todo) 16%, transparent); color: var(--todo); }
+
+/* ---------- Identifiants (coffre) ---------- */
+.vault-promise { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface); max-width: 760px; }
+.vault-promise p { margin: 0; color: var(--fg); opacity: 0.85; font-size: 13px; line-height: 1.55; }
+.vault-promise-icon { width: 32px; height: 32px; flex-shrink: 0; border-radius: 9px; display: grid; place-items: center; background: color-mix(in srgb, var(--success) 14%, transparent); color: var(--success); }
+.vault-toolbar input { width: 100%; max-width: 420px; min-height: 38px; }
+.vault-list { margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.vault-row { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.vault-row:last-child { border-bottom: 0; }
+.vault-main { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.vault-name { font-weight: 500; overflow-wrap: anywhere; }
+.vault-sub { font-size: 12.5px; overflow-wrap: anywhere; }
+.vault-secret { flex: 0 1 180px; min-width: 0; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.vault-meta { flex: 0 1 200px; display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.vault-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.vault-access { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.vault-access legend { font-size: 12px; color: var(--muted); font-weight: 500; margin-bottom: 8px; }
+.vault-access-modes { display: flex; gap: 16px; flex-wrap: wrap; }
+.vault-access-modes label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.vault-access-modes input { width: auto; min-height: 0; }
+.vault-agent-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.vault-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 12px; border-radius: 15px; border: 1px solid var(--border-strong); background: transparent; color: var(--muted); font: inherit; font-size: 12.5px; cursor: pointer; }
+.vault-chip.is-on { background: var(--accent-dim); border-color: var(--accent); color: var(--fg); }
+.vault-form { display: flex; flex-direction: column; gap: 12px; }
+.vault-import { display: flex; flex-direction: column; gap: 14px; }
+.vault-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.5; }
+.vault-drop { display: flex; align-items: center; gap: 10px; padding: 16px; border-radius: 12px; border: 1px dashed var(--border-strong); cursor: pointer; color: var(--fg); }
+.vault-drop:hover { background: var(--raised); }
+.vault-drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.vault-drop:focus-within { box-shadow: var(--focus); }
+.vault-result { padding: 12px 14px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--success) 40%, transparent); }
+.vault-result p { margin: 0; }
+.gen-ui-secret-row { display: flex; gap: 6px; align-items: center; }
+.gen-ui-secret-row input { flex: 1; min-width: 0; }
+.gen-ui-secret-scope { display: flex; gap: 12px; flex-wrap: wrap; margin: 4px 0; }

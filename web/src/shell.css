@@ -72,6 +72,7 @@
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
 }
 .live-configuration.is-pill .configuration-fields > .field { flex-basis: 100%; }
+.configuration-close { float: right; margin: 4px -8px 0 8px; }
 .composer-tools .live-configuration.is-pill select {
   width: 100%; min-height: 36px; padding-inline: 8px; font-size: 13px;
   border-color: var(--border-strong); background: var(--bg);

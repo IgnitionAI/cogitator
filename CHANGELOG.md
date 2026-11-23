@@ -2,6 +2,12 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
+## Unreleased
+
+### Added
+
+- **Design canvases.** Ask an agent for a design and it can publish a canvas: every screen or variant is a board, grouped in rows (for example "Option A", "Option B"), all visible side by side. Drag to move around, zoom with Ctrl + wheel or the buttons, "Fit all" to see everything, and click a board to open it full size, where it is interactive. From there you can step to the next board, switch between fitted and 100 % size, or open the board in its own tab. Canvases are versioned like other artifacts.
+
 ## [0.13.0] - 2026-11-23
 
 **Highlight:** Artifacts — what your agents make now has a home, with versions.

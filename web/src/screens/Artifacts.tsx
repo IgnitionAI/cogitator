@@ -7,8 +7,8 @@ import { Icon, type IconName } from "../icons";
 import { Empty, ErrorText, PageHead } from "../ui";
 import type { AgentPreset } from "../types";
 
-const KINDS = ["html", "markdown", "image", "table", "code", "pdf"] as const;
-const KIND_ICON: Record<ArtifactItem["kind"], IconName> = { html: "monitor", markdown: "files", image: "image", table: "board", code: "feed", pdf: "files" };
+const KINDS = ["canvas", "html", "markdown", "image", "table", "code", "pdf"] as const;
+const KIND_ICON: Record<ArtifactItem["kind"], IconName> = { canvas: "board", html: "monitor", markdown: "files", image: "image", table: "board", code: "feed", pdf: "files" };
 
 /** Galerie des artifacts : liste à gauche, aperçu à droite (comme les artifacts de Claude). */
 export default function Artifacts(props: { initialId?: string | null; onOpenThread?: (conversationId: string) => void }) {

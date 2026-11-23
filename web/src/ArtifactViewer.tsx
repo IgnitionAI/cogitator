@@ -3,6 +3,7 @@ import { artifactsApi, type ArtifactItem } from "./api";
 import { formatDate, formatNumber, t } from "./i18n";
 import { Icon } from "./icons";
 import { Markdown } from "./markdown";
+import { ArtifactCanvas } from "./ArtifactCanvas";
 
 /** Sandbox iframe : scripts autorisés, mais origine opaque (pas de cookies ni d'accès à l'API). */
 const FRAME_SANDBOX = "allow-scripts allow-forms allow-popups allow-modals allow-downloads";
@@ -37,6 +38,7 @@ export function ArtifactBody({ artifact, version }: { artifact: ArtifactItem; ve
     return () => { live = false; };
   }, [url, needsText]);
 
+  if (artifact.kind === "canvas") return <ArtifactCanvas artifact={artifact} version={version} />;
   if (artifact.kind === "html") return <iframe className="artifact-frame" title={t("artifact.frame", { title: artifact.title })} src={url} sandbox={FRAME_SANDBOX} referrerPolicy="no-referrer" />;
   if (artifact.kind === "image") return <div className="artifact-image"><img src={url} alt={artifact.title} /></div>;
   if (artifact.kind === "pdf") return <div className="artifact-pdf"><Icon name="files" size={28} /><p className="muted">{t("artifact.pdfHint")}</p></div>;

@@ -66,3 +66,19 @@ test("artifacts: content is always served in a CSP sandbox, framable only by Cog
   const svg = artifactHeaders("image", "image/svg+xml");
   assert.match(svg["content-security-policy"]!, /^sandbox; default-src 'none'/);
 });
+
+test("artifacts: design canvas is validated and each board is served as its own page", () => {
+  const f = setup();
+  try {
+    const doc = { v: 1, boards: [{ title: "Accueil", group: "Option A", width: 1280, height: 800, html: "<h1>A</h1>" }, { title: "Mobile", html: "<h1>M</h1>" }] };
+    const canvas = f.store.publish({ conversationId: f.conv, title: "Landing", filename: "design.canvas", content: b64(JSON.stringify(doc)) });
+    assert.equal(canvas.artifact.kind, "canvas");
+    assert.equal(f.store.board(canvas.artifact.id, 0).bytes.toString(), "<h1>A</h1>");
+    assert.equal(f.store.board(canvas.artifact.id, 1).title, "Mobile");
+    assert.throws(() => f.store.board(canvas.artifact.id, 2), /ARTIFACT_BOARD_NOT_FOUND/);
+    assert.throws(() => f.store.publish({ conversationId: f.conv, title: "Bad", filename: "x.canvas", content: b64("{\"v\":1,\"boards\":[]}") }), /ARTIFACT_CANVAS_INVALID/);
+    assert.throws(() => f.store.publish({ conversationId: f.conv, title: "Bad", filename: "x.canvas", content: b64("not json") }), /ARTIFACT_CANVAS_INVALID/);
+    const page = f.store.publish({ conversationId: f.conv, title: "Page", filename: "p.html", content: b64("<p>") });
+    assert.throws(() => f.store.board(page.artifact.id, 0), /ARTIFACT_NOT_CANVAS/);
+  } finally { f.db.close(); }
+});

@@ -58,12 +58,17 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerTool({
     name: "cogitator_artifact", label: "Publish artifact",
-    description: "Publish a deliverable to the user's Artifacts gallery in Cogitator: an HTML page (self-contained: inline CSS/JS, no external files), a Markdown report, an SVG/PNG/JPG/GIF/WebP image, a CSV table, JSON, text or PDF (10 MB max). Give either path (a file in the working directory) or content plus filename (text only). Publishing again with the same title in this conversation, or with id, adds a new version instead of a duplicate. Use it for anything the user will want to open, review, share or keep (reports, dashboards, mockups, diagrams), then mention it briefly in your reply; the user sees a card in the chat. HTML runs in a strict sandbox without cookies or access to Cogitator.",
+    description: "Publish a deliverable to the user's Artifacts gallery in Cogitator: an HTML page (self-contained: inline CSS/JS, no external files), a Markdown report, an SVG/PNG/JPG/GIF/WebP image, a CSV table, JSON, text or PDF (10 MB max). Give either path (a file in the working directory) or content plus filename (text only). For DESIGN work (mockups, UI proposals, variants, screens of a flow) publish a design canvas instead: pass boards, one self-contained HTML page per screen or variant, each with a title, optional group (boards of a group sit on one row, e.g. \"Option A\"), width and height in px (default 1280x800; phone 390x844). The user gets a zoomable canvas showing every board side by side and can open each one full size, so prefer several focused boards over one long page. Publishing again with the same title in this conversation, or with id, adds a new version instead of a duplicate. Use it for anything the user will want to open, review, share or keep (reports, dashboards, mockups, diagrams), then mention it briefly in your reply; the user sees a card in the chat. HTML runs in a strict sandbox without cookies or access to Cogitator.",
     parameters: Type.Object({
       title: Type.String({ description: "Short human name, e.g. 'Rapport SEO octobre'" }),
       path: Type.Optional(Type.String({ description: "File to publish, relative to the working directory" })),
       content: Type.Optional(Type.String({ description: "Text content when there is no file" })),
       filename: Type.Optional(Type.String({ description: "File name with extension when using content, e.g. rapport.md" })),
+      boards: Type.Optional(Type.Array(Type.Object({
+        title: Type.String(), group: Type.Optional(Type.String()),
+        path: Type.Optional(Type.String({ description: "HTML file of this board" })), content: Type.Optional(Type.String({ description: "HTML of this board" })),
+        width: Type.Optional(Type.Number()), height: Type.Optional(Type.Number()),
+      }), { description: "Design canvas: 1 to 24 HTML boards" })),
       id: Type.Optional(Type.String({ description: "Existing artifact id to add a version to" })),
       note: Type.Optional(Type.String({ description: "What changed in this version" })),
     }),
@@ -72,14 +77,22 @@ export default function (pi: ExtensionAPI) {
       if (!conversationId) throw new Error("Open this tool from a Cogitator conversation.");
       let filename = params.filename;
       let content: string;
-      if (params.path) {
+      if (params.boards?.length) {
+        const boards = params.boards.map((board) => {
+          const html = board.path ? readFileSync(resolve(process.cwd(), board.path), "utf8") : board.content;
+          if (!html) throw new Error(`Board "${board.title}": give path or content.`);
+          return { title: board.title, ...(board.group ? { group: board.group } : {}), ...(board.width ? { width: Math.round(board.width) } : {}), ...(board.height ? { height: Math.round(board.height) } : {}), html };
+        });
+        content = Buffer.from(JSON.stringify({ v: 1, boards }), "utf8").toString("base64");
+        filename = "design.canvas";
+      } else if (params.path) {
         const file = resolve(process.cwd(), params.path);
         if (statSync(file).size > 10 * 1024 * 1024) throw new Error("ARTIFACT_TOO_LARGE");
         content = readFileSync(file).toString("base64");
         filename ??= basename(file);
       } else if (params.content !== undefined && filename) {
         content = Buffer.from(params.content, "utf8").toString("base64");
-      } else throw new Error("Give path, or content with filename.");
+      } else throw new Error("Give path, content with filename, or boards.");
       const result = await ownerRequest<Record<string, unknown>>("POST", "/api/artifacts/agent", {
         conversationId, title: params.title, filename, content,
         ...(params.id ? { id: params.id } : {}), ...(params.note ? { note: params.note } : {}),

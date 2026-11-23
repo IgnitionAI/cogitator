@@ -3,6 +3,7 @@ import { QueueRecovery, appendRecoveredMessage, type QueueFailure } from "../Que
 import { ConnectProviderModal } from "./Providers";
 import { LiveConfiguration } from "../ModelConfiguration";
 import { SubagentsPanel } from "../SubagentsPanel";
+import { AgentFace } from "../AgentFace";
 import { t, formatNumber, statusLabel, thinkingLabel, localizeText } from "../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, openEvents, type EventConnectionState } from "../api";
@@ -310,6 +311,8 @@ export function ChatView(props: {
   onClose: () => void;
   onDeleted: () => void;
   embedded?: boolean;
+  /** Agent du fil : sa tête de machine signe ses messages. */
+  agent?: AgentPreset | null;
 }) {
   const [conversation, setConversation] = useState(props.conversation);
   const configurationRevision = useRef(0);
@@ -346,9 +349,9 @@ export function ChatView(props: {
   const [streaming, setStreaming] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [openThinking, setOpenThinking] = useState<Set<number>>(new Set());
-  const [filesPanel, setFilesPanel] = useState(false);
-  const [subsPanel, setSubsPanel] = useState(false);
-  const [browserPanel, setBrowserPanel] = useState(false);
+  // Panneau latéral unique : fichiers, sous-agents, navigateur (un onglet à la fois).
+  const [dock, setDock] = useState<"files" | "subs" | "browser" | null>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [subagentCount, setSubagentCount] = useState(0);
   const [files, setFiles] = useState<FileChange[]>([]);
   const [diffFor, setDiffFor] = useState<{ path: string } | null>(null);
@@ -435,7 +438,7 @@ export function ChatView(props: {
         eventRevision.current++;
         if (ev.type === "session_error") {
           setSessionIssue({ code: ev.code ?? "SESSION_START_FAILED", provider: ev.provider ?? conversation.provider, error: ev.error });
-          setRunning(false); setStreaming(false); setSubsPanel(false);
+          setRunning(false); setStreaming(false);
           return;
         }
         if (ev.type === "session") setSessionIssue(null);
@@ -564,41 +567,36 @@ export function ChatView(props: {
           <div className="chat-context"><span className="mono">{conversation.provider} / {conversation.model}</span><span className="chat-connection" role="status">{connectionText}</span></div>
         </div>
         <span className={`chat-state ${sessionIssue ? "is-error" : running ? "is-running" : sessionStatus === "error" || sessionStatus === "dead" ? "is-error" : ""}`} role="status"><Icon name={sessionIssue ? "warning" : running ? "activity" : sessionStatus === "error" || sessionStatus === "dead" ? "warning" : "check"} size={14} />{statusText}</span>
-        <button
-          type="button"
-          className={`btn btn-sm ${filesPanel ? "btn-primary" : ""}`}
-          onClick={() => { setFilesPanel((v) => !v); refreshFiles(); }}
-          aria-pressed={filesPanel}
-          title={t("chat.changedFilesTitle")}
-        >
-          <Icon name="files" /> {t("chat.files")}{files.length > 0 ? ` (${formatNumber(files.length)})` : ""}
-        </button>
-        <button
-          type="button"
-          className={`btn btn-sm ${subsPanel ? "btn-primary" : ""}`}
-          onClick={() => setSubsPanel((v) => !v)}
-          aria-pressed={subsPanel}
-          title={t("chat.subagentsTitle")}
-        >
-          <Icon name="users" /> {t("chat.subagents")}{subagentCount > 0 ? ` (${formatNumber(subagentCount)})` : ""}
-        </button>
-        <button className="btn btn-sm" onClick={()=>setBrowserPanel(true)}>{t("browser.title")}</button>
-        {browserPanel && <Modal wide title={t("browser.title")} onClose={()=>setBrowserPanel(false)}><Browsers compact /></Modal>}
         {busy || running || sessionStatus === "running" ? (
           <button type="button" className="btn btn-sm btn-danger" onClick={() => api.stopConversation(conversation.id).catch((e: Error) => toast(e.message, true))}>
             <Icon name="stop" /> {t("chat.stop")}
           </button>
         ) : null}
-        <IconBtn
-          name="trash"
-          label={t("chat.delete")}
-          danger
-          onClick={() => {
-            if (confirm(t("chat.deleteConfirm"))) {
-              api.deleteConversation(conversation.id).then(props.onDeleted).catch((e: Error) => toast(e.message, true));
-            }
-          }}
-        />
+        <button
+          type="button"
+          className={`icon-btn chat-dock-toggle${dock ? " is-on" : ""}`}
+          aria-pressed={dock !== null}
+          aria-label={t("chat.dockToggle")}
+          title={t("chat.dockToggle")}
+          onClick={() => { setDock((d) => d ? null : "files"); refreshFiles(); }}
+        >
+          <Icon name="panel" />
+          {files.length + subagentCount > 0 && !dock ? <span className="chat-dock-count">{formatNumber(files.length + subagentCount)}</span> : null}
+        </button>
+        <div className="chat-more">
+          <button type="button" className="icon-btn" aria-label={t("chat.moreActions")} title={t("chat.moreActions")} aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}><Icon name="more" /></button>
+          {moreOpen ? <>
+            <div className="chat-more-scrim" onClick={() => setMoreOpen(false)} />
+            <div className="chat-more-menu" role="menu">
+              <button type="button" role="menuitem" className="is-danger" onClick={() => {
+                setMoreOpen(false);
+                if (confirm(t("chat.deleteConfirm"))) {
+                  api.deleteConversation(conversation.id).then(props.onDeleted).catch((e: Error) => toast(e.message, true));
+                }
+              }}><Icon name="trash" size={14} /> {t("chat.delete")}</button>
+            </div>
+          </> : null}
+        </div>
       </header>
       {sessionIssue ? <div className="session-issue" role="alert">
         <p>{sessionIssue.code === "PROVIDER_NOT_CONFIGURED" ? t("chat.providerConnectionRequired", { provider: sessionIssue.provider }) : sessionIssue.code === "MODEL_UNAVAILABLE" ? t("chat.modelUnavailable") : t("chat.sessionStartFailed")}</p>
@@ -657,7 +655,7 @@ export function ChatView(props: {
           const isLastAssistant = m.kind === "assistant" && i === timeline.length - 1;
           return (
             <div key={m.key ?? i} className={`msg msg-${m.kind}`} role="article" aria-label={m.kind === "user" ? t("chat.userMessage") : t("chat.agentMessage")}>
-              <div className="message-label"><Icon name={m.kind === "user" ? "users" : "bot"} size={14} />{m.kind === "user" ? t("chat.you") : t("chat.agent")}</div>
+              <div className="message-label">{m.kind !== "user" && props.agent ? <AgentFace agent={props.agent} size={22} /> : <Icon name={m.kind === "user" ? "users" : "bot"} size={14} />}{m.kind === "user" ? t("chat.you") : props.agent?.name ?? t("chat.agent")}</div>
               {m.kind === "assistant" ? <AssistantContent text={m.text} responses={responses} disabled={!!sessionIssue || busy || running} streaming={streaming && i === streamRef.current.assistantIndex} onSubmit={sendInteraction} /> : m.attachmentCount ? <span>{t(m.attachmentCount === 1 ? "chat.attachedImage" : "chat.attachedImages", { count: formatNumber(m.attachmentCount) })}</span> : <UserContent text={m.text} />}
               {isLastAssistant && streaming ? <span className="caret" /> : null}
             </div>
@@ -741,26 +739,36 @@ export function ChatView(props: {
       <div id="composer-hint" className="composer-hint"><span>{t("chat.keyboardHint")}</span><span>{running ? t("chat.working") : t("chat.interactionHint")}</span></div>
       </div>
       </div>
-      {filesPanel ? (
-        <aside className="chat-side">
-          <div className="chat-side-head">
-            <span>{t("chat.changedFiles")}</span>
-            <span className="muted">{formatNumber(files.length)}</span>
+      {dock ? (
+        <aside className="chat-dock" aria-label={t("chat.dockToggle")}>
+          <div className="chat-dock-tabs" role="tablist" aria-label={t("chat.dockToggle")}>
+            {([["files", t("chat.files"), files.length], ["subs", t("chat.subagents"), subagentCount], ["browser", t("browser.title"), 0]] as const).map(([id, label, count]) => (
+              <button key={id} type="button" role="tab" aria-selected={dock === id} className={dock === id ? "is-active" : ""} onClick={() => { setDock(id); if (id === "files") refreshFiles(); }}>
+                {label}{count > 0 ? <span className="chat-dock-badge">{formatNumber(count)}</span> : null}
+              </button>
+            ))}
+            <IconBtn name="close" label={t("chat.dockClose")} onClick={() => setDock(null)} />
           </div>
-          {filesLoading ? <p role="status">{t("chat.loadingFiles")}</p> : null}
-          {filesError ? <div className="error-text" role="alert">{localizeText(filesError)} <button type="button" className="btn btn-sm" onClick={refreshFiles}>{t("chat.retry")}</button></div> : null}
-          {!filesLoading && !filesError && files.length === 0 ? (
-            <Empty>{t("chat.noFiles")}</Empty>
-          ) : !filesLoading && !filesError ? (
-            <div className="chat-side-list">
-              {files.map((f) => (
-                <FileRow key={f.path} f={f} onClick={() => setDiffFor({ path: f.path })} />
-              ))}
-            </div>
-          ) : null}
+          <div className="chat-dock-body" role="tabpanel">
+            {dock === "files" ? <>
+              <p className="chat-dock-hint">{t("chat.changedFilesTitle")}</p>
+              {filesLoading ? <p role="status">{t("chat.loadingFiles")}</p> : null}
+              {filesError ? <div className="error-text" role="alert">{localizeText(filesError)} <button type="button" className="btn btn-sm" onClick={refreshFiles}>{t("chat.retry")}</button></div> : null}
+              {!filesLoading && !filesError && files.length === 0 ? (
+                <Empty>{t("chat.noFiles")}</Empty>
+              ) : !filesLoading && !filesError ? (
+                <div className="chat-side-list">
+                  {files.map((f) => (
+                    <FileRow key={f.path} f={f} onClick={() => setDiffFor({ path: f.path })} />
+                  ))}
+                </div>
+              ) : null}
+            </> : null}
+            {dock === "subs" ? <SubagentsPanel conversationId={conversation.id} onCountChange={setSubagentCount} embedded /> : null}
+            {dock === "browser" ? <Browsers compact /> : null}
+          </div>
         </aside>
       ) : null}
-      {subsPanel ? <SubagentsPanel conversationId={conversation.id} onCountChange={setSubagentCount} /> : null}
       </div>
       {diffFor ? (
         <FileDiffModal conversationId={conversation.id} path={diffFor.path} onClose={() => setDiffFor(null)} />

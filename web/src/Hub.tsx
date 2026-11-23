@@ -157,6 +157,7 @@ export default function Hub(props: {
         <ChatView
           key={thread.id}
           conversation={thread}
+          agent={agents.find((a) => a.id === thread.agent_id) ?? null}
           onClose={() => { setThreadId(null); refresh(); }}
           onDeleted={() => { setThreadId(null); refresh(); }}
         />

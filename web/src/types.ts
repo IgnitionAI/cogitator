@@ -468,4 +468,4 @@ export interface TerminalSession { id: string; title: string; kind: "shell" | "a
 export interface TerminalAgent { id: string; name: string; provider: string; model: string }
 export interface TerminalStatus { enabled: boolean; reason: string | null; sessions: TerminalSession[]; agents: TerminalAgent[] }
 
-export interface SelfUpdateInfo { supported: boolean; mode?: "pi" | "updater"; reason?: "SOURCE_BUILD" | "NOT_PI_MANAGED" | "SERVICE_MANAGED"; state: { status: "idle" | "installing" | "restarting" | "error"; target?: string; error?: string; step?: string } }
+export interface SelfUpdateInfo { supported: boolean; mode?: "pi" | "updater"; setup?: string; reason?: "SOURCE_BUILD" | "NOT_PI_MANAGED" | "SERVICE_MANAGED"; state: { status: "idle" | "installing" | "restarting" | "error"; target?: string; error?: string; step?: string } }

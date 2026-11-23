@@ -15,7 +15,8 @@ import { basename, dirname, extname, join, normalize, relative, resolve, sep } f
 import { fileURLToPath } from "node:url";
 import { createServer, type Server, type ServerResponse, type IncomingMessage } from "node:http";
 import type { ZodType } from "zod";
-import { HOST } from "./config.js";
+import { HOST, PORT } from "./config.js";
+import { findPackageRoot } from "./default-agent.js";
 import { requestAuthorization } from "./request-authorization.js";
 import type { AuthState } from "./auth-state.js";
 import { protectedRequired } from "./auth-state.js";
@@ -82,14 +83,14 @@ import { cloneRepo, isInsideDir, localDirFor } from "./git-import.js";
 import { listSubagents, readSubagentTranscript } from "./subagents.js";
 import { MCP_HTTP_PATH, McpHttpEndpoint } from "./mcp-http.js";
 import { McpOAuth } from "./mcp-oauth.js";
-import { installedPackageVersion, readUpdaterStatus, requestUpdater, updaterDir, PACKAGE as SELF_PACKAGE, SelfUpdateError, SelfUpdater, selfUpdateSupport, spawnRelauncher, type SelfUpdateDeps } from "./self-update.js";
+import { installedPackageVersion, readUpdaterStatus, requestUpdater, updaterDir, PACKAGE as SELF_PACKAGE, SelfUpdateError, SelfUpdater, selfUpdateSupport, spawnRelauncher, updaterSetupCommand, type SelfUpdateDeps } from "./self-update.js";
 import { loadPty, shellLaunch, terminalEnv, TerminalError, TerminalManager, type PtySpawn, type TerminalLaunch } from "./terminal.js";
 import { attachTerminalSocket, terminalRoutes } from "./terminal-http.js";
 import { piComplete, type CompleteFn } from "./terminal-assist.js";
 import { buildArgs } from "./spawn.js";
 import { runtimeIntegration, currentMcpServers } from "./project-setup.js";
 import { encodeMcpEnv, MCP_ENV_VAR } from "./mcp-env.js";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { piCliPath } from "./host-pi.js";
 
 // ---------- Statique ----------
@@ -386,7 +387,9 @@ function registryRoutes(deps: Deps): Route[] {
       ctx.check(); deps.githubLogin.cancel(); sendJson(ctx.res, 200, { ok: true });
     }],
     ["GET", "/api/app-updates", async (ctx) => {
-      const selfUpdate = { ...selfUpdateSupport(paths), state: selfUpdater.state };
+      const support = selfUpdateSupport(paths);
+      const setup = updaterSetupCommand({ support, root: findPackageRoot(), home: paths.home, port: PORT, user: userInfo().username });
+      const selfUpdate = { ...support, state: selfUpdater.state, ...(setup ? { setup } : {}) };
       try { sendJson(ctx.res, 200, { ...await appUpdateStatus(), selfUpdate }); }
       catch { sendJson(ctx.res, 502, { error: "Release check unavailable", selfUpdate }); }
     }],

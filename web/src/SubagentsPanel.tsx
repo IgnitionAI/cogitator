@@ -11,9 +11,11 @@ const STATUS_KEYS: Record<SubagentView["status"], TranslationKey> = {
   unknown: "chat.subagentUnknown",
 };
 
-export function SubagentsPanel({ conversationId, onCountChange }: {
+export function SubagentsPanel({ conversationId, onCountChange, embedded = false }: {
   conversationId: string;
   onCountChange: (count: number) => void;
+  /** Dans le panneau à onglets du fil : pas de cadre ni de titre propres. */
+  embedded?: boolean;
 }) {
   const [data, setData] = useState<{ live: boolean; subagents: SubagentView[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,8 +49,8 @@ export function SubagentsPanel({ conversationId, onCountChange }: {
     };
   }, [conversationId, onCountChange, attempt]);
 
-  return <><aside className="chat-side" aria-label={t("chat.subagentsTitle")}>
-    <div className="chat-side-head">
+  return <><aside className={embedded ? "chat-dock-pane" : "chat-side"} aria-label={t("chat.subagentsTitle")}>
+    <div className={embedded ? "chat-dock-hint" : "chat-side-head"}>
       <span>{t("chat.subagents")}</span>
       {data ? <span className="muted">{data.live ? formatNumber(data.subagents.length) : t("chat.subagentsOffline")}</span> : null}
     </div>

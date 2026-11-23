@@ -2,6 +2,12 @@
 
 User-facing changes to Cogitator. GitHub development updates and npm releases are separate: an entry marked **Unreleased** is not yet available from npm.
 
+## Unreleased
+
+### Fixed
+
+- **The model settings popover can be closed.** In a thread, the popover opened from the model pill now closes with a click outside it, with Escape, or with its new Close button. Before, only a second click on the pill closed it.
+
 ## [0.14.0] - 2026-11-23
 
 **Highlight:** design canvases — review every screen an agent designs, side by side.

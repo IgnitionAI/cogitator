@@ -30,6 +30,7 @@ export const chatMessages = {
   "chat.queueStopped": { "en": "Queued message canceled when the conversation stopped.", "fr": "Message en attente annulé à l’arrêt de la conversation." },
   "chat.restoreQueued": { "en": "Add message to draft", "fr": "Ajouter le message au brouillon" },
   "configuration.title": {"en": "Model settings", "fr": "Réglages du modèle"},
+  "configuration.close": {"en": "Close", "fr": "Fermer"},
   "configuration.effective": {"en": "Effective", "fr": "Effectif"},
   "configuration.apply": {"en": "Apply settings", "fr": "Appliquer les réglages"},
   "configuration.applying": {"en": "Applying settings…", "fr": "Application des réglages…"},

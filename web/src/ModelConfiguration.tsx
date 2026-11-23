@@ -108,8 +108,26 @@ export function LiveConfiguration({ conversation, onChanged, name, onProviderCon
     } finally { writing.current = false; setBusy(false); }
   };
 
+  // Pastille : la fenêtre se ferme au clic en dehors, avec Échap, ou par son bouton.
+  const details = useRef<HTMLDetailsElement>(null);
+  const close = () => { if (details.current) details.current.open = false; };
+  useEffect(() => {
+    if (!pill) return;
+    const onPointer = (event: PointerEvent) => {
+      const el = details.current;
+      if (el?.open && event.target instanceof Node && !el.contains(event.target)) el.open = false;
+    };
+    const onKey = (event: KeyboardEvent) => {
+      const el = details.current;
+      if (event.key === "Escape" && el?.open) { el.open = false; el.querySelector("summary")?.focus(); }
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("pointerdown", onPointer); document.removeEventListener("keydown", onKey); };
+  }, [pill]);
+
   if (conversation.runtime_kind === "durable") return null;
-  return <details className={`live-configuration${pill ? " is-pill" : ""}`}>
+  return <details ref={details} className={`live-configuration${pill ? " is-pill" : ""}`}>
     {pill
       ? <summary aria-label={`${t("configuration.title")} : ${conversation.provider} / ${conversation.model}`} title={`${conversation.provider} / ${conversation.model}`}>
           <span className="mono">{conversation.model}</span>
@@ -118,6 +136,7 @@ export function LiveConfiguration({ conversation, onChanged, name, onProviderCon
         </summary>
       : <summary>{name ? `${name} · ` : ""}{t("configuration.title")}</summary>}
     <div className="configuration-content">
+      {pill ? <button type="button" className="btn btn-ghost btn-sm configuration-close" onClick={close}>{t("configuration.close")}</button> : null}
       <p className="configuration-effective">{t("configuration.effective")}: <span className="mono">{conversation.provider} / {conversation.model} · {conversation.thinking ? thinkingLabel(conversation.thinking) : t("screens.defaultParen")}</span></p>
       <div role="status">
         {pending ? <p>{t(pending.status === "pending" ? "configuration.pending" : "configuration.failed")} <span className="mono">{pending.provider} / {pending.model} · {pending.thinking ? thinkingLabel(pending.thinking) : t("configuration.preserve")}</span></p> : applied ? <p>{t("configuration.applied")}</p> : null}
